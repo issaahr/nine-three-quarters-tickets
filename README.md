@@ -16,7 +16,7 @@ npm --prefix apps/web install
 
 API e web são projetos independentes. Cada aplicação possui seu próprio `package.json`, `package-lock.json`, dependências e toolchain.
 
-Crie `.env` no root a partir de `.env.example` antes de iniciar a API. A aplicação falha na inicialização quando uma variável obrigatória não está definida.
+Crie `.env` no root a partir de `.env.example` antes de iniciar as aplicações. API e web falham na inicialização quando uma variável obrigatória não está definida.
 
 Além do banco e dos usuários de demonstração, configure:
 
@@ -24,6 +24,10 @@ Além do banco e dos usuários de demonstração, configure:
 - `JWT_SECRET`: segredo de assinatura do JWT, com pelo menos 32 bytes;
 - `JWT_EXPIRES_IN_SECONDS`: duração do token em segundos;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
+- `VITE_API_URL`: endereço público pelo qual o navegador acessa a API;
+- `VITE_DEMO_USERS_PASSWORD`: senha pública preenchida pelos atalhos de demonstração.
+
+Variáveis com prefixo `VITE_` são incorporadas ao bundle e podem ser inspecionadas no navegador. Nunca utilize esse prefixo em segredos. `VITE_DEMO_USERS_PASSWORD` é intencionalmente pública e deve ser usada somente nas contas demonstrativas.
 
 ## Scripts das aplicações
 
@@ -91,20 +95,22 @@ Crie uma nova migration para cada mudança de schema. Não utilize `synchronize`
 
 A migration de seed cria automaticamente quatro usuários quando é aplicada pela primeira vez:
 
-| Email | Role |
-| --- | --- |
-| `organizer.demo@ntq.local` | `ORGANIZER` |
-| `customer.one.demo@ntq.local` | `CUSTOMER` |
-| `customer.two.demo@ntq.local` | `CUSTOMER` |
-| `gate.demo@ntq.local` | `GATE` |
+| Email                         | Role        |
+| ----------------------------- | ----------- |
+| `organizer.demo@ntq.local`    | `ORGANIZER` |
+| `customer.one.demo@ntq.local` | `CUSTOMER`  |
+| `customer.two.demo@ntq.local` | `CUSTOMER`  |
+| `gate.demo@ntq.local`         | `GATE`      |
 
 Todos utilizam a senha definida em `DEMO_USERS_PASSWORD`. Essas contas são destinadas exclusivamente à demonstração; defina a variável no `.env` antes de iniciar um banco novo e não reutilize essa senha em contas reais.
+
+Para que os atalhos da tela de login preencham a mesma credencial, defina `VITE_DEMO_USERS_PASSWORD` com o mesmo valor. Essa segunda variável é pública por fazer parte do bundle do frontend; ela não deve ser reutilizada fora do ambiente demonstrativo.
 
 ## Autenticação
 
 O login está disponível em `POST /auth/login`. Em caso de sucesso, a resposta contém somente os dados públicos do usuário e o JWT é enviado no cookie `accessToken`, inacessível a JavaScript por ser `HttpOnly`.
 
-O frontend pode restaurar a identidade autenticada por `GET /auth/session`. A resposta expõe somente `id` e `role`; o token continua inacessível ao JavaScript. `POST /auth/logout` encerra a sessão expirando o cookie e pode ser chamado mesmo quando ele já estiver ausente ou inválido.
+O frontend pode restaurar a identidade autenticada por `GET /auth/session`. Uma sessão válida retorna `200` com somente `id` e `role`; cookie ausente ou inválido retorna `204`, pois a ausência de sessão é um resultado esperado dessa consulta. O token continua inacessível ao JavaScript. `POST /auth/logout` encerra a sessão expirando o cookie e pode ser chamado mesmo quando ele já estiver ausente ou inválido.
 
 Em desenvolvimento e testes, o cookie utiliza `SameSite=Lax` sem `Secure` para funcionar em HTTP local. Em produção, utiliza `SameSite=None` e `Secure` para permitir que web e API estejam em sites diferentes. O cliente deve enviar requisições com credenciais e a origem precisa estar declarada em `CORS_ORIGINS`.
 
@@ -122,6 +128,26 @@ Os testes end-to-end dependem do PostgreSQL e podem ser executados com a stack D
 ```bash
 docker compose exec api npm run test:e2e
 ```
+
+## Testes do frontend
+
+Os testes de autenticação exercitam o roteamento, o cache do TanStack Query e os contratos HTTP simulados com MSW:
+
+```bash
+npm --prefix apps/web test
+```
+
+## Componentes do frontend
+
+O frontend utiliza Tailwind CSS 4 e componentes Shadcn no estilo Base Nova. Os componentes são gerados como código local em `apps/web/src/components/ui` e devem ser adicionados somente quando uma necessidade concreta da interface justificar.
+
+Para adicionar um componente a partir do root:
+
+```bash
+npm --prefix apps/web exec -- shadcn add <componente>
+```
+
+Não envolva componentes Shadcn em novas abstrações sem comportamento ou responsabilidade adicional.
 
 ## Estrutura
 

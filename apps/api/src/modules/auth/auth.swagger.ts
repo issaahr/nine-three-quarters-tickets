@@ -38,10 +38,13 @@ export function ApiLogin() {
 
 export function ApiGetSession() {
   return applyDecorators(
-    ApiOperation({ summary: 'Retorna a identidade da sessão autenticada' }),
+    ApiOperation({ summary: 'Consulta a identidade da sessão quando disponível' }),
     ApiOkResponse({
       type: SessionResponseDto,
       description: 'Identidade obtida das claims validadas do access token.',
+    }),
+    ApiNoContentResponse({
+      description: 'Nenhuma sessão válida encontrada no cookie de autenticação.',
     }),
   );
 }

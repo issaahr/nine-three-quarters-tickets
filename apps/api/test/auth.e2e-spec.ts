@@ -133,7 +133,15 @@ describe('POST /auth/login', () => {
     expect(cookie).toContain('Path=/');
     expect(cookie).toContain('SameSite=Lax');
 
-    await agent.get('/auth/session').expect(401);
+    await agent.get('/auth/session').expect(204);
+  });
+
+  it('representa cookie ausente ou inválido como sessão anônima', async () => {
+    await request(app.getHttpServer()).get('/auth/session').expect(204);
+    await request(app.getHttpServer())
+      .get('/auth/session')
+      .set('Cookie', 'accessToken=invalid-token')
+      .expect(204);
   });
 
   it('mantém logout idempotente sem sessão válida', async () => {

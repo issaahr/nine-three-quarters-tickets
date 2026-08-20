@@ -8,6 +8,7 @@ import {
   Post,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
@@ -16,13 +17,13 @@ import { applicationConfig } from '../../config/applicationConfig';
 import { AuthenticatedUser } from './auth.types';
 import { AuthService } from './auth.service';
 import { ApiGetSession, ApiLogin, ApiLogout } from './auth.swagger';
-import { Auth } from './decorators/auth.decorator';
 import { LoginRequestDto } from './dto/loginRequest.dto';
 import { LoginResponseDto } from './dto/loginResponse.dto';
 import { SessionResponseDto } from './dto/sessionResponse.dto';
+import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
 
 interface AuthenticatedRequest {
-  user: AuthenticatedUser;
+  user: AuthenticatedUser | null;
 }
 
 @ApiTags('Auth')
@@ -55,9 +56,17 @@ export class AuthController {
 
   @Get('session')
   @Header('Cache-Control', 'no-store')
-  @Auth()
+  @UseGuards(OptionalJwtAuthGuard)
   @ApiGetSession()
-  public getSession(@Req() request: AuthenticatedRequest): SessionResponseDto {
+  public getSession(
+    @Req() request: AuthenticatedRequest,
+    @Res({ passthrough: true }) response: Response,
+  ): SessionResponseDto | void {
+    if (!request.user) {
+      response.status(HttpStatus.NO_CONTENT);
+      return;
+    }
+
     return request.user;
   }
 
