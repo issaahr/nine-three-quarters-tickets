@@ -85,6 +85,7 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 - Web e API possuem jobs independentes, cada um com cache baseado no próprio lockfile.
 - O job da API utiliza PostgreSQL 17 real para executar a suíte end-to-end.
 - Builds production dos dois containers são validados somente depois dos jobs das aplicações.
-- A configuração exigida pelos jobs é fornecida por GitHub Actions Secrets com prefixo `CI_`, isolada dos ambientes de deploy; o workflow não mantém valores concretos.
+- A CI utiliza valores concretos e determinísticos exclusivos para teste, definidos no próprio workflow. Nenhuma credencial real ou configuração de deploy é utilizada pelos jobs.
+- Valores destinados exclusivamente ao ambiente de teste não são tratados como GitHub Actions Secrets.
 - A CI não publica imagens e não executa `npm audit` como bloqueio de merge.
 - Hooks locais não são obrigatórios; a CI é a autoridade dos checks exigidos para integração.

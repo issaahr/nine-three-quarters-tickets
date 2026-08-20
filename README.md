@@ -153,7 +153,7 @@ npm --prefix apps/web test
 
 ## Integração contínua
 
-O GitHub Actions valida web, API com PostgreSQL e os builds production dos containers em pull requests para `main` e pushes na branch. Os jobs respeitam os lockfiles independentes de cada aplicação, recebem a configuração por GitHub Actions Secrets e não publicam imagens.
+O GitHub Actions valida web, API com PostgreSQL e os builds production dos containers em pull requests para `main` e pushes na branch. Os jobs respeitam os lockfiles independentes de cada aplicação, utilizam configuração determinística exclusiva para testes definida no workflow e não publicam imagens.
 
 ## Componentes do frontend
 
