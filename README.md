@@ -59,6 +59,27 @@ A stack de desenvolvimento utiliza bind mounts e mantém hot reload ativo. Os se
 
 Encerre a stack com `docker compose down`. Para remover também os dados locais do PostgreSQL, use explicitamente `docker compose down --volumes`.
 
+## Banco de dados e migrations
+
+A API utiliza TypeORM com PostgreSQL. `DATABASE_URL` é obrigatória, `synchronize` permanece desabilitado e migrations pendentes são executadas automaticamente quando a API inicia.
+
+Com a stack Docker em execução, execute os comandos a partir do root do repositório:
+
+```bash
+# Criar uma migration vazia
+docker compose exec api npm run migration:create -- src/database/migrations/NomeDaMigration
+
+# Gerar uma migration a partir das entities
+docker compose exec api npm run migration:generate -- src/database/migrations/NomeDaMigration
+
+# Executar, listar ou reverter migrations manualmente
+docker compose exec api npm run migration:run
+docker compose exec api npm run migration:show
+docker compose exec api npm run migration:revert
+```
+
+Crie uma nova migration para cada mudança de schema. Não utilize `synchronize` como substituto para migrations.
+
 ## Estrutura
 
 ```text
