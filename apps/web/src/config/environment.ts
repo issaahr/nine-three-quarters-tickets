@@ -31,8 +31,25 @@ function getApiUrl(): string {
   return url.toString().replace(/\/$/, '');
 }
 
+// Exige um booleano explícito para que o frontend não exiba o fluxo por configuração ambígua.
+function getPublicSignupEnabled(): boolean {
+  // O acesso direto permite ao Vite substituir somente esta chave não secreta no build.
+  const configuredValue = import.meta.env.PUBLIC_SIGNUP_ENABLED?.trim();
+
+  if (!configuredValue) {
+    throw new Error('Variável de ambiente pública não definida: PUBLIC_SIGNUP_ENABLED');
+  }
+
+  if (configuredValue !== 'true' && configuredValue !== 'false') {
+    throw new Error('Variável de ambiente pública PUBLIC_SIGNUP_ENABLED deve ser true ou false');
+  }
+
+  return configuredValue === 'true';
+}
+
 export const environment = {
   apiUrl: getApiUrl(),
   // Esta credencial é pública e existe somente para agilizar a avaliação do ambiente demonstrativo.
   demoUsersPassword: getRequiredPublicEnvironmentVariable('VITE_DEMO_USERS_PASSWORD'),
+  publicSignupEnabled: getPublicSignupEnabled(),
 } as const;

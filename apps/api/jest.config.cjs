@@ -3,6 +3,7 @@ process.env.PORT = '3000';
 process.env.JWT_SECRET = 'test-only-jwt-secret-with-at-least-32-bytes';
 process.env.JWT_EXPIRES_IN_SECONDS = '900';
 process.env.CORS_ORIGINS = 'http://localhost:5173';
+process.env.PUBLIC_SIGNUP_ENABLED = 'true';
 
 module.exports = {
   clearMocks: true,

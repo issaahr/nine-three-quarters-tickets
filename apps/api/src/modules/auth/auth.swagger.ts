@@ -4,6 +4,9 @@ import {
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiNotFoundResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
@@ -11,6 +14,29 @@ import { ApplicationErrorResponseDto } from '../../errors/applicationErrorRespon
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
 import { LoginResponseDto } from './dto/loginResponse.dto';
 import { SessionResponseDto } from './dto/sessionResponse.dto';
+import { SignupResponseDto } from './dto/signupResponse.dto';
+
+export function ApiSignup() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Cria uma conta pública de cliente' }),
+    ApiCreatedResponse({
+      type: SignupResponseDto,
+      description: 'Conta CUSTOMER criada sem iniciar uma sessão automaticamente.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Email ou senha inválidos.',
+    }),
+    ApiConflictResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Email já cadastrado.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Cadastro público desabilitado.',
+    }),
+  );
+}
 
 export function ApiLogin() {
   return applyDecorators(

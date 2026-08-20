@@ -24,10 +24,11 @@ Além do banco e dos usuários de demonstração, configure:
 - `JWT_SECRET`: segredo de assinatura do JWT, com pelo menos 32 bytes;
 - `JWT_EXPIRES_IN_SECONDS`: duração do token em segundos;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
+- `PUBLIC_SIGNUP_ENABLED`: habilita (`true`) ou desabilita (`false`) o cadastro público;
 - `VITE_API_URL`: endereço público pelo qual o navegador acessa a API;
 - `VITE_DEMO_USERS_PASSWORD`: senha pública preenchida pelos atalhos de demonstração.
 
-Variáveis com prefixo `VITE_` são incorporadas ao bundle e podem ser inspecionadas no navegador. Nunca utilize esse prefixo em segredos. `VITE_DEMO_USERS_PASSWORD` é intencionalmente pública e deve ser usada somente nas contas demonstrativas.
+Variáveis com prefixo `VITE_` são incorporadas ao bundle e podem ser inspecionadas no navegador. Nunca utilize esse prefixo em segredos. `VITE_DEMO_USERS_PASSWORD` é intencionalmente pública e deve ser usada somente nas contas demonstrativas. A configuração do Vite também expõe exclusivamente `PUBLIC_SIGNUP_ENABLED`, que não contém informação sensível e controla apenas a apresentação do fluxo; a API continua sendo a autoridade da flag.
 
 ## Scripts das aplicações
 
@@ -113,6 +114,10 @@ O login está disponível em `POST /auth/login`. Em caso de sucesso, a resposta 
 O frontend pode restaurar a identidade autenticada por `GET /auth/session`. Uma sessão válida retorna `200` com somente `id` e `role`; cookie ausente ou inválido retorna `204`, pois a ausência de sessão é um resultado esperado dessa consulta. O token continua inacessível ao JavaScript. `POST /auth/logout` encerra a sessão expirando o cookie e pode ser chamado mesmo quando ele já estiver ausente ou inválido.
 
 Em desenvolvimento e testes, o cookie utiliza `SameSite=Lax` sem `Secure` para funcionar em HTTP local. Em produção, utiliza `SameSite=None` e `Secure` para permitir que web e API estejam em sites diferentes. O cliente deve enviar requisições com credenciais e a origem precisa estar declarada em `CORS_ORIGINS`.
+
+Quando `PUBLIC_SIGNUP_ENABLED=true`, `POST /auth/signup` cria exclusivamente uma conta `CUSTOMER` e a tela de login oferece acesso ao formulário público. O cadastro não inicia sessão automaticamente. Alterar a flag exige reiniciar a API e reconstruir ou reiniciar o frontend; com `false`, o frontend remove o fluxo e a API responde que o endpoint está indisponível.
+
+A senha de uma nova conta deve possuir ao menos 8 caracteres e no máximo 72 bytes em UTF-8, limite aplicado antes do hash bcrypt. E-mails duplicados são rejeitados pela constraint do PostgreSQL.
 
 A documentação Swagger da API fica disponível em `http://localhost:3000/docs`.
 

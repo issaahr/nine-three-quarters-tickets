@@ -90,6 +90,22 @@ function getPort(environmentVariables: NodeJS.ProcessEnv): number {
   return port;
 }
 
+// Aceita somente booleanos explícitos para evitar habilitar cadastro público por engano.
+function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolean {
+  const configuredValue = getRequiredEnvironmentVariable(
+    'PUBLIC_SIGNUP_ENABLED',
+    environmentVariables,
+  );
+
+  if (configuredValue !== 'true' && configuredValue !== 'false') {
+    throw new ConfigurationError(
+      'Variável de ambiente PUBLIC_SIGNUP_ENABLED deve ser true ou false',
+    );
+  }
+
+  return configuredValue === 'true';
+}
+
 /**
  * Lê e valida conjuntamente toda configuração exigida pelo servidor HTTP.
  * Configurações exclusivas do banco permanecem separadas para uso pelo CLI de migrations.
@@ -101,6 +117,7 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     environment,
     port: getPort(environmentVariables),
     corsOrigins: getCorsOrigins(environmentVariables),
+    publicSignupEnabled: getPublicSignupEnabled(environmentVariables),
     auth: {
       jwtSecret: getJwtSecret(environmentVariables),
       jwtExpiresInSeconds: getJwtExpiresInSeconds(environmentVariables),

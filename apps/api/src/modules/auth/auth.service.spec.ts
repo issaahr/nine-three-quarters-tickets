@@ -1,15 +1,18 @@
 import { JwtService } from '@nestjs/jwt';
-import { hash } from 'bcrypt';
-import { Repository } from 'typeorm';
+import { compare, hash } from 'bcrypt';
+import { QueryFailedError, Repository } from 'typeorm';
 
 import { User } from '../users/user.entity';
 import { UserRole } from '../users/userRole.enum';
 import { AuthService } from './auth.service';
 import { InvalidCredentialsError } from './errors/invalidCredentials.error';
+import { EmailAlreadyRegisteredError } from './errors/emailAlreadyRegistered.error';
 
 describe('AuthService', () => {
   const usersRepository = {
+    create: jest.fn(),
     findOne: jest.fn(),
+    save: jest.fn(),
   };
   const jwtService = {
     signAsync: jest.fn(),
@@ -31,8 +34,63 @@ describe('AuthService', () => {
   });
 
   beforeEach(() => {
+    usersRepository.create.mockReset();
     usersRepository.findOne.mockReset();
+    usersRepository.save.mockReset();
     jwtService.signAsync.mockReset();
+  });
+
+  it('cadastra uma conta CUSTOMER com senha hasheada e não expõe o hash', async () => {
+    usersRepository.create.mockImplementation((data) => Object.assign(new User(), data));
+    usersRepository.save.mockImplementation((data) =>
+      Promise.resolve(
+        Object.assign(data, {
+          id: '00b6429d-7a09-4e34-8c58-5298617aaadd',
+        }),
+      ),
+    );
+
+    const response = await authService.signup({
+      email: 'new.customer@ntq.local',
+      password: 'valid-password',
+    });
+
+    const createdUser = usersRepository.create.mock.calls[0][0] as Partial<User>;
+
+    expect(createdUser.role).toBe(UserRole.Customer);
+    expect(createdUser.passwordHash).not.toBe('valid-password');
+    await expect(compare('valid-password', createdUser.passwordHash!)).resolves.toBe(true);
+    expect(response).toEqual({
+      id: '00b6429d-7a09-4e34-8c58-5298617aaadd',
+      email: 'new.customer@ntq.local',
+      role: UserRole.Customer,
+    });
+    expect(response).not.toHaveProperty('passwordHash');
+  });
+
+  it('traduz somente a constraint de email duplicado', async () => {
+    const driverError = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+      constraint: 'usersEmailUnique',
+    });
+
+    usersRepository.create.mockImplementation((data) => Object.assign(new User(), data));
+    usersRepository.save.mockRejectedValue(new QueryFailedError('INSERT', [], driverError));
+
+    await expect(
+      authService.signup({ email: 'existing@ntq.local', password: 'valid-password' }),
+    ).rejects.toBeInstanceOf(EmailAlreadyRegisteredError);
+  });
+
+  it('não mascara falhas de persistência desconhecidas como email duplicado', async () => {
+    const databaseError = new Error('database unavailable');
+
+    usersRepository.create.mockImplementation((data) => Object.assign(new User(), data));
+    usersRepository.save.mockRejectedValue(databaseError);
+
+    await expect(
+      authService.signup({ email: 'new.customer@ntq.local', password: 'valid-password' }),
+    ).rejects.toBe(databaseError);
   });
 
   it('consulta o hash explicitamente e retorna uma sessão sem expô-lo', async () => {

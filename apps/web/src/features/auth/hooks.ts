@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-import { fetchSession, loginUser, logoutUser } from './api';
+import { fetchSession, loginUser, logoutUser, signupUser } from './api';
 import { SessionUser } from './types';
 
 const sessionQueryKey = ['auth', 'session'] as const;
@@ -47,5 +47,16 @@ export function useAuth({ restoreSession = true }: UseAuthOptions = {}) {
     isLoggingOut: logoutMutation.isPending,
     loginError: loginMutation.error,
     logoutError: logoutMutation.error,
+  };
+}
+
+/** Expõe o cadastro como mutation independente, pois ele não cria uma sessão. */
+export function useSignup() {
+  const signupMutation = useMutation({ mutationFn: signupUser });
+
+  return {
+    signup: signupMutation.mutateAsync,
+    isSigningUp: signupMutation.isPending,
+    signupError: signupMutation.error,
   };
 }

@@ -8,6 +8,7 @@ describe('loadApplicationConfig', () => {
     CORS_ORIGINS: 'http://localhost:5173, http://localhost:5173',
     JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-bytes',
     JWT_EXPIRES_IN_SECONDS: '900',
+    PUBLIC_SIGNUP_ENABLED: 'true',
   };
 
   it('normaliza valores e configura o cookie para ambiente local', () => {
@@ -17,6 +18,7 @@ describe('loadApplicationConfig', () => {
       environment: 'development',
       port: 3000,
       corsOrigins: ['http://localhost:5173'],
+      publicSignupEnabled: true,
       auth: {
         jwtExpiresInSeconds: 900,
         cookie: {
@@ -26,6 +28,15 @@ describe('loadApplicationConfig', () => {
         },
       },
     });
+  });
+
+  it('desabilita o cadastro público somente com o valor false explícito', () => {
+    const config = loadApplicationConfig({
+      ...validEnvironment,
+      PUBLIC_SIGNUP_ENABLED: 'false',
+    });
+
+    expect(config.publicSignupEnabled).toBe(false);
   });
 
   it('configura cookie cross-site seguro em produção', () => {
@@ -47,6 +58,8 @@ describe('loadApplicationConfig', () => {
     ['CORS_ORIGINS', 'https://app.example.com/path'],
     ['JWT_SECRET', 'short-secret'],
     ['JWT_EXPIRES_IN_SECONDS', '0'],
+    ['PUBLIC_SIGNUP_ENABLED', 'enabled'],
+    ['PUBLIC_SIGNUP_ENABLED', undefined],
   ])('rejeita configuração inválida em %s', (name, value) => {
     expect(() =>
       loadApplicationConfig({

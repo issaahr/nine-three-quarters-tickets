@@ -16,11 +16,14 @@ import { Response } from 'express';
 import { applicationConfig } from '../../config/applicationConfig';
 import { AuthenticatedUser } from './auth.types';
 import { AuthService } from './auth.service';
-import { ApiGetSession, ApiLogin, ApiLogout } from './auth.swagger';
+import { ApiGetSession, ApiLogin, ApiLogout, ApiSignup } from './auth.swagger';
 import { LoginRequestDto } from './dto/loginRequest.dto';
 import { LoginResponseDto } from './dto/loginResponse.dto';
 import { SessionResponseDto } from './dto/sessionResponse.dto';
+import { SignupRequestDto } from './dto/signupRequest.dto';
+import { SignupResponseDto } from './dto/signupResponse.dto';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
+import { PublicSignupGuard } from './guards/publicSignup.guard';
 
 interface AuthenticatedRequest {
   user: AuthenticatedUser | null;
@@ -30,6 +33,13 @@ interface AuthenticatedRequest {
 @Controller('auth')
 export class AuthController {
   public constructor(private readonly authService: AuthService) {}
+
+  @Post('signup')
+  @UseGuards(PublicSignupGuard)
+  @ApiSignup()
+  public signup(@Body() data: SignupRequestDto): Promise<SignupResponseDto> {
+    return this.authService.signup(data);
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)

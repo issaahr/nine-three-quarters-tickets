@@ -7,9 +7,10 @@ import { applicationConfig } from '../../config/applicationConfig';
 import { User } from '../users/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { jwtStrategyName } from './auth.constants';
+import { jwtStrategyName, publicSignupEnabledToken } from './auth.constants';
 import { JwtAuthGuard } from './guards/jwtAuth.guard';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
+import { PublicSignupGuard } from './guards/publicSignup.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
@@ -29,7 +30,18 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, OptionalJwtAuthGuard, RolesGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    OptionalJwtAuthGuard,
+    PublicSignupGuard,
+    RolesGuard,
+    {
+      provide: publicSignupEnabledToken,
+      useValue: applicationConfig.publicSignupEnabled,
+    },
+  ],
   exports: [JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

@@ -12,7 +12,7 @@ import { server } from './test/server';
 const apiUrl = 'http://api.test';
 
 /** Renderiza a aplicação com instâncias isoladas de cache e roteamento para cada cenário. */
-function renderApp(initialPath = '/', sessionUser?: SessionUser) {
+function renderApp(initialPath = '/', sessionUser?: SessionUser, publicSignupEnabled?: boolean) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -27,7 +27,7 @@ function renderApp(initialPath = '/', sessionUser?: SessionUser) {
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialPath]}>
-        <App />
+        <App publicSignupEnabled={publicSignupEnabled} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -186,5 +186,124 @@ describe('fluxo de autenticação', () => {
     await user.click(await screen.findByRole('button', { name: 'Sair' }));
 
     expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+  });
+
+  it('oferece e acessa o cadastro quando a flag está habilitada', async () => {
+    const user = userEvent.setup();
+
+    renderApp('/login', undefined, true);
+    await user.click(await screen.findByRole('link', { name: 'Cadastre-se' }));
+
+    expect(await screen.findByRole('heading', { name: 'Crie sua conta' })).toBeInTheDocument();
+  });
+
+  it('remove o acesso e redireciona a rota de cadastro quando a flag está desabilitada', async () => {
+    renderApp('/signup', undefined, false);
+
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Cadastre-se' })).not.toBeInTheDocument();
+  });
+
+  it('redireciona do cadastro quando a sessão já está conhecida no cache', async () => {
+    renderApp('/signup', { id: 'customer-existing', role: UserRole.Customer }, true);
+
+    expect(await screen.findByText('Sessão autenticada.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Crie sua conta' })).not.toBeInTheDocument();
+  });
+
+  it('valida o cadastro antes de chamar a API e anuncia os erros', async () => {
+    const signupHandler = vi.fn();
+    server.use(
+      http.post(`${apiUrl}/auth/signup`, () => {
+        signupHandler();
+        return HttpResponse.json({});
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderApp('/signup', undefined, true);
+    const signupButton = await screen.findByRole('button', { name: 'Criar conta' });
+    expect(signupButton).toBeDisabled();
+
+    await user.type(screen.getByLabelText('E-mail'), 'invalid-email');
+    await user.type(screen.getByLabelText('Senha', { exact: true }), 'short');
+    await user.type(screen.getByLabelText('Confirme a senha'), 'different');
+
+    expect(await screen.findByText('E-mail inválido')).toBeInTheDocument();
+    expect(screen.getByText('A senha deve ter pelo menos 8 caracteres')).toBeInTheDocument();
+    expect(screen.getByText('As senhas não coincidem')).toBeInTheDocument();
+    expect(screen.getByLabelText('E-mail')).toHaveAttribute(
+      'aria-describedby',
+      'signup-email-error',
+    );
+    expect(screen.getByLabelText('Senha', { exact: true })).toHaveAttribute(
+      'autocomplete',
+      'new-password',
+    );
+    expect(signupButton).toBeDisabled();
+    expect(signupHandler).not.toHaveBeenCalled();
+  });
+
+  it('controla separadamente a visibilidade da senha e da confirmação', async () => {
+    const user = userEvent.setup();
+
+    renderApp('/signup', undefined, true);
+    const password = await screen.findByLabelText('Senha', { exact: true });
+    const passwordConfirmation = screen.getByLabelText('Confirme a senha');
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar confirmação de senha' }));
+
+    expect(password).toHaveAttribute('type', 'password');
+    expect(passwordConfirmation).toHaveAttribute('type', 'text');
+    expect(
+      screen.getByRole('button', { name: 'Ocultar confirmação de senha' }),
+    ).toBeInTheDocument();
+  });
+
+  it('cadastra sem enviar confirmação ou role e direciona ao login', async () => {
+    let requestBody: unknown;
+    server.use(
+      http.post(`${apiUrl}/auth/signup`, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json(
+          {
+            id: 'user-new',
+            email: 'new.customer@example.com',
+            role: UserRole.Customer,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderApp('/signup', undefined, true);
+    await user.type(await screen.findByLabelText('E-mail'), 'NEW.CUSTOMER@EXAMPLE.COM');
+    await user.type(screen.getByLabelText('Senha', { exact: true }), 'valid-password');
+    await user.type(screen.getByLabelText('Confirme a senha'), 'valid-password');
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Conta criada. Entre com suas novas credenciais.',
+    );
+    expect(requestBody).toEqual({
+      email: 'new.customer@example.com',
+      password: 'valid-password',
+    });
+  });
+
+  it('informa quando o email já está cadastrado', async () => {
+    server.use(http.post(`${apiUrl}/auth/signup`, () => new HttpResponse(null, { status: 409 })));
+    const user = userEvent.setup();
+
+    renderApp('/signup', undefined, true);
+    await user.type(await screen.findByLabelText('E-mail'), 'existing@example.com');
+    await user.type(screen.getByLabelText('Senha', { exact: true }), 'valid-password');
+    await user.type(screen.getByLabelText('Confirme a senha'), 'valid-password');
+    await user.click(screen.getByRole('button', { name: 'Criar conta' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Já existe uma conta com este e-mail.',
+    );
   });
 });

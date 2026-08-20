@@ -7,6 +7,9 @@ import { defineConfig } from 'vitest/config';
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  define: {
+    'import.meta.env.PUBLIC_SIGNUP_ENABLED': JSON.stringify('true'),
+  },
   plugins: [react()],
   resolve: {
     alias: {
