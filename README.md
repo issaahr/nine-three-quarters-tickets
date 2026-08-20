@@ -2,6 +2,15 @@
 
 Monorepo da plataforma 9¾ Tickets.
 
+## Documentação
+
+- [Escopo do produto](docs/product-scope.md)
+- [Escopo técnico e invariantes](docs/application-scope.md)
+- [Arquitetura](docs/architecture.md)
+- [Decisões técnicas](docs/technical-decisions.md)
+- [Registros de decisões arquiteturais](docs/adr/)
+- [Identidade visual](docs/ui-desicions.md)
+
 ## Pré-requisitos
 
 - Node.js 22.12 ou mais recente
@@ -141,6 +150,10 @@ Os testes de autenticação exercitam o roteamento, o cache do TanStack Query e 
 ```bash
 npm --prefix apps/web test
 ```
+
+## Integração contínua
+
+O GitHub Actions valida web, API com PostgreSQL e os builds production dos containers em pull requests para `main` e pushes na branch. Os jobs respeitam os lockfiles independentes de cada aplicação, recebem a configuração por GitHub Actions Secrets e não publicam imagens.
 
 ## Componentes do frontend
 

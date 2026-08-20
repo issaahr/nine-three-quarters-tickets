@@ -34,7 +34,7 @@ function renderApp(initialPath = '/', sessionUser?: SessionUser, publicSignupEna
 }
 
 describe('fluxo de autenticação', () => {
-  it('restaura a sessão ao iniciar e apresenta somente id e perfil', async () => {
+  it('restaura a sessão e direciona o cliente sem expor identificador ou email', async () => {
     server.use(
       http.get(`${apiUrl}/auth/session`, () =>
         HttpResponse.json({ id: 'user-1', role: UserRole.Customer }),
@@ -43,9 +43,11 @@ describe('fluxo de autenticação', () => {
 
     renderApp();
 
-    expect(await screen.findByText('Sessão autenticada.')).toBeInTheDocument();
-    expect(screen.getByText('user-1')).toBeInTheDocument();
-    expect(screen.getByText('CUSTOMER')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Seu próximo destino começa aqui' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Sessão autenticada')).toBeInTheDocument();
+    expect(screen.queryByText('user-1')).not.toBeInTheDocument();
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
   });
 
@@ -129,8 +131,10 @@ describe('fluxo de autenticação', () => {
     await user.type(screen.getByLabelText('Senha'), 'demo-password');
     await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
-    expect(await screen.findByText('Sessão autenticada.')).toBeInTheDocument();
-    expect(screen.getByText('user-2')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Seu próximo destino começa aqui' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('user-2')).not.toBeInTheDocument();
     expect(screen.queryByText('customer.one.demo@ntq.local')).not.toBeInTheDocument();
     expect(localStorageSpy).not.toHaveBeenCalled();
     expect(sessionStorageSpy).not.toHaveBeenCalled();
@@ -169,8 +173,8 @@ describe('fluxo de autenticação', () => {
   it('redireciona do login quando a sessão já está conhecida no cache', async () => {
     renderApp('/login', { id: 'user-4', role: UserRole.Gate });
 
-    expect(await screen.findByText('Sessão autenticada.')).toBeInTheDocument();
-    expect(screen.getByText(UserRole.Gate)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Pronto para validar' })).toBeInTheDocument();
+    expect(screen.getAllByText('Portaria').length).toBeGreaterThan(0);
   });
 
   it('encerra a sessão e retorna ao login', async () => {
@@ -207,7 +211,9 @@ describe('fluxo de autenticação', () => {
   it('redireciona do cadastro quando a sessão já está conhecida no cache', async () => {
     renderApp('/signup', { id: 'customer-existing', role: UserRole.Customer }, true);
 
-    expect(await screen.findByText('Sessão autenticada.')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Seu próximo destino começa aqui' }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Crie sua conta' })).not.toBeInTheDocument();
   });
 
@@ -305,5 +311,60 @@ describe('fluxo de autenticação', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Já existe uma conta com este e-mail.',
     );
+  });
+
+  it.each([
+    [UserRole.Customer, 'Seu próximo destino começa aqui', 'Eventos'],
+    [UserRole.Organizer, 'Prepare a próxima sessão', 'Meus eventos'],
+    [UserRole.Gate, 'Pronto para validar', 'Portaria'],
+  ])('apresenta início e navegação coerentes para %s', async (role, heading, navigationLabel) => {
+    renderApp('/', { id: `user-${role}`, role });
+
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+
+    const otherNavigationLabels = ['Eventos', 'Meus eventos', 'Portaria'].filter(
+      (label) => label !== navigationLabel,
+    );
+
+    for (const label of otherNavigationLabels) {
+      expect(screen.queryByRole('link', { name: label })).not.toBeInTheDocument();
+    }
+  });
+
+  it('redireciona uma tentativa de acessar a área de outro papel', async () => {
+    renderApp('/organizer', { id: 'customer-forced-route', role: UserRole.Customer });
+
+    expect(
+      await screen.findByRole('heading', { name: 'Seu próximo destino começa aqui' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Prepare a próxima sessão' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('mantém a superfície operacional da portaria separada da experiência geral', async () => {
+    renderApp('/gate', { id: 'gate-operational', role: UserRole.Gate });
+
+    const main = await screen.findByRole('main');
+
+    expect(main.parentElement).toHaveClass('bg-[#1A0A0D]');
+    expect(screen.getByText('Operação de portaria')).toBeInTheDocument();
+  });
+
+  it('anuncia falha de logout sem remover a sessão conhecida', async () => {
+    server.use(http.post(`${apiUrl}/auth/logout`, () => new HttpResponse(null, { status: 500 })));
+    const user = userEvent.setup();
+
+    renderApp('/organizer', { id: 'organizer-logout-error', role: UserRole.Organizer });
+    await user.click(await screen.findByRole('button', { name: 'Sair' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível encerrar a sessão. Tente novamente.',
+    );
+    expect(screen.getByRole('heading', { name: 'Prepare a próxima sessão' })).toBeInTheDocument();
   });
 });

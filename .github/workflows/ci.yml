@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      VITE_API_URL: ${{ secrets.CI_VITE_API_URL }}
+      VITE_DEMO_USERS_PASSWORD: ${{ secrets.CI_VITE_DEMO_USERS_PASSWORD }}
+      PUBLIC_SIGNUP_ENABLED: ${{ secrets.CI_PUBLIC_SIGNUP_ENABLED }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      NODE_ENV: ${{ secrets.CI_NODE_ENV }}
+      PORT: ${{ secrets.CI_PORT }}
+      POSTGRES_DB: ${{ secrets.CI_POSTGRES_DB }}
+      POSTGRES_USER: ${{ secrets.CI_POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      DEMO_USERS_PASSWORD: ${{ secrets.CI_DEMO_USERS_PASSWORD }}
+      JWT_SECRET: ${{ secrets.CI_JWT_SECRET }}
+      JWT_EXPIRES_IN_SECONDS: ${{ secrets.CI_JWT_EXPIRES_IN_SECONDS }}
+      CORS_ORIGINS: ${{ secrets.CI_CORS_ORIGINS }}
+      PUBLIC_SIGNUP_ENABLED: ${{ secrets.CI_PUBLIC_SIGNUP_ENABLED }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ${{ secrets.CI_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.CI_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.CI_POSTGRES_PASSWORD }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ${{ secrets.CI_POSTGRES_USER }} -d ${{ secrets.CI_POSTGRES_DB }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck tests
+        run: npm run test:typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
+
+  containers:
+    name: Containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - web
+      - api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build API production image
+        run: docker build --target production --tag ntq-api:ci apps/api
+
+      - name: Build web production image
+        run: >-
+          docker build
+          --target production
+          --build-arg VITE_API_URL=${{ secrets.CI_VITE_API_URL }}
+          --build-arg VITE_DEMO_USERS_PASSWORD=${{ secrets.CI_VITE_DEMO_USERS_PASSWORD }}
+          --build-arg PUBLIC_SIGNUP_ENABLED=${{ secrets.CI_PUBLIC_SIGNUP_ENABLED }}
+          --tag ntq-web:ci
+          apps/web
