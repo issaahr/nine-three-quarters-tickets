@@ -94,6 +94,52 @@ describe('POST /auth/login', () => {
     expect(response.body.email).toBe('customer.one.demo@ntq.local');
   });
 
+  it('restaura a identidade da sessão sem expor o token ou o email', async () => {
+    const agent = request.agent(app.getHttpServer());
+    const loginResponse = await agent.post('/auth/login').send({
+      email: 'customer.one.demo@ntq.local',
+      password: process.env.DEMO_USERS_PASSWORD,
+    });
+
+    const response = await agent.get('/auth/session').expect(200);
+
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.body).toEqual({
+      id: loginResponse.body.id,
+      role: UserRole.Customer,
+    });
+    expect(response.body).not.toHaveProperty('email');
+    expect(response.body).not.toHaveProperty('accessToken');
+  });
+
+  it('remove o cookie no logout e invalida a sessão do navegador', async () => {
+    const agent = request.agent(app.getHttpServer());
+
+    await agent
+      .post('/auth/login')
+      .send({
+        email: 'customer.one.demo@ntq.local',
+        password: process.env.DEMO_USERS_PASSWORD,
+      })
+      .expect(200);
+
+    const logoutResponse = await agent.post('/auth/logout').expect(204);
+    const setCookie = logoutResponse.headers['set-cookie'];
+    const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+
+    expect(logoutResponse.headers['cache-control']).toBe('no-store');
+    expect(cookie).toContain('accessToken=;');
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Path=/');
+    expect(cookie).toContain('SameSite=Lax');
+
+    await agent.get('/auth/session').expect(401);
+  });
+
+  it('mantém logout idempotente sem sessão válida', async () => {
+    await request(app.getHttpServer()).post('/auth/logout').expect(204);
+  });
+
   it.each([
     ['customer.one.demo@ntq.local', 'incorrect-password'],
     ['missing@ntq.local', 'incorrect-password'],

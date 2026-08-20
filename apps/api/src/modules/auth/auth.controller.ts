@@ -1,12 +1,29 @@
-import { Body, Controller, Header, HttpCode, HttpStatus, Post, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { AuthenticatedUser } from './auth.types';
 import { AuthService } from './auth.service';
-import { ApiLogin } from './auth.swagger';
+import { ApiGetSession, ApiLogin, ApiLogout } from './auth.swagger';
+import { Auth } from './decorators/auth.decorator';
 import { LoginRequestDto } from './dto/loginRequest.dto';
 import { LoginResponseDto } from './dto/loginResponse.dto';
+import { SessionResponseDto } from './dto/sessionResponse.dto';
+
+interface AuthenticatedRequest {
+  user: AuthenticatedUser;
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -34,5 +51,28 @@ export class AuthController {
     });
 
     return session.user;
+  }
+
+  @Get('session')
+  @Header('Cache-Control', 'no-store')
+  @Auth()
+  @ApiGetSession()
+  public getSession(@Req() request: AuthenticatedRequest): SessionResponseDto {
+    return request.user;
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Header('Cache-Control', 'no-store')
+  @ApiLogout()
+  public logout(@Res({ passthrough: true }) response: Response): void {
+    const { cookie } = applicationConfig.auth;
+
+    response.clearCookie(cookie.name, {
+      httpOnly: cookie.httpOnly,
+      path: cookie.path,
+      sameSite: cookie.sameSite,
+      secure: cookie.secure,
+    });
   }
 }

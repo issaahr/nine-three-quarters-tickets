@@ -1,15 +1,21 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { User } from '../users/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { jwtStrategyName } from './auth.constants';
+import { JwtAuthGuard } from './guards/jwtAuth.guard';
+import { RolesGuard } from './guards/roles.guard';
+import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User]),
+    PassportModule.register({ defaultStrategy: jwtStrategyName, session: false }),
     JwtModule.register({
       secret: applicationConfig.auth.jwtSecret,
       signOptions: {
@@ -22,6 +28,7 @@ import { AuthService } from './auth.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
+  exports: [JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

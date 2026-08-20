@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import cookieParser from 'cookie-parser';
 
 import { AppModule } from './app.module';
 import { applicationConfig } from './config/applicationConfig';
@@ -8,6 +9,7 @@ import { applicationConfig } from './config/applicationConfig';
 export class Application {
   // Aplica os contratos globais compartilhados por todos os endpoints HTTP.
   public configure(app: INestApplication): void {
+    app.use(cookieParser());
     app.useGlobalPipes(
       new ValidationPipe({
         forbidNonWhitelisted: true,

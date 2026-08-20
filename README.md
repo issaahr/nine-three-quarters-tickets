@@ -104,6 +104,8 @@ Todos utilizam a senha definida em `DEMO_USERS_PASSWORD`. Essas contas são dest
 
 O login está disponível em `POST /auth/login`. Em caso de sucesso, a resposta contém somente os dados públicos do usuário e o JWT é enviado no cookie `accessToken`, inacessível a JavaScript por ser `HttpOnly`.
 
+O frontend pode restaurar a identidade autenticada por `GET /auth/session`. A resposta expõe somente `id` e `role`; o token continua inacessível ao JavaScript. `POST /auth/logout` encerra a sessão expirando o cookie e pode ser chamado mesmo quando ele já estiver ausente ou inválido.
+
 Em desenvolvimento e testes, o cookie utiliza `SameSite=Lax` sem `Secure` para funcionar em HTTP local. Em produção, utiliza `SameSite=None` e `Secure` para permitir que web e API estejam em sites diferentes. O cliente deve enviar requisições com credenciais e a origem precisa estar declarada em `CORS_ORIGINS`.
 
 A documentação Swagger da API fica disponível em `http://localhost:3000/docs`.

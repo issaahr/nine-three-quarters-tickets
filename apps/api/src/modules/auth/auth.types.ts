@@ -6,6 +6,11 @@ export interface AccessTokenPayload {
   role: UserRole;
 }
 
+export interface AuthenticatedUser {
+  id: string;
+  role: UserRole;
+}
+
 export interface AuthenticatedSession {
   accessToken: string;
   user: {
