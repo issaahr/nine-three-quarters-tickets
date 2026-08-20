@@ -80,6 +80,19 @@ docker compose exec api npm run migration:revert
 
 Crie uma nova migration para cada mudança de schema. Não utilize `synchronize` como substituto para migrations.
 
+## Usuários de demonstração
+
+A migration de seed cria automaticamente quatro usuários quando é aplicada pela primeira vez:
+
+| Email | Role |
+| --- | --- |
+| `organizer.demo@ntq.local` | `ORGANIZER` |
+| `customer.one.demo@ntq.local` | `CUSTOMER` |
+| `customer.two.demo@ntq.local` | `CUSTOMER` |
+| `gate.demo@ntq.local` | `GATE` |
+
+Todos utilizam a senha definida em `DEMO_USERS_PASSWORD`. Essas contas são destinadas exclusivamente à demonstração; defina a variável no `.env` antes de iniciar um banco novo e não reutilize essa senha em contas reais.
+
 ## Estrutura
 
 ```text

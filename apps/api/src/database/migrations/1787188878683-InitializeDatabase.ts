@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class InitializeDatabase1787185000000 implements MigrationInterface {
-  public readonly name = 'InitializeDatabase1787185000000';
+export class InitializeDatabase1787188878683 implements MigrationInterface {
+  public readonly name = 'InitializeDatabase1787188878683';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');

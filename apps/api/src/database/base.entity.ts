@@ -5,7 +5,7 @@ import { CreateDateColumn, PrimaryGeneratedColumn, UpdateDateColumn } from 'type
  *
  * Esta classe não estende intencionalmente a `BaseEntity` Active Record do TypeORM.
  */
-export abstract class AppBaseEntity {
+export abstract class BaseEntity {
   @PrimaryGeneratedColumn('uuid')
   public id!: string;
 
