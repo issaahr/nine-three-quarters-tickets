@@ -18,6 +18,13 @@ API e web são projetos independentes. Cada aplicação possui seu próprio `pac
 
 Crie `.env` no root a partir de `.env.example` antes de iniciar a API. A aplicação falha na inicialização quando uma variável obrigatória não está definida.
 
+Além do banco e dos usuários de demonstração, configure:
+
+- `NODE_ENV`: ambiente de execução (`development`, `test` ou `production`);
+- `JWT_SECRET`: segredo de assinatura do JWT, com pelo menos 32 bytes;
+- `JWT_EXPIRES_IN_SECONDS`: duração do token em segundos;
+- `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
+
 ## Scripts das aplicações
 
 ```bash
@@ -92,6 +99,27 @@ A migration de seed cria automaticamente quatro usuários quando é aplicada pel
 | `gate.demo@ntq.local` | `GATE` |
 
 Todos utilizam a senha definida em `DEMO_USERS_PASSWORD`. Essas contas são destinadas exclusivamente à demonstração; defina a variável no `.env` antes de iniciar um banco novo e não reutilize essa senha em contas reais.
+
+## Autenticação
+
+O login está disponível em `POST /auth/login`. Em caso de sucesso, a resposta contém somente os dados públicos do usuário e o JWT é enviado no cookie `accessToken`, inacessível a JavaScript por ser `HttpOnly`.
+
+Em desenvolvimento e testes, o cookie utiliza `SameSite=Lax` sem `Secure` para funcionar em HTTP local. Em produção, utiliza `SameSite=None` e `Secure` para permitir que web e API estejam em sites diferentes. O cliente deve enviar requisições com credenciais e a origem precisa estar declarada em `CORS_ORIGINS`.
+
+A documentação Swagger da API fica disponível em `http://localhost:3000/docs`.
+
+## Testes da API
+
+```bash
+npm --prefix apps/api test
+npm --prefix apps/api run test:typecheck
+```
+
+Os testes end-to-end dependem do PostgreSQL e podem ser executados com a stack Docker ativa:
+
+```bash
+docker compose exec api npm run test:e2e
+```
 
 ## Estrutura
 

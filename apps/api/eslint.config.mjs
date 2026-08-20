@@ -15,5 +15,23 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ['test/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.jest,
+        ...globals.node,
+      },
+    },
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
   prettier,
 );

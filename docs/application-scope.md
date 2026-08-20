@@ -173,14 +173,12 @@ Isso não implica uso de Active Record.
 Pode existir uma classe abstrata da aplicação, por exemplo:
 
 ```ts
-abstract class AppBaseEntity {
+abstract class BaseEntity {
   id: string;
   createdAt: Date;
   updatedAt: Date;
 }
 ```
-
-O nome deve evitar confusão com `BaseEntity` do Active Record do TypeORM.
 
 Timestamps semânticos permanecem explícitos nas entidades.
 
@@ -213,7 +211,7 @@ Possíveis candidatos:
 - PaymentRepository
 - TicketRepository
 
-Não existe `BaseRepository` genérico na V1.
+Inicialmente não existe `BaseRepository` genérico na V1.
 
 ---
 
@@ -1572,9 +1570,9 @@ Exemplo:
 
 ```ts
 type CatalogItem = {
-  provider: 'TMDB' | 'TICKETMASTER';
+  provider: "TMDB" | "TICKETMASTER";
   externalId: string;
-  kind: 'MOVIE' | 'SHOW';
+  kind: "MOVIE" | "SHOW";
   title: string;
   description?: string;
   imageUrl?: string;
