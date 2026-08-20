@@ -29,6 +29,36 @@ Cada aplicação possui seus próprios scripts `dev`, `build`, `start`, `lint`, 
 
 Não existe um script para subir web e API juntos. Essa coordenação pertence ao Docker Compose.
 
+## Docker Compose
+
+O fluxo Docker com hot reload é suportado em Linux e WSL2. No WSL2, mantenha o repositório no filesystem Linux, por exemplo em `/home/<usuario>/projetos`, e não em `/mnt/c`, para que os eventos nativos de filesystem sejam propagados corretamente aos containers.
+
+Crie o arquivo de ambiente local antes de subir a stack:
+
+```bash
+cp .env.example .env
+```
+
+No PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Inicie web, API e PostgreSQL:
+
+```bash
+docker compose up --build
+```
+
+A stack de desenvolvimento utiliza bind mounts e mantém hot reload ativo. Os serviços ficam disponíveis em:
+
+- web: `http://localhost:5173`;
+- API: `http://localhost:3000`;
+- PostgreSQL: `localhost:5432`.
+
+Encerre a stack com `docker compose down`. Para remover também os dados locais do PostgreSQL, use explicitamente `docker compose down --volumes`.
+
 ## Estrutura
 
 ```text
