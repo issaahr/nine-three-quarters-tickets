@@ -1,0 +1,91 @@
+# Decisões técnicas do 9¾ Tickets
+
+Este documento reúne decisões aceitas que orientam a implementação corrente. Decisões com alternativas arquiteturais relevantes possuem ADR próprio.
+
+## Repositório e execução
+
+- API e web mantêm dependências, locks e scripts independentes.
+- O root não possui `package.json` nem workspace de package manager.
+- Docker Compose coordena a execução conjunta.
+- O desenvolvimento com bind mount e hot reload é suportado em Linux e WSL2 sobre filesystem Linux.
+- O repositório utiliza LF como fim de linha padrão por meio de `.gitattributes`.
+
+Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
+
+## Configuração
+
+- O `.env` no root é a fonte local de configuração para as duas aplicações e para o Compose.
+- Variáveis obrigatórias não possuem fallback silencioso.
+- A API valida conjuntamente sua configuração HTTP antes de iniciar.
+- A configuração de banco permanece separada porque também é consumida pelo CLI de migrations.
+- Somente variáveis públicas são incorporadas ao bundle do Vite.
+- `PUBLIC_SIGNUP_ENABLED` é exposta explicitamente ao frontend e validada também pela API.
+- Alterar a flag exige reiniciar a API e reconstruir ou reiniciar o frontend.
+
+## Banco de dados
+
+- PostgreSQL 17 é o banco da V1.
+- TypeORM utiliza Data Mapper e `Repository<T>` diretamente quando suficiente.
+- `synchronize` é desabilitado; migrations pendentes executam na inicialização.
+- Timestamps de migrations são produzidos pelos comandos do TypeORM e mantêm ordem cronológica.
+- Constraints do banco protegem invariantes estruturais e concorrentes.
+
+## Autenticação e autorização
+
+- Senhas utilizam bcrypt com custo 12.
+- Cadastro exige entre 8 caracteres e 72 bytes UTF-8 para evitar truncamento silencioso do bcrypt.
+- O access token JWT utiliza HS256, segredo obrigatório com ao menos 32 bytes e expiração configurável.
+- O JWT é enviado somente por cookie HttpOnly; não existe token em `localStorage` nem refresh token na V1.
+- `GET /auth/session` retorna `200` para sessão válida e `204` quando não há sessão, pois ausência de autenticação é um resultado esperado dessa consulta.
+- Login não distingue email inexistente de senha incorreta e mantém custo de bcrypt nos dois casos.
+- Papéis presentes no JWT são validados e a autorização efetiva ocorre em guards da API.
+- CORS e atributos do cookie são derivados de configuração. A política deve ser revisada para a topologia real de produção.
+
+Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
+
+## Cadastro público
+
+- `POST /auth/signup` existe somente quando `PUBLIC_SIGNUP_ENABLED` está habilitada.
+- Cadastro público cria exclusivamente `CUSTOMER`.
+- A confirmação de senha pertence ao formulário e não faz parte do contrato HTTP.
+- O cadastro não inicia sessão automaticamente.
+- A constraint `usersEmailUnique` decide atomicamente duplicidades; não existe read-then-write como autoridade.
+- Com a flag desabilitada, a API retorna recurso indisponível e o frontend remove o acesso ao fluxo.
+
+## Frontend
+
+- React Router organiza rotas públicas, autenticadas e específicas por papel.
+- TanStack Query é o estado remoto da sessão.
+- Axios envia cookies com `withCredentials`.
+- Zod e React Hook Form validam formulários antes do envio; DTOs repetem a validação autoritativa na API.
+- Tailwind CSS 4 fornece tokens e composição visual.
+- Componentes Shadcn no estilo Base Nova são incorporados como código local somente quando existe uso concreto.
+- A navegação por papel no frontend é UX e nunca substitui autorização no backend.
+- CUSTOMER e ORGANIZER usam a superfície clara; GATE usa a superfície escura operacional.
+- Imports diretos são preferidos. Um `index.ts` só deve existir quando houver uma fronteira pública concreta para representar.
+
+## Contratos e documentação de código
+
+- Entidades TypeORM não são contratos HTTP.
+- DTOs públicos possuem validação em runtime e metadados Swagger.
+- Conjuntos de decorators Swagger são compostos fora dos controllers.
+- TSDoc em português documenta intenção, restrições ou efeitos não evidentes; comentários não repetem o código.
+- Interfaces compartilhadas são extraídas quando organizam múltiplos consumidores. Tipos locais ficam próximos do arquivo responsável.
+
+## Testes
+
+- Jest cobre regras e integração da API.
+- Comportamento de PostgreSQL, constraints, transações e concorrência é testado contra PostgreSQL real.
+- Vitest, Testing Library e MSW cobrem fluxo, acessibilidade, roteamento e contratos HTTP do frontend.
+- Mocks não são usados como prova de invariantes que pertencem ao banco.
+
+## Integração contínua
+
+- GitHub Actions valida pull requests para `main` e todo push em `main`.
+- Web e API possuem jobs independentes, cada um com cache baseado no próprio lockfile.
+- O job da API utiliza PostgreSQL 17 real para executar a suíte end-to-end.
+- Builds production dos dois containers são validados somente depois dos jobs das aplicações.
+- A CI utiliza valores concretos e determinísticos exclusivos para teste, definidos no próprio workflow. Nenhuma credencial real ou configuração de deploy é utilizada pelos jobs.
+- Valores destinados exclusivamente ao ambiente de teste não são tratados como GitHub Actions Secrets.
+- A CI não publica imagens e não executa `npm audit` como bloqueio de merge.
+- Hooks locais não são obrigatórios; a CI é a autoridade dos checks exigidos para integração.

@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      VITE_API_URL: http://localhost:3000
+      VITE_DEMO_USERS_PASSWORD: demo-password
+      PUBLIC_SIGNUP_ENABLED: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      NODE_ENV: test
+      PORT: "3000"
+      POSTGRES_DB: nine_three_quarters_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      DATABASE_URL: postgresql://test:test@localhost:5432/nine_three_quarters_test
+      DEMO_USERS_PASSWORD: demo-password
+      JWT_SECRET: ci-test-jwt-secret
+      JWT_EXPIRES_IN_SECONDS: "3600"
+      CORS_ORIGINS: http://localhost:5173
+      PUBLIC_SIGNUP_ENABLED: "false"
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nine_three_quarters_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d nine_three_quarters_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck tests
+        run: npm run test:typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
+
+  containers:
+    name: Containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs:
+      - web
+      - api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build API production image
+        run: docker build --target production --tag ntq-api:ci apps/api
+
+      - name: Build web production image
+        run: >-
+          docker build
+          --target production
+          --build-arg VITE_API_URL=http://localhost:3000
+          --build-arg VITE_DEMO_USERS_PASSWORD=demo-password
+          --build-arg PUBLIC_SIGNUP_ENABLED=false
+          --tag ntq-web:ci
+          apps/web
