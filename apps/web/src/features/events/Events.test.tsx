@@ -207,6 +207,115 @@ describe('catálogo público de eventos', () => {
     expect(screen.getByText('Nenhum assento selecionado.')).toBeInTheDocument();
   });
 
+  it('cria o hold apenas após confirmação da API e atualiza o mapa de assentos', async () => {
+    const reservationHandler = vi.fn();
+    const seatMapHandler = vi.fn(() => HttpResponse.json(seatMap));
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.get(`${apiUrl}/events/${event.id}/seats`, () => seatMapHandler()),
+      http.get(`${apiUrl}/reservations/active`, () => new HttpResponse(null, { status: 204 })),
+      http.post(`${apiUrl}/reservations`, async ({ request }) => {
+        reservationHandler(await request.json());
+        return HttpResponse.json(
+          {
+            id: 'reservation-1',
+            eventId: event.id,
+            expiresAt: '2030-08-25T22:40:00.000Z',
+            items: [{ id: 'item-1', eventSeatId: 'event-seat-1', unitPriceCents: 2590 }],
+          },
+          { status: 201 },
+        );
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Assento A1, disponível' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar assentos' }));
+
+    await waitFor(() =>
+      expect(reservationHandler).toHaveBeenCalledWith({
+        eventId: event.id,
+        eventSeatIds: ['event-seat-1'],
+      }),
+    );
+    expect(
+      await screen.findByText('Reserva criada. Seus assentos estão temporariamente reservados.'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(seatMapHandler.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('informa conflito de assento e busca novamente a disponibilidade autoritativa', async () => {
+    const seatMapHandler = vi.fn(() => HttpResponse.json(seatMap));
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.get(`${apiUrl}/events/${event.id}/seats`, () => seatMapHandler()),
+      http.get(`${apiUrl}/reservations/active`, () => new HttpResponse(null, { status: 204 })),
+      http.post(`${apiUrl}/reservations`, () =>
+        HttpResponse.json({ code: 'SEAT_UNAVAILABLE' }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Assento A1, disponível' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar assentos' }));
+
+    expect(
+      await screen.findByText('Um ou mais assentos ficaram indisponíveis. Revise a seleção.'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(seatMapHandler.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('pede confirmação antes de cancelar a Reservation ACTIVE do CUSTOMER', async () => {
+    const activeReservation = {
+      id: 'reservation-1',
+      eventId: event.id,
+      status: 'ACTIVE',
+      expiresAt: '2030-08-25T22:40:00.000Z',
+      confirmedAt: null,
+      cancelledAt: null,
+      items: [{ id: 'item-1', eventSeatId: 'event-seat-1', unitPriceCents: 2590 }],
+    };
+    const cancelHandler = vi.fn();
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.get(`${apiUrl}/reservations/active`, () => HttpResponse.json(activeReservation)),
+      http.post(`${apiUrl}/reservations/${activeReservation.id}/cancel`, () => {
+        cancelHandler();
+        return HttpResponse.json({ ...activeReservation, status: 'CANCELLED' });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Assento A1, disponível' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar assentos' }));
+    expect(
+      await screen.findByRole('dialog', { name: 'Você já tem uma reserva em andamento' }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancelar reserva em andamento' }));
+    expect(await screen.findByRole('dialog', { name: 'Cancelar reserva?' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+
+    await waitFor(() => expect(cancelHandler).toHaveBeenCalledOnce());
+    expect(
+      await screen.findByText('Reserva cancelada. Os assentos foram liberados.'),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     [EventStatus.Published, true, 'Sessão encerrada', 'Esta sessão já aconteceu'],
     [EventStatus.Cancelled, false, 'Sessão cancelada', 'Esta sessão foi cancelada'],

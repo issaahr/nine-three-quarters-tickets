@@ -5,6 +5,9 @@ import { Link, useParams } from 'react-router-dom';
 
 import { Button, buttonVariants } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
+import { useAuth } from '../../auth/hooks';
+import { UserRole } from '../../auth/types';
+import { useActiveReservation, useReservationMutations } from '../../reservations/hooks';
 import { SeatMap } from '../components/SeatMap';
 import { formatEventDetailDateTime, formatEventPrice } from '../eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../hooks';
@@ -24,13 +27,20 @@ interface LocalSeatSelection {
 /** Representa o snapshot local de uma única ocorrência e seus estados somente de leitura. */
 export function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
+  const { user } = useAuth();
   const query = useEventDetail(eventId);
   const seatMapQuery = useEventSeatMap(eventId, query.data?.admissionMode === AdmissionMode.Seated);
+  const isCustomer = user?.role === UserRole.Customer;
+  const activeReservationQuery = useActiveReservation(eventId, isCustomer);
+  const { create, cancel, isCreating, isCancelling } = useReservationMutations(eventId);
   const [localSelection, setLocalSelection] = useState<LocalSeatSelection>({
     eventId,
     mapUpdatedAt: seatMapQuery.dataUpdatedAt,
     seatIds: [],
   });
+  const [isActiveReservationDialogOpen, setIsActiveReservationDialogOpen] = useState(false);
+  const [isCancelConfirmationOpen, setIsCancelConfirmationOpen] = useState(false);
+  const [reservationFeedback, setReservationFeedback] = useState<string | null>(null);
   const selectedSeatIds =
     localSelection.eventId === eventId && localSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
       ? localSelection.seatIds
@@ -100,6 +110,63 @@ export function EventDetailPage() {
           : [...currentSeatIds, seatId],
       };
     });
+  }
+
+  async function startReservation(): Promise<void> {
+    if (!eventId || selectedSeatIds.length === 0) {
+      return;
+    }
+
+    setReservationFeedback(null);
+    const activeReservationResult = await activeReservationQuery.refetch();
+
+    if (activeReservationResult.data) {
+      setIsActiveReservationDialogOpen(true);
+      return;
+    }
+
+    try {
+      await create({ eventId, eventSeatIds: selectedSeatIds });
+      setLocalSelection({ eventId, mapUpdatedAt: seatMapQuery.dataUpdatedAt, seatIds: [] });
+      setReservationFeedback('Reserva criada. Seus assentos estão temporariamente reservados.');
+    } catch (error) {
+      const code = axios.isAxiosError<{ code?: string }>(error)
+        ? error.response?.data.code
+        : undefined;
+
+      if (code === 'ACTIVE_RESERVATION_EXISTS') {
+        await activeReservationQuery.refetch();
+        setIsActiveReservationDialogOpen(true);
+        return;
+      }
+
+      if (code === 'SEAT_UNAVAILABLE') {
+        setReservationFeedback('Um ou mais assentos ficaram indisponíveis. Revise a seleção.');
+        await seatMapQuery.refetch();
+        return;
+      }
+
+      setReservationFeedback('Não foi possível criar a reserva. Tente novamente.');
+    }
+  }
+
+  async function confirmCancellation(): Promise<void> {
+    const activeReservation = activeReservationQuery.data;
+
+    if (!activeReservation) {
+      return;
+    }
+
+    setReservationFeedback(null);
+    try {
+      await cancel(activeReservation.id);
+      setIsCancelConfirmationOpen(false);
+      setIsActiveReservationDialogOpen(false);
+      setLocalSelection({ eventId, mapUpdatedAt: seatMapQuery.dataUpdatedAt, seatIds: [] });
+      setReservationFeedback('Reserva cancelada. Os assentos foram liberados.');
+    } catch {
+      setReservationFeedback('Não foi possível cancelar a reserva. Tente novamente.');
+    }
   }
 
   return (
@@ -243,10 +310,130 @@ export function EventDetailPage() {
                     A seleção ainda não reserva os assentos.
                   </p>
                 )}
+                {reservationFeedback && (
+                  <p role="status" className="mb-0 mt-3 text-sm text-primary">
+                    {reservationFeedback}
+                  </p>
+                )}
+                {canSelectSeats && isCustomer && activeReservationQuery.data && (
+                  <div className="mt-4 rounded-[4px] border border-primary/20 bg-primary/5 p-4">
+                    <p className="m-0 text-sm font-medium">Você já tem uma reserva em andamento.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsActiveReservationDialogOpen(true)}
+                      className="mt-3 rounded-[4px]"
+                    >
+                      Ver reserva em andamento
+                    </Button>
+                  </div>
+                )}
+                {canSelectSeats && (
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    {isCustomer ? (
+                      <Button
+                        type="button"
+                        disabled={selectedSeatIds.length === 0 || isCreating}
+                        onClick={() => void startReservation()}
+                        className="rounded-[4px]"
+                      >
+                        {isCreating ? 'Reservando...' : 'Reservar assentos'}
+                      </Button>
+                    ) : (
+                      <Link
+                        to="/login"
+                        className={cn(buttonVariants(), 'rounded-[4px] no-underline')}
+                      >
+                        Entre como cliente para reservar
+                      </Link>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
         </section>
+      )}
+
+      {isActiveReservationDialogOpen && activeReservationQuery.data && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="active-reservation-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        >
+          <section className="w-full max-w-md bg-white p-6 shadow-xl sm:p-8">
+            <h2 id="active-reservation-title" className="m-0 font-heading text-3xl font-semibold">
+              Você já tem uma reserva em andamento
+            </h2>
+            <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
+              Ela permanece vinculada à sua conta até o horário informado pela reserva. Não é
+              possível trocar uma reserva ativa por outra automaticamente.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                type="button"
+                onClick={() => {
+                  setLocalSelection({
+                    eventId,
+                    mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+                    seatIds: [],
+                  });
+                  setIsActiveReservationDialogOpen(false);
+                }}
+                className="rounded-[4px]"
+              >
+                Voltar à compra
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setIsCancelConfirmationOpen(true)}
+                className="rounded-[4px]"
+              >
+                Cancelar reserva em andamento
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {isCancelConfirmationOpen && activeReservationQuery.data && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-reservation-title"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        >
+          <section className="w-full max-w-md bg-white p-6 shadow-xl sm:p-8">
+            <h2 id="cancel-reservation-title" className="m-0 font-heading text-3xl font-semibold">
+              Cancelar reserva?
+            </h2>
+            <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
+              Seus assentos serão liberados imediatamente e poderão ser reservados por outra pessoa.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isCancelling}
+                onClick={() => setIsCancelConfirmationOpen(false)}
+                className="rounded-[4px]"
+              >
+                Manter reserva
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isCancelling}
+                onClick={() => void confirmCancellation()}
+                className="rounded-[4px]"
+              >
+                {isCancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
+              </Button>
+            </div>
+          </section>
+        </div>
       )}
     </main>
   );
