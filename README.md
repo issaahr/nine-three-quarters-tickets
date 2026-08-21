@@ -189,3 +189,16 @@ Cada aplicação mantém suas dependências e configurações de TypeScript, ESL
 - não crie packages compartilhados para antecipar reutilização;
 - valide o workspace alterado executando seus próprios scripts `lint`, `format:check` e `build`;
 - não versione arquivos `.env`, credenciais, builds ou dependências instaladas.
+
+## Credits
+
+<p>
+  <img
+    src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_1-5bdc75aaebeb75dc7ae79426ddd9be3b2be1e342510f8202baf6bffa71d7f5c4.svg"
+    alt="TMDB logo"
+    width="40"
+    align="left"
+    hspace="12"
+  />
+  This website uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
+</p>

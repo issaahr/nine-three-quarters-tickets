@@ -49,7 +49,7 @@ apps/api/src/
 └── modules/
     ├── auth/     # login, sessão, cadastro, JWT e autorização
     ├── catalog/  # port de catálogo e adapter da TMDb
-    ├── events/   # ocorrência local, snapshot e horário canônico
+    ├── events/   # ocorrência, publicação e inventário seated materializado
     ├── users/    # entidade User e enum de papéis
     └── venues/   # locais e layouts físicos reutilizáveis
 ```
@@ -82,7 +82,8 @@ apps/web/src/
 ├── config/              # configuração pública validada
 ├── features/
 │   ├── auth/            # contratos, API, hooks e páginas de autenticação
-│   └── navigation/      # shell autenticado e navegação por papel
+│   ├── navigation/      # shell autenticado e navegação por papel
+│   └── organizer/       # catálogo, criação, publicação e contratos do painel
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
 └── test/                # configuração e servidor MSW
 ```
@@ -106,6 +107,8 @@ ProtectedRoute
 `RoleRoute` impede navegação acidental para a área visual de outro papel. Essa proteção é somente UX; cada endpoint de negócio continua responsável por autenticação e autorização na API.
 
 O shell de CUSTOMER e ORGANIZER utiliza a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, sem antecipar seleção de evento ou check-in.
+
+O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 
 ## Fronteiras externas e futuras
 
