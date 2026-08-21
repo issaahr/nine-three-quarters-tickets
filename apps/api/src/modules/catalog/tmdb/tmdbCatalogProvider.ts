@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { applicationConfig } from '../../../config/applicationConfig';
 import { EventCategory } from '../../events/eventCategory.enum';
 import { CatalogItem } from '../catalogItem';
+import { CatalogPage } from '../catalogPage';
 import { CatalogProvider } from '../catalogProvider';
 import { CatalogSource } from '../catalogSource.enum';
 import { CatalogTimeoutError } from '../errors/catalogTimeout.error';
@@ -27,14 +28,46 @@ export class TmdbCatalogProvider implements CatalogProvider {
 
   /**
    * Pesquisa filmes e converte os metadados externos para o contrato neutro do catálogo.
+   *
+   * @param query - Texto de pesquisa validado e normalizado pela API.
+   * @param page - Página solicitada pelo fluxo consumidor.
+   * @returns Página normalizada sem atributos externos de inventário.
    */
-  public async search(query: string): Promise<CatalogItem[]> {
-    const response = await this.request('search/movie', {
+  public search(query: string, page: number): Promise<CatalogPage> {
+    return this.loadMoviePage('search/movie', {
       query,
       include_adult: 'false',
       language: applicationConfig.catalog.tmdb.language,
-      page: '1',
+      page: String(page),
     });
+  }
+
+  /**
+   * Lista filmes populares usando o endpoint paginado oficial da TMDb.
+   *
+   * @param page - Página solicitada pelo fluxo consumidor.
+   * @returns Página normalizada sem atributos externos de inventário.
+   */
+  public listPopular(page: number): Promise<CatalogPage> {
+    return this.loadMoviePage('movie/popular', {
+      include_adult: 'false',
+      language: applicationConfig.catalog.tmdb.language,
+      page: String(page),
+    });
+  }
+
+  /**
+   * Compartilha leitura, validação e normalização entre listas paginadas de filmes.
+   *
+   * @param path - Endpoint relativo da TMDb.
+   * @param parameters - Parâmetros definidos pelo fluxo público correspondente.
+   * @returns Página neutra consumida pela API e pelo frontend.
+   */
+  private async loadMoviePage(
+    path: string,
+    parameters: Record<string, string>,
+  ): Promise<CatalogPage> {
+    const response = await this.request(path, parameters);
     const payload = await this.readJson(response);
 
     if (!this.isMovieSearchResponse(payload)) {
@@ -42,7 +75,7 @@ export class TmdbCatalogProvider implements CatalogProvider {
     }
 
     if (payload.results.length === 0) {
-      return [];
+      return { items: [], page: payload.page, hasMore: false };
     }
 
     const [genreNames, imageBaseUrl] = await Promise.all([
@@ -50,9 +83,13 @@ export class TmdbCatalogProvider implements CatalogProvider {
       payload.results.some(({ poster_path }) => poster_path) ? this.getImageBaseUrl() : undefined,
     ]);
 
-    return payload.results.map((movie) =>
-      this.normalizeSearchResult(movie, genreNames, imageBaseUrl),
-    );
+    return {
+      items: payload.results.map((movie) =>
+        this.normalizeSearchResult(movie, genreNames, imageBaseUrl),
+      ),
+      page: payload.page,
+      hasMore: payload.page < payload.total_pages,
+    };
   }
 
   /**
@@ -251,6 +288,8 @@ export class TmdbCatalogProvider implements CatalogProvider {
   private isMovieSearchResponse(value: unknown): value is TmdbMovieSearchResponse {
     return (
       this.isRecord(value) &&
+      Number.isInteger(value.page) &&
+      Number.isInteger(value.total_pages) &&
       Array.isArray(value.results) &&
       value.results.every((movie) => this.isMovieSearchResult(movie))
     );

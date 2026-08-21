@@ -45,6 +45,8 @@ describe('TmdbCatalogProvider', () => {
   it('pesquisa e normaliza filmes sem importar valores locais de venda', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
+        page: 1,
+        total_pages: 3,
         results: [
           {
             id: 693134,
@@ -58,32 +60,65 @@ describe('TmdbCatalogProvider', () => {
     );
     mockStaticMetadata();
 
-    const result = await new TmdbCatalogProvider().search('Duna & areia');
+    const result = await new TmdbCatalogProvider().search('Duna & areia', 1);
 
-    expect(result).toEqual([
-      {
-        source: CatalogSource.Tmdb,
-        externalId: '693134',
-        category: EventCategory.Movie,
-        title: 'Duna: Parte Dois',
-        description: 'O retorno a Arrakis.',
-        imageUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
-        genres: ['Ficção científica', 'Aventura'],
-      },
-    ]);
-    expect(result[0]).not.toHaveProperty('priceCents');
-    expect(result[0]).not.toHaveProperty('startsAt');
-    expect(result[0]).not.toHaveProperty('capacity');
+    expect(result).toEqual({
+      items: [
+        {
+          source: CatalogSource.Tmdb,
+          externalId: '693134',
+          category: EventCategory.Movie,
+          title: 'Duna: Parte Dois',
+          description: 'O retorno a Arrakis.',
+          imageUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
+          genres: ['Ficção científica', 'Aventura'],
+        },
+      ],
+      page: 1,
+      hasMore: true,
+    });
+    expect(result.items[0]).not.toHaveProperty('priceCents');
+    expect(result.items[0]).not.toHaveProperty('startsAt');
+    expect(result.items[0]).not.toHaveProperty('capacity');
 
     const [url, options] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/search/movie?');
     expect(String(url)).toContain('query=Duna+%26+areia');
     expect(String(url)).toContain('include_adult=false');
     expect(String(url)).toContain('language=pt-BR');
+    expect(String(url)).toContain('page=1');
     expect(options?.headers).toMatchObject({
       Accept: 'application/json',
       Authorization: 'Bearer test-tmdb-token',
     });
+  });
+
+  it('lista filmes populares preservando a paginação normalizada', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        page: 2,
+        total_pages: 2,
+        results: [{ id: 42, title: 'Filme em alta' }],
+      }),
+    );
+
+    await expect(new TmdbCatalogProvider().listPopular(2)).resolves.toEqual({
+      items: [
+        {
+          source: CatalogSource.Tmdb,
+          externalId: '42',
+          category: EventCategory.Movie,
+          title: 'Filme em alta',
+          description: undefined,
+          imageUrl: undefined,
+          genres: [],
+        },
+      ],
+      page: 2,
+      hasMore: false,
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/movie/popular?');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('page=2');
   });
 
   it('normaliza detalhes e representa poster ausente sem URL fabricada', async () => {
@@ -121,6 +156,8 @@ describe('TmdbCatalogProvider', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
+          page: 1,
+          total_pages: 1,
           results: [{ id: 1, title: 'Filme', genre_ids: [12], poster_path: '/poster.jpg' }],
         }),
       )
@@ -135,24 +172,29 @@ describe('TmdbCatalogProvider', () => {
       );
 
     const provider = new TmdbCatalogProvider();
-    await expect(provider.search('Filme')).rejects.toThrow(CatalogUnavailableError);
+    await expect(provider.search('Filme', 1)).rejects.toThrow(CatalogUnavailableError);
 
     fetchMock.mockReset();
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse({
+          page: 1,
+          total_pages: 1,
           results: [{ id: 1, title: 'Filme', genre_ids: [12], poster_path: '/poster.jpg' }],
         }),
       )
       .mockResolvedValueOnce(jsonResponse({ genres: [] }));
-    await expect(provider.search('Filme')).resolves.toHaveLength(1);
+    const result = await provider.search('Filme', 1);
+    expect(result.items).toHaveLength(1);
   });
 
   it('distingue timeout de indisponibilidade e rejeita payload incompatível', async () => {
     fetchMock.mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError'));
-    await expect(new TmdbCatalogProvider().search('Duna')).rejects.toThrow(CatalogTimeoutError);
+    await expect(new TmdbCatalogProvider().search('Duna', 1)).rejects.toThrow(CatalogTimeoutError);
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ results: 'invalid' }));
-    await expect(new TmdbCatalogProvider().search('Duna')).rejects.toThrow(CatalogUnavailableError);
+    await expect(new TmdbCatalogProvider().search('Duna', 1)).rejects.toThrow(
+      CatalogUnavailableError,
+    );
   });
 });

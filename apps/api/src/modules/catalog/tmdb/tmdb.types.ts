@@ -8,6 +8,8 @@ export interface TmdbMovieSearchResult {
 }
 
 export interface TmdbMovieSearchResponse {
+  page: number;
+  total_pages: number;
   results: TmdbMovieSearchResult[];
 }
 

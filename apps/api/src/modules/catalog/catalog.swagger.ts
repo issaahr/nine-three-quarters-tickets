@@ -9,7 +9,7 @@ import {
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
-import { CatalogItemResponseDto } from './dto/catalogItemResponse.dto';
+import { CatalogPageResponseDto } from './dto/catalogPageResponse.dto';
 
 /**
  * Agrupa a documentação HTTP específica da pesquisa de filmes.
@@ -18,13 +18,37 @@ export function ApiSearchMovies() {
   return applyDecorators(
     ApiOperation({ summary: 'Pesquisa filmes no catálogo da TMDb' }),
     ApiOkResponse({
-      type: CatalogItemResponseDto,
-      isArray: true,
+      type: CatalogPageResponseDto,
       description: 'Filmes normalizados sem preço, horário ou inventário externo.',
     }),
     ApiBadRequestResponse({
       type: ValidationErrorResponseDto,
       description: 'Consulta ausente ou inválida.',
+    }),
+    ApiBadGatewayResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'TMDb indisponível ou respondeu em formato incompatível.',
+    }),
+    ApiGatewayTimeoutResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'TMDb excedeu o tempo configurado para resposta.',
+    }),
+  );
+}
+
+/**
+ * Agrupa a documentação HTTP específica da descoberta inicial de filmes.
+ */
+export function ApiListPopularMovies() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Lista filmes populares da TMDb' }),
+    ApiOkResponse({
+      type: CatalogPageResponseDto,
+      description: 'Página de filmes normalizados para seleção pelo organizador.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Página ausente ou inválida.',
     }),
     ApiBadGatewayResponse({
       type: ApplicationErrorResponseDto,

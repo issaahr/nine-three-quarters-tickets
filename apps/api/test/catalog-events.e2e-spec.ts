@@ -34,6 +34,7 @@ describe('catálogo e criação de Event de filme', () => {
   const catalogProvider: CatalogProvider = {
     source: CatalogSource.Tmdb,
     search: jest.fn(),
+    listPopular: jest.fn(),
     findByExternalId: jest.fn(),
   };
 
@@ -55,7 +56,14 @@ describe('catálogo e criação de Event de filme', () => {
   });
 
   beforeEach(() => {
-    jest.mocked(catalogProvider.search).mockReset().mockResolvedValue([movie]);
+    jest
+      .mocked(catalogProvider.search)
+      .mockReset()
+      .mockResolvedValue({ items: [movie], page: 1, hasMore: false });
+    jest
+      .mocked(catalogProvider.listPopular)
+      .mockReset()
+      .mockResolvedValue({ items: [movie], page: 1, hasMore: false });
     jest.mocked(catalogProvider.findByExternalId).mockReset().mockResolvedValue(movie);
   });
 
@@ -85,9 +93,17 @@ describe('catálogo e criação de Event de filme', () => {
       .query({ query: '  Duna  ' })
       .set('Cookie', organizerCookie)
       .expect(200)
-      .expect([movie]);
+      .expect({ items: [movie], page: 1, hasMore: false });
 
-    expect(catalogProvider.search).toHaveBeenCalledWith('Duna');
+    expect(catalogProvider.search).toHaveBeenCalledWith('Duna', 1);
+
+    await request(app.getHttpServer())
+      .get('/catalog/movies/popular')
+      .query({ page: 1 })
+      .set('Cookie', organizerCookie)
+      .expect(200)
+      .expect({ items: [movie], page: 1, hasMore: false });
+    expect(catalogProvider.listPopular).toHaveBeenCalledWith(1);
 
     const customerCookie = await authenticate('customer.one.demo@ntq.local');
     await request(app.getHttpServer())
@@ -101,14 +117,14 @@ describe('catálogo e criação de Event de filme', () => {
     const cookie = await authenticate('organizer.demo@ntq.local');
     const response = await request(app.getHttpServer())
       .get('/catalog/movies')
-      .query({ query: ' ', page: 2 })
+      .query({ query: ' ', page: 0 })
       .set('Cookie', cookie)
       .expect(400);
 
     expect(response.body.message).toEqual(
       expect.arrayContaining([
         'Busca deve possuir ao menos 2 caracteres',
-        'property page should not exist',
+        'Página deve ser maior ou igual a 1',
       ]),
     );
     expect(catalogProvider.search).not.toHaveBeenCalled();

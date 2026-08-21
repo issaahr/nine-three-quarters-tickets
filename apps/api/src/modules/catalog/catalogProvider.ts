@@ -1,4 +1,5 @@
 import { CatalogItem } from './catalogItem';
+import { CatalogPage } from './catalogPage';
 import { CatalogSource } from './catalogSource.enum';
 
 /**
@@ -14,9 +15,18 @@ export interface CatalogProvider {
    * Pesquisa conteúdo usando uma consulta já validada pelo fluxo consumidor.
    *
    * @param query - Texto normalizado que será interpretado pelo provider externo.
-   * @returns Itens normalizados; uma lista vazia representa uma pesquisa sem resultados.
+   * @param page - Página externa solicitada, iniciada em um.
+   * @returns Página de itens normalizados e indicação de continuidade.
    */
-  search(query: string): Promise<CatalogItem[]>;
+  search(query: string, page: number): Promise<CatalogPage>;
+
+  /**
+   * Lista filmes populares para preencher a descoberta inicial do organizador.
+   *
+   * @param page - Página externa solicitada, iniciada em um.
+   * @returns Página de itens normalizados e indicação de continuidade.
+   */
+  listPopular(page: number): Promise<CatalogPage>;
 
   /**
    * Recupera novamente o conteúdo pela identidade externa para que a API não
