@@ -1,17 +1,9 @@
+import { AdmissionMode, EventCategory } from '../events/types';
+
 export enum EventStatus {
   Draft = 'DRAFT',
   Published = 'PUBLISHED',
   Cancelled = 'CANCELLED',
-}
-
-export enum EventCategory {
-  Movie = 'MOVIE',
-  Show = 'SHOW',
-}
-
-export enum AdmissionMode {
-  Seated = 'SEATED',
-  GeneralAdmission = 'GENERAL_ADMISSION',
 }
 
 export interface CatalogItem {

@@ -2,6 +2,7 @@ import { CalendarDays, MapPin } from 'lucide-react';
 
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
+import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { EventStatus, OrganizerEvent } from '../types';
 
 const statusLabels: Record<EventStatus, string> = {
@@ -20,37 +21,6 @@ interface OrganizerEventCardProps {
   event: OrganizerEvent;
   onPublish: (eventId: string) => void;
   isPublishing: boolean;
-}
-
-/**
- * Formata a ocorrência no timezone canônico do Venue, nunca no timezone do navegador.
- *
- * @param startsAt - Instante persistido pela API.
- * @param timeZone - Identificador IANA do Venue.
- * @returns Data e horário localizados para apresentação no painel.
- */
-function formatEventDateTime(startsAt: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone,
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-    .format(new Date(startsAt))
-    .replace(',', ' ·');
-}
-
-/**
- * Apresenta o preço inteiro persistido pela API como moeda brasileira.
- *
- * @param priceCents - Preço em centavos.
- * @returns Valor formatado em reais.
- */
-function formatPrice(priceCents: number): string {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-    priceCents / 100,
-  );
 }
 
 /**
@@ -97,7 +67,7 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
           {statusLabels[event.status]}
         </span>
         <p className="m-0 font-mono text-sm font-medium text-foreground lg:my-1">
-          {formatPrice(event.priceCents)}
+          {formatEventPrice(event.priceCents)}
         </p>
         {isDraft && (
           <Button

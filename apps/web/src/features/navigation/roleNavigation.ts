@@ -11,7 +11,7 @@ interface RoleNavigation {
 const navigationByRole = {
   [UserRole.Customer]: {
     label: 'Cliente',
-    homePath: '/customer',
+    homePath: '/events',
     homeLabel: 'Eventos',
     operational: false,
   },

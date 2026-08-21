@@ -4,6 +4,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/ui/button';
 import { useAuth } from '../../auth/hooks';
 import { getRoleNavigation } from '../roleNavigation';
+import { BrandLink } from './BrandLink';
 
 export function AuthenticatedLayout() {
   const navigate = useNavigate();
@@ -41,25 +42,10 @@ export function AuthenticatedLayout() {
         }
       >
         <div className="flex min-h-[68px] w-full flex-wrap items-center justify-between gap-x-5 gap-y-3 px-4 py-3 sm:px-6 lg:px-12 2xl:px-16">
-          <NavLink
+          <BrandLink
             to={navigation.homePath}
-            className="inline-flex flex-col items-center gap-[5px] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-secondary"
-            aria-label={`9¾ Tickets — início da área de ${navigation.label.toLowerCase()}`}
-          >
-            <span className="flex items-baseline gap-[9px]">
-              <span className="font-heading text-[24px] font-semibold leading-none text-primary-foreground">
-                9¾
-              </span>
-              <span className="text-[10px] font-medium tracking-[2.4px] text-primary-foreground">
-                TICKETS
-              </span>
-            </span>
-            <span className="flex gap-[4px]" aria-hidden="true">
-              {Array.from({ length: 8 }, (_, index) => (
-                <span key={index} className="size-[2.5px] rounded-full bg-secondary" />
-              ))}
-            </span>
-          </NavLink>
+            ariaLabel={`9¾ Tickets — início da área de ${navigation.label.toLowerCase()}`}
+          />
 
           <div className="flex items-center gap-2 sm:gap-5">
             <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">

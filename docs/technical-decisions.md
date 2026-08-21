@@ -89,7 +89,7 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 
 - React Router organiza rotas públicas, autenticadas e específicas por papel.
 - TanStack Query é o estado remoto da sessão.
-- `useInfiniteQuery` coordena a paginação do catálogo do organizador sem duplicar páginas em estado local.
+- `useInfiniteQuery` coordena a paginação incremental dos catálogos público e do organizador sem duplicar páginas em estado local.
 - Axios envia cookies com `withCredentials`.
 - Zod e React Hook Form validam formulários antes do envio; DTOs repetem a validação autoritativa na API.
 - Tailwind CSS 4 fornece tokens e composição visual.

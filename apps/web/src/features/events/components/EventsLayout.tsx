@@ -1,0 +1,89 @@
+import { LogOut } from 'lucide-react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+
+import { Button } from '../../../components/ui/button';
+import { useAuth } from '../../auth/hooks';
+import { BrandLink } from '../../navigation/components/BrandLink';
+import { getRoleNavigation } from '../../navigation/roleNavigation';
+
+/** Mantém o catálogo público disponível enquanto a sessão opcional é restaurada em segundo plano. */
+export function EventsLayout() {
+  const navigate = useNavigate();
+  const { user, isLoading, sessionError, logout, isLoggingOut, logoutError } = useAuth();
+  const navigation = user ? getRoleNavigation(user.role) : undefined;
+  const areaPath = navigation?.homePath ?? '/events';
+  const hasDedicatedArea = areaPath !== '/events';
+
+  async function handleLogout(): Promise<void> {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch {
+      // A falha é anunciada sem retirar o catálogo público da tela.
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="bg-secondary-foreground">
+        <div className="flex min-h-[68px] w-full flex-wrap items-center justify-between gap-x-5 gap-y-3 px-4 py-3 sm:px-6 lg:px-12 2xl:px-16">
+          <BrandLink to="/events" ariaLabel="9¾ Tickets — catálogo de eventos" />
+
+          <div className="flex items-center gap-2 sm:gap-5">
+            {user && (
+              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">
+                {navigation?.label}
+              </span>
+            )}
+            <nav aria-label="Navegação principal">
+              <NavLink
+                to={user && hasDedicatedArea ? areaPath : '/events'}
+                end
+                className={({ isActive }) =>
+                  `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
+                    isActive
+                      ? 'text-primary-foreground'
+                      : 'text-[#C9BBA6] hover:text-primary-foreground'
+                  }`
+                }
+              >
+                {user && hasDedicatedArea ? navigation?.homeLabel : 'Eventos'}
+              </NavLink>
+            </nav>
+
+            {user ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isLoggingOut}
+                onClick={() => void handleLogout()}
+                className="h-8 rounded-[4px] border-[#6B5636] bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-[#3A1A20] hover:text-primary-foreground"
+              >
+                <LogOut aria-hidden="true" />
+                <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
+              </Button>
+            ) : (
+              <NavLink
+                to={isLoading || sessionError ? '/' : '/login'}
+                className="rounded-[4px] border border-[#6B5636] px-3 py-2 text-[12px] text-primary-foreground transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+              >
+                {isLoading || sessionError ? 'Minha área' : 'Entrar'}
+              </NavLink>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {logoutError && (
+        <div
+          role="alert"
+          className="bg-destructive/10 px-4 py-2 text-center text-[13px] text-destructive"
+        >
+          Não foi possível encerrar a sessão. Tente novamente.
+        </div>
+      )}
+
+      <Outlet />
+    </div>
+  );
+}
