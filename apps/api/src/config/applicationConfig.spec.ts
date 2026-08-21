@@ -9,6 +9,10 @@ describe('loadApplicationConfig', () => {
     JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-bytes',
     JWT_EXPIRES_IN_SECONDS: '900',
     PUBLIC_SIGNUP_ENABLED: 'true',
+    TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
+    TMDB_LANGUAGE: 'pt-BR',
+    TMDB_REQUEST_TIMEOUT_MS: '5000',
+    TMDB_POSTER_SIZE: 'w500',
   };
 
   it('normaliza valores e configura o cookie para ambiente local', () => {
@@ -19,6 +23,13 @@ describe('loadApplicationConfig', () => {
       port: 3000,
       corsOrigins: ['http://localhost:5173'],
       publicSignupEnabled: true,
+      catalog: {
+        tmdb: {
+          language: 'pt-BR',
+          requestTimeoutMs: 5000,
+          posterSize: 'w500',
+        },
+      },
       auth: {
         jwtExpiresInSeconds: 900,
         cookie: {
@@ -60,6 +71,10 @@ describe('loadApplicationConfig', () => {
     ['JWT_EXPIRES_IN_SECONDS', '0'],
     ['PUBLIC_SIGNUP_ENABLED', 'enabled'],
     ['PUBLIC_SIGNUP_ENABLED', undefined],
+    ['TMDB_API_READ_ACCESS_TOKEN', undefined],
+    ['TMDB_LANGUAGE', 'portuguese'],
+    ['TMDB_REQUEST_TIMEOUT_MS', '0'],
+    ['TMDB_POSTER_SIZE', 'large'],
   ])('rejeita configuração inválida em %s', (name, value) => {
     expect(() =>
       loadApplicationConfig({

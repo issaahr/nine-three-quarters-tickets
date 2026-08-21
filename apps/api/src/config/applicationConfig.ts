@@ -4,7 +4,9 @@ import { getRequiredEnvironmentVariable } from './environment';
 const supportedEnvironments = ['development', 'test', 'production'] as const;
 type RuntimeEnvironment = (typeof supportedEnvironments)[number];
 
-// Restringe comportamentos dependentes do ambiente aos modos suportados pela aplicação.
+/**
+ * Restringe comportamentos dependentes do ambiente aos modos suportados pela aplicação.
+ */
 function getRuntimeEnvironment(environmentVariables: NodeJS.ProcessEnv): RuntimeEnvironment {
   const environment = getRequiredEnvironmentVariable('NODE_ENV', environmentVariables);
 
@@ -53,7 +55,9 @@ function getCorsOrigins(environmentVariables: NodeJS.ProcessEnv): string[] {
   return [...new Set(normalizedOrigins)];
 }
 
-// Impede que uma chave HS256 claramente curta seja aceita por engano.
+/**
+ * Impede que uma chave HS256 claramente curta seja aceita por engano.
+ */
 function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
   const secret = getRequiredEnvironmentVariable('JWT_SECRET', environmentVariables);
 
@@ -64,7 +68,9 @@ function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
   return secret;
 }
 
-// Garante que a duração possa ser usada diretamente na assinatura e no cookie.
+/**
+ * Garante que a duração possa ser usada diretamente na assinatura e no cookie.
+*/
 function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number {
   const expiresInSeconds = Number(
     getRequiredEnvironmentVariable('JWT_EXPIRES_IN_SECONDS', environmentVariables),
@@ -79,7 +85,9 @@ function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number
   return expiresInSeconds;
 }
 
-// Converte a porta uma única vez antes da criação da aplicação Nest.
+/**
+ * Converte a porta uma única vez antes da criação da aplicação Nest.
+ */
 function getPort(environmentVariables: NodeJS.ProcessEnv): number {
   const port = Number(getRequiredEnvironmentVariable('PORT', environmentVariables));
 
@@ -90,7 +98,9 @@ function getPort(environmentVariables: NodeJS.ProcessEnv): number {
   return port;
 }
 
-// Aceita somente booleanos explícitos para evitar habilitar cadastro público por engano.
+/**
+ * Aceita somente booleanos explícitos para evitar habilitar cadastro público por engano.
+ */
 function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolean {
   const configuredValue = getRequiredEnvironmentVariable(
     'PUBLIC_SIGNUP_ENABLED',
@@ -107,6 +117,56 @@ function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolea
 }
 
 /**
+ * Mantém a credencial da TMDb obrigatória e exclusivamente no backend.
+ */
+function getTmdbAccessToken(environmentVariables: NodeJS.ProcessEnv): string {
+  return getRequiredEnvironmentVariable('TMDB_API_READ_ACCESS_TOKEN', environmentVariables);
+}
+
+/**
+ * Restringe o idioma ao formato regional aceito pelas consultas utilizadas na V1.
+ */
+function getTmdbLanguage(environmentVariables: NodeJS.ProcessEnv): string {
+  const language = getRequiredEnvironmentVariable('TMDB_LANGUAGE', environmentVariables);
+
+  if (!/^[a-z]{2}-[A-Z]{2}$/.test(language)) {
+    throw new ConfigurationError('Variável de ambiente TMDB_LANGUAGE inválida');
+  }
+
+  return language;
+}
+
+/**
+ * Impede que uma integração externa permaneça aguardando indefinidamente.
+ */
+function getTmdbRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv): number {
+  const timeout = Number(
+    getRequiredEnvironmentVariable('TMDB_REQUEST_TIMEOUT_MS', environmentVariables),
+  );
+
+  if (!Number.isInteger(timeout) || timeout <= 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente TMDB_REQUEST_TIMEOUT_MS deve ser um inteiro positivo',
+    );
+  }
+
+  return timeout;
+}
+
+/**
+ * Aceita somente tamanhos de imagem reconhecíveis pela configuração da TMDb.
+ */
+function getTmdbPosterSize(environmentVariables: NodeJS.ProcessEnv): string {
+  const posterSize = getRequiredEnvironmentVariable('TMDB_POSTER_SIZE', environmentVariables);
+
+  if (!/^w\d+$|^original$/.test(posterSize)) {
+    throw new ConfigurationError('Variável de ambiente TMDB_POSTER_SIZE inválida');
+  }
+
+  return posterSize;
+}
+
+/**
  * Lê e valida conjuntamente toda configuração exigida pelo servidor HTTP.
  * Configurações exclusivas do banco permanecem separadas para uso pelo CLI de migrations.
  */
@@ -118,6 +178,14 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     port: getPort(environmentVariables),
     corsOrigins: getCorsOrigins(environmentVariables),
     publicSignupEnabled: getPublicSignupEnabled(environmentVariables),
+    catalog: {
+      tmdb: {
+        accessToken: getTmdbAccessToken(environmentVariables),
+        language: getTmdbLanguage(environmentVariables),
+        requestTimeoutMs: getTmdbRequestTimeoutMs(environmentVariables),
+        posterSize: getTmdbPosterSize(environmentVariables),
+      },
+    },
     auth: {
       jwtSecret: getJwtSecret(environmentVariables),
       jwtExpiresInSeconds: getJwtExpiresInSeconds(environmentVariables),

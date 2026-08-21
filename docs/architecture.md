@@ -48,7 +48,10 @@ apps/api/src/
 ├── errors/       # contrato comum de erros controlados
 └── modules/
     ├── auth/     # login, sessão, cadastro, JWT e autorização
-    └── users/    # entidade User e enum de papéis
+    ├── catalog/  # port de catálogo e adapter da TMDb
+    ├── events/   # ocorrência local, snapshot e horário canônico
+    ├── users/    # entidade User e enum de papéis
+    └── venues/   # locais e layouts físicos reutilizáveis
 ```
 
 Cada módulo de domínio deve manter próximos os seus contratos HTTP, entidades, regras e erros. Uma pasta de módulo não precisa conter controller, service ou repository próprios quando não existir comportamento que os justifique.
@@ -104,9 +107,10 @@ ProtectedRoute
 
 O shell de CUSTOMER e ORGANIZER utiliza a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, sem antecipar seleção de evento ou check-in.
 
-## Fronteiras futuras já decididas
+## Fronteiras externas e futuras
 
-- TMDb e Ticketmaster serão ports de catálogo; seus dados nunca serão inventário.
+- A TMDb implementa a port `CatalogProvider`; sua resposta é normalizada antes de alcançar Events e nunca fornece inventário ou dados locais de venda.
+- Ticketmaster implementará a mesma fronteira quando o fluxo de shows entrar no escopo de implementação.
 - O gateway de pagamento será uma fronteira substituível, inicialmente simulada.
 - Socket.IO atualizará percepção de disponibilidade, sem autoridade transacional.
 - Módulos futuros devem seguir as entidades e invariantes de `application-scope.md`, sem introduzir abstrações genéricas de inventário.

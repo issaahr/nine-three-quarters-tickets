@@ -34,10 +34,16 @@ Além do banco e dos usuários de demonstração, configure:
 - `JWT_EXPIRES_IN_SECONDS`: duração do token em segundos;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
 - `PUBLIC_SIGNUP_ENABLED`: habilita (`true`) ou desabilita (`false`) o cadastro público;
+- `TMDB_API_READ_ACCESS_TOKEN`: token Bearer mantido exclusivamente no backend;
+- `TMDB_LANGUAGE`: idioma regional das respostas da TMDb, como `pt-BR`;
+- `TMDB_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada externa;
+- `TMDB_POSTER_SIZE`: tamanho de poster exigido da configuração da TMDb, como `w500`;
 - `VITE_API_URL`: endereço público pelo qual o navegador acessa a API;
 - `VITE_DEMO_USERS_PASSWORD`: senha pública preenchida pelos atalhos de demonstração.
 
 Variáveis com prefixo `VITE_` são incorporadas ao bundle e podem ser inspecionadas no navegador. Nunca utilize esse prefixo em segredos. `VITE_DEMO_USERS_PASSWORD` é intencionalmente pública e deve ser usada somente nas contas demonstrativas. A configuração do Vite também expõe exclusivamente `PUBLIC_SIGNUP_ENABLED`, que não contém informação sensível e controla apenas a apresentação do fluxo; a API continua sendo a autoridade da flag.
+
+O token de leitura pode ser obtido nas configurações de API de uma conta da TMDb. Ele não utiliza prefixo `VITE_`, não é enviado ao navegador e não deve ser versionado.
 
 ## Scripts das aplicações
 

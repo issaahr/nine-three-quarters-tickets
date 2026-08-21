@@ -30,6 +30,17 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - Timestamps de migrations são produzidos pelos comandos do TypeORM e mantêm ordem cronológica.
 - Constraints do banco protegem invariantes estruturais e concorrentes.
 
+## Catálogo e horário de Events
+
+- A API autentica na TMDb com API Read Access Token em Bearer; a credencial nunca é exposta ao frontend.
+- `TmdbCatalogProvider` utiliza o `fetch` nativo do Node e normaliza respostas externas para `CatalogItem`.
+- Gêneros e configuração de imagens são mantidos apenas em cache de processo e uma falha não permanece cacheada.
+- A criação de filme recebe somente identidade externa e dados locais; o snapshot é reconstruído pela API antes de persistir o Event.
+- Chamadas externas não ocorrem dentro de transações PostgreSQL.
+- Horários informados pelo organizador são interpretados no timezone IANA do Venue por `@js-temporal/polyfill`.
+- Horários locais inexistentes ou ambíguos em transições de offset são rejeitados em vez de ajustados silenciosamente.
+- Testes e CI substituem a port de catálogo e não dependem da disponibilidade real da TMDb.
+
 ## Autenticação e autorização
 
 - Senhas utilizam bcrypt com custo 12.

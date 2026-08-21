@@ -21,6 +21,7 @@
     "migration:show": "npm run typeorm -- migration:show -d src/database/dataSource.ts"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
     "@nestjs/common": "11.2.1",
     "@nestjs/core": "11.2.1",
     "@nestjs/jwt": "11.0.2",
