@@ -1,10 +1,6 @@
-import { AdmissionMode, EventCategory } from '../events/types';
+import { AdmissionMode, EventCategory, EventStatus } from '../events/types';
 
-export enum EventStatus {
-  Draft = 'DRAFT',
-  Published = 'PUBLISHED',
-  Cancelled = 'CANCELLED',
-}
+export { EventStatus } from '../events/types';
 
 export interface CatalogItem {
   source: string;

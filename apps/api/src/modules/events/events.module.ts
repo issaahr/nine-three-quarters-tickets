@@ -10,6 +10,7 @@ import { EventSeat } from './eventSeat.entity';
 import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { OrganizerEventsController } from './organizerEvents.controller';
+import { EventRepository } from './repositories/event.repository';
 
 @Module({
   imports: [
@@ -18,6 +19,6 @@ import { OrganizerEventsController } from './organizerEvents.controller';
     CatalogModule,
   ],
   controllers: [EventsController, OrganizerEventsController],
-  providers: [EventsService],
+  providers: [EventsService, EventRepository],
 })
 export class EventsModule {}

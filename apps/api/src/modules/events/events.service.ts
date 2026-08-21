@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, DataSource, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 import { catalogProviderToken } from '../catalog/catalog.constants';
 import { CatalogProvider } from '../catalog/catalogProvider';
@@ -21,15 +21,9 @@ import { EventNotFoundError } from './errors/eventNotFound.error';
 import { InvalidEventDiscoveryPeriodError } from './errors/invalidEventDiscoveryPeriod.error';
 import { VenueHasNoSeatsError } from './errors/venueHasNoSeats.error';
 import { VenueNotFoundError } from './errors/venueNotFound.error';
+import { EventRepository } from './repositories/event.repository';
+import { EventDiscoveryPage, PublicEventDetail } from './repositories/eventRepository.interfaces';
 import { venueLocalDateTimeToDate } from './time/venueLocalDateTime';
-
-const eventDiscoveryPageSize = 12;
-
-interface EventDiscoveryPage {
-  events: Event[];
-  page: number;
-  hasMore: boolean;
-}
 
 @Injectable()
 export class EventsService {
@@ -38,6 +32,7 @@ export class EventsService {
     private readonly eventsRepository: Repository<Event>,
     @InjectRepository(Venue)
     private readonly venuesRepository: Repository<Venue>,
+    private readonly eventRepository: EventRepository,
     @Inject(catalogProviderToken)
     private readonly catalogProvider: CatalogProvider,
     private readonly dataSource: DataSource,
@@ -118,71 +113,24 @@ export class EventsService {
       throw new InvalidEventDiscoveryPeriodError();
     }
 
-    const queryBuilder = this.eventsRepository
-      .createQueryBuilder('event')
-      .innerJoinAndSelect('event.venue', 'venue')
-      .where('"event"."status" = :publishedStatus', {
-        publishedStatus: EventStatus.Published,
-      })
-      .andWhere('"event"."startsAt" > CURRENT_TIMESTAMP');
+    return this.eventRepository.discover(filters);
+  }
 
-    if (filters.query) {
-      const searchPattern = `%${this.escapeLikePattern(filters.query)}%`;
+  /**
+   * Carrega uma ocorrência pública sem consultar novamente o catálogo externo.
+   * DRAFT permanece indistinguível de um identificador inexistente e o PostgreSQL determina se o início passou.
+   *
+   * @param eventId - Identificador público da ocorrência.
+   * @returns Event com Venue e seu estado temporal no instante da consulta.
+   */
+  public async findPublicDetail(eventId: string): Promise<PublicEventDetail> {
+    const detail = await this.eventRepository.findPublicDetail(eventId);
 
-      queryBuilder.andWhere(
-        new Brackets((search) => {
-          search
-            .where('"event"."title" ILIKE :searchPattern', { searchPattern })
-            .orWhere('COALESCE("event"."description", \'\') ILIKE :searchPattern');
-        }),
-      );
+    if (!detail) {
+      throw new EventNotFoundError();
     }
 
-    if (filters.category) {
-      queryBuilder.andWhere('"event"."category" = :category', {
-        category: filters.category,
-      });
-    }
-
-    if (filters.genre) {
-      queryBuilder.andWhere(
-        'EXISTS (SELECT 1 FROM unnest("event"."genres") AS "eventGenre" WHERE LOWER("eventGenre") = LOWER(:genre))',
-        { genre: filters.genre },
-      );
-    }
-
-    if (filters.city) {
-      queryBuilder.andWhere('LOWER("venue"."city") = LOWER(:city)', { city: filters.city });
-    }
-
-    if (filters.dateFrom) {
-      queryBuilder.andWhere(
-        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date >= CAST(:dateFrom AS date)',
-        { dateFrom: filters.dateFrom },
-      );
-    }
-
-    if (filters.dateTo) {
-      queryBuilder.andWhere(
-        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date <= CAST(:dateTo AS date)',
-        { dateTo: filters.dateTo },
-      );
-    }
-
-    const offset = (filters.page - 1) * eventDiscoveryPageSize;
-    const events = await queryBuilder
-      .orderBy('event.startsAt', 'ASC')
-      .addOrderBy('event.id', 'ASC')
-      .skip(offset)
-      .take(eventDiscoveryPageSize + 1)
-      .getMany();
-    const hasMore = events.length > eventDiscoveryPageSize;
-
-    return {
-      events: hasMore ? events.slice(0, eventDiscoveryPageSize) : events,
-      page: filters.page,
-      hasMore,
-    };
+    return detail;
   }
 
   /**
@@ -241,15 +189,5 @@ export class EventsService {
       event.status = EventStatus.Published;
       return eventsRepository.save(event);
     });
-  }
-
-  /**
-   * Escapa curingas do `ILIKE` para que o texto informado seja pesquisado literalmente.
-   *
-   * @param value - Busca já normalizada pelo DTO.
-   * @returns Padrão seguro para inclusão entre curingas controlados pela aplicação.
-   */
-  private escapeLikePattern(value: string): string {
-    return value.replace(/[\\%_]/g, '\\$&');
   }
 }

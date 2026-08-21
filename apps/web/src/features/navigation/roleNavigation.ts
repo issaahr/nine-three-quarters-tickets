@@ -1,11 +1,5 @@
 import { UserRole } from '../auth/types';
-
-interface RoleNavigation {
-  label: string;
-  homePath: string;
-  homeLabel: string;
-  operational: boolean;
-}
+import { RoleNavigation } from './navigation.interfaces';
 
 /** Mantém destino e nomenclatura de cada papel alinhados entre rotas e navbar. */
 const navigationByRole = {

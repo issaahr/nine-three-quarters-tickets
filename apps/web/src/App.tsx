@@ -6,6 +6,7 @@ import { Login } from './features/auth/pages/Login';
 import { Signup } from './features/auth/pages/Signup';
 import { EventsLayout } from './features/events/components/EventsLayout';
 import { EventCatalog } from './features/events/pages/EventCatalog';
+import { EventDetailPage } from './features/events/pages/EventDetailPage';
 import { AuthenticatedLayout } from './features/navigation/components/AuthenticatedLayout';
 import { RoleHomeRedirect } from './features/navigation/components/RoleHomeRedirect';
 import { RoleRoute } from './features/navigation/components/RoleRoute';
@@ -32,6 +33,7 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
 
       <Route element={<EventsLayout />}>
         <Route path="/events" element={<EventCatalog />} />
+        <Route path="/events/:eventId" element={<EventDetailPage />} />
       </Route>
 
       <Route element={<ProtectedRoute />}>

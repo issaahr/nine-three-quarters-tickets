@@ -18,8 +18,14 @@ import { UserRole } from '../users/userRole.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
+import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
-import { ApiCreateMovieEvent, ApiDiscoverEvents, ApiPublishEvent } from './events.swagger';
+import {
+  ApiCreateMovieEvent,
+  ApiDiscoverEvents,
+  ApiGetEventDetail,
+  ApiPublishEvent,
+} from './events.swagger';
 import { EventsService } from './events.service';
 
 @ApiTags('Events')
@@ -37,6 +43,18 @@ export class EventsController {
   ): Promise<EventDiscoveryPageResponseDto> {
     const result = await this.eventsService.discover(query);
     return EventDiscoveryPageResponseDto.fromEvents(result.events, result.page, result.hasMore);
+  }
+
+  /**
+   * Retorna uma única ocorrência pública, inclusive quando passada ou cancelada.
+   */
+  @Get(':eventId')
+  @ApiGetEventDetail()
+  public async findPublicDetail(
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
+  ): Promise<EventDetailResponseDto> {
+    const result = await this.eventsService.findPublicDetail(eventId);
+    return EventDetailResponseDto.fromPublicEvent(result.event, result.isPast);
   }
 
   /**

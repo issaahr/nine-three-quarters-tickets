@@ -13,6 +13,7 @@ import {
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
 import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
+import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
 import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
 
@@ -28,6 +29,27 @@ export function ApiDiscoverEvents() {
     }),
     ApiBadRequestResponse({
       description: 'Busca, filtros, período ou página inválidos.',
+    }),
+  );
+}
+
+/**
+ * Agrupa a documentação HTTP da leitura pública de uma ocorrência.
+ */
+export function ApiGetEventDetail() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Consulta uma ocorrência pública pelo identificador' }),
+    ApiOkResponse({
+      type: EventDetailResponseDto,
+      description: 'Conteúdo persistido, estado e horário local de uma única ocorrência.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Identificador inválido.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event inexistente ou ainda em DRAFT.',
     }),
   );
 }

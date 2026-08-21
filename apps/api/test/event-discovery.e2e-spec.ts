@@ -163,6 +163,36 @@ describe('descoberta pública de Events', () => {
   });
 
   it.each([
+    [EventStatus.Published, new Date('2099-08-01T10:30:00.000Z'), false],
+    [EventStatus.Published, new Date('2020-08-01T10:30:00.000Z'), true],
+    [EventStatus.Cancelled, new Date('2099-08-01T10:30:00.000Z'), false],
+  ])('lê uma ocorrência %s preservando seu estado temporal', async (status, startsAt, isPast) => {
+    const event = await createEvent({ status, startsAt, title: `Detalhe ${status} ${isPast}` });
+
+    const response = await request(app.getHttpServer()).get(`/events/${event.id}`).expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        id: event.id,
+        status,
+        isPast,
+        venueTimeZone: venue.timeZone,
+        priceCents: event.priceCents,
+      }),
+    );
+    expect(response.body).not.toHaveProperty('externalId');
+    expect(response.body).not.toHaveProperty('organizerId');
+  });
+
+  it('mantém DRAFT indisponível na leitura pública', async () => {
+    const draft = await createEvent({ status: EventStatus.Draft });
+
+    const response = await request(app.getHttpServer()).get(`/events/${draft.id}`).expect(404);
+
+    expect(response.body).toEqual(expect.objectContaining({ code: 'EVENT_NOT_FOUND' }));
+  });
+
+  it.each([
     [{ category: 'INVALID' }, 'Categoria inválida'],
     [{ dateFrom: '2099-02-31' }, 'Data inicial deve representar uma data válida'],
     [{ dateFrom: '01/06/2099' }, 'Data inicial deve usar o formato YYYY-MM-DD'],

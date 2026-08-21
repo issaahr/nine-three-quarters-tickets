@@ -8,6 +8,12 @@ export enum AdmissionMode {
   GeneralAdmission = 'GENERAL_ADMISSION',
 }
 
+export enum EventStatus {
+  Draft = 'DRAFT',
+  Published = 'PUBLISHED',
+  Cancelled = 'CANCELLED',
+}
+
 export interface EventDiscoveryItem {
   id: string;
   title: string;
@@ -27,6 +33,11 @@ export interface EventDiscoveryPage {
   items: EventDiscoveryItem[];
   page: number;
   hasMore: boolean;
+}
+
+export interface EventDetail extends EventDiscoveryItem {
+  status: EventStatus;
+  isPast: boolean;
 }
 
 export interface EventDiscoveryFilters {

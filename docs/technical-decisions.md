@@ -58,6 +58,7 @@ Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
 - A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro.
+- `GET /events/:eventId` admite `PUBLISHED` passados e `CANCELLED`, responde como não encontrado para DRAFT e recebe `isPast` calculado pelo PostgreSQL.
 - A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
 - Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
 - Filtros de calendário comparam cada ocorrência segundo o timezone IANA de seu Venue.

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { SessionUser, UserRole } from './features/auth/types';
+import { getRoleNavigation } from './features/navigation/roleNavigation';
 import { server } from './test/server';
 
 const apiUrl = 'http://api.test';
@@ -57,24 +58,26 @@ describe('fluxo de autenticação', () => {
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
   });
 
-  it('redireciona para o login quando a sessão não existe', async () => {
+  it('mantém a home pública disponível quando a sessão não existe', async () => {
     server.use(http.get(`${apiUrl}/auth/session`, () => new HttpResponse(null, { status: 204 })));
 
     renderApp();
 
-    expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
   });
 
-  it('não interpreta uma falha técnica como logout', async () => {
+  it('não bloqueia a home pública quando a restauração da sessão falha', async () => {
     server.use(http.get(`${apiUrl}/auth/session`, () => new HttpResponse(null, { status: 500 })));
 
     renderApp();
 
     expect(
-      await screen.findByText(
-        'Não foi possível consultar sua sessão. Tente novamente em instantes.',
-      ),
+      await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Minha área' })).toHaveAttribute('href', '/');
     expect(screen.queryByRole('heading', { name: 'Bem-vindo de volta' })).not.toBeInTheDocument();
   });
 
@@ -324,7 +327,7 @@ describe('fluxo de autenticação', () => {
     [UserRole.Organizer, 'Meus eventos', 'Meus eventos'],
     [UserRole.Gate, 'Pronto para validar', 'Portaria'],
   ])('apresenta início e navegação coerentes para %s', async (role, heading, navigationLabel) => {
-    renderApp('/', { id: `user-${role}`, role });
+    renderApp(getRoleNavigation(role).homePath, { id: `user-${role}`, role });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(

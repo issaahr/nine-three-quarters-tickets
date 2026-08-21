@@ -7,7 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../App';
 import { server } from '../../test/server';
-import { AdmissionMode, EventCategory, EventDiscoveryItem } from './types';
+import {
+  AdmissionMode,
+  EventCategory,
+  EventDetail,
+  EventDiscoveryItem,
+  EventStatus,
+} from './types';
 
 const apiUrl = 'http://api.test';
 const event: EventDiscoveryItem = {
@@ -25,14 +31,20 @@ const event: EventDiscoveryItem = {
   venueTimeZone: 'America/Fortaleza',
 };
 
-function renderCatalog() {
+const eventDetail: EventDetail = {
+  ...event,
+  status: EventStatus.Published,
+  isPast: false,
+};
+
+function renderEvents(initialPath = '/events') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/events']}>
+      <MemoryRouter initialEntries={[initialPath]}>
         <App />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -57,12 +69,16 @@ beforeEach(() => {
 
 describe('catálogo público de eventos', () => {
   it('apresenta um Event publicado sem exigir autenticação', async () => {
-    renderCatalog();
+    renderEvents();
 
     expect(
       await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
     ).toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: event.title })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: `Ver detalhes de ${event.title}` })).toHaveAttribute(
+      'href',
+      `/events/${event.id}`,
+    );
     expect(screen.getByText('R$ 25,90')).toBeInTheDocument();
     expect(screen.getByText('Cine Imperial · Fortaleza')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
@@ -77,7 +93,7 @@ describe('catálogo público de eventos', () => {
       }),
     );
     const user = userEvent.setup();
-    renderCatalog();
+    renderEvents();
 
     await screen.findByRole('heading', { name: 'Nenhum evento disponível' });
     await user.type(screen.getByLabelText('Buscar'), '  cinema   clássico  ');
@@ -97,7 +113,7 @@ describe('catálogo público de eventos', () => {
       http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
     );
     const user = userEvent.setup();
-    renderCatalog();
+    renderEvents();
 
     await screen.findByRole('heading', { name: 'Nenhum evento disponível' });
     await user.type(screen.getByLabelText('Gênero'), 'Jazz');
@@ -106,5 +122,56 @@ describe('catálogo público de eventos', () => {
     expect(
       await screen.findByRole('heading', { name: 'Nenhum evento corresponde aos filtros' }),
     ).toBeInTheDocument();
+  });
+
+  it('abre uma única ocorrência com conteúdo local, Venue e preço claros', async () => {
+    server.use(http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)));
+
+    renderEvents(`/events/${event.id}`);
+
+    expect(await screen.findByRole('heading', { name: event.title })).toBeInTheDocument();
+    expect(screen.getByText(event.description!)).toBeInTheDocument();
+    expect(screen.getByText(event.venueName)).toBeInTheDocument();
+    expect(screen.getByText(event.venueCity)).toBeInTheDocument();
+    expect(screen.getByText('R$ 25,90')).toBeInTheDocument();
+    expect(screen.getByText('Animação · Fantasia')).toBeInTheDocument();
+    expect(screen.queryByText(/não aceita novas compras/i)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [EventStatus.Published, true, 'Sessão encerrada', 'Esta sessão já aconteceu'],
+    [EventStatus.Cancelled, false, 'Sessão cancelada', 'Esta sessão foi cancelada'],
+  ])(
+    'impede início de compra na leitura %s com isPast=%s',
+    async (status, isPast, label, message) => {
+      server.use(
+        http.get(`${apiUrl}/events/${event.id}`, () =>
+          HttpResponse.json({ ...eventDetail, status, isPast }),
+        ),
+      );
+
+      renderEvents(`/events/${event.id}`);
+
+      expect(await screen.findByText(label)).toHaveAttribute('role', 'status');
+      expect(screen.getByText(new RegExp(message))).toHaveTextContent('não aceita novas compras');
+    },
+  );
+
+  it('representa como indisponível um DRAFT ou identificador inexistente', async () => {
+    server.use(
+      http.get(`${apiUrl}/events/${event.id}`, () =>
+        HttpResponse.json({ code: 'EVENT_NOT_FOUND' }, { status: 404 }),
+      ),
+    );
+
+    renderEvents(`/events/${event.id}`);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sessão não encontrada' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Voltar aos eventos' })).toHaveAttribute(
+      'href',
+      '/events',
+    );
   });
 });
