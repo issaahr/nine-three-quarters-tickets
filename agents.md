@@ -52,6 +52,14 @@ Do not introduce `EventSector`, grouped sessions, generic inventory abstractions
 
 For complete product and technical rules, read the canonical documentation instead of inferring them from this file.
 
+The API and Web are independent applications. Keep their `package.json`, lockfile, dependencies, scripts, and TypeScript configuration separate. Do not introduce shared workspace packages or cross-application dependency coupling unless a concrete issue requires it.
+
+Docker Compose coordinates the applications together in local development and deployment workflows. Root-level setup must not recreate that coordination with a shared package or orchestration script.
+
+The supported development hot-reload workflow is Linux/WSL-oriented. Do not add Windows-specific polling or watcher configuration unless an issue explicitly requires cross-platform support.
+
+Repository text files use LF line endings by default; preserve the `.gitattributes` policy when adding or generating files.
+
 ---
 
 ## Implementation discipline
@@ -66,7 +74,11 @@ Do not add dependencies without a concrete current requirement.
 
 Prefer explicit, testable code over architectural ceremony.
 
-Do not create interfaces, repositories, strategies, use-case layers, or other abstractions by default.
+Do not create interfaces, repositories, strategies, use-case layers, or other abstractions by default. When a reusable domain contract is justified, keep its interfaces in a dedicated `*.interfaces.ts` file, even when the file contains only one interface. Component-local `Props` contracts may remain next to their component.
+
+Use enums for finite domain values such as roles, statuses, categories, and modes. Do not scatter authoritative domain strings through entities, services, controllers, or UI logic.
+
+Treat Copilot-generated issue details as proposals, not scope authority. Remove speculative requirements and implement only the acceptance criteria and documented decisions that belong to the current issue.
 
 ---
 
@@ -110,6 +122,8 @@ Do not modify an existing committed migration unless the issue explicitly requir
 
 Prefer creating a new migration when evolving an existing schema.
 
+Generate migrations with the configured TypeORM commands. Do not hand-randomize migration timestamps or class names; migration ordering must remain deterministic.
+
 Database constraints that protect domain invariants should be represented explicitly in migrations.
 
 Destructive schema changes must be explicit and must account for existing data.
@@ -145,6 +159,10 @@ Local development and tests must provide their required configuration explicitly
 Example environment files may document required variable names but must not contain real secrets.
 
 Never commit credentials or secrets.
+
+The Compose environment flow should use the project environment file configuration (`env_file`) rather than redeclaring each variable inline. Fixed development ports may remain declared in Compose.
+
+Demo-only credentials may be documented when they are intentionally public for evaluator access and are isolated from production configuration. They must never be reused or treated as production secrets.
 
 ---
 
@@ -207,6 +225,8 @@ Good candidates include:
 
 Prefer documenting intent, invariants, constraints, and reasons.
 
+Write project comments and TSDoc in Portuguese. Use `//` for a short contextual note and a multiline `/** ... */` block for functions, methods, and contracts that need more explanation. Add `@param` and `@returns` only when they clarify a non-obvious contract.
+
 Do not add comments that merely restate the code.
 
 ---
@@ -250,6 +270,8 @@ Unit tests remain appropriate for pure rules and deterministic helpers.
 
 See `docs/application-scope.md` for the complete list of critical scenarios.
 
+For implementation work, it is acceptable to defer the full test suite until the end of the change when intermediate execution would add noise; the final validation remains required. Do not expand the issue into an npm vulnerability audit unless explicitly requested.
+
 ---
 
 ## Working with an issue
@@ -278,6 +300,8 @@ An implementation is not complete until:
 - required environment configuration is documented and validated;
 - no out-of-scope functionality was introduced;
 - unrelated files were not changed without a concrete reason.
+
+For the public customer experience, the canonical discovery route is `/events`. The catalog may render anonymously; optional session restoration must not block the catalog or turn an expected anonymous session into a console-level application error. Authenticated users should still be redirected to their role area when entering through authentication flows.
 
 ---
 
