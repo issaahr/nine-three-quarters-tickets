@@ -8,6 +8,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { environment } from '../../../config/environment';
+import { getRoleNavigation } from '../../navigation/roleNavigation';
 import { AuthPageLayout } from '../components/AuthPageLayout';
 import { useAuth } from '../hooks';
 import { LoginFormValues, loginSchema } from '../schemas';
@@ -43,7 +44,7 @@ function getLoginErrorMessage(error: unknown): string | null {
 }
 
 export function Login({ publicSignupEnabled }: LoginProps) {
-  const { login, isLoggingIn, loginError, isAuthenticated } = useAuth({
+  const { user, login, isLoggingIn, loginError, isAuthenticated } = useAuth({
     restoreSession: false,
   });
   const navigate = useNavigate();
@@ -68,10 +69,10 @@ export function Login({ publicSignupEnabled }: LoginProps) {
   });
 
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/');
+    if (isAuthenticated && user) {
+      navigate(getRoleNavigation(user.role).homePath);
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, user]);
 
   // Consome o flash de cadastro para que ele não reapareça após recarregar a página.
   useEffect(() => {
@@ -82,8 +83,8 @@ export function Login({ publicSignupEnabled }: LoginProps) {
 
   const onSubmit = async (data: LoginFormValues) => {
     try {
-      await login(data);
-      navigate('/');
+      const authenticatedUser = await login(data);
+      navigate(getRoleNavigation(authenticatedUser.role).homePath);
     } catch {
       // A mensagem correspondente é obtida do estado da mutation.
     }

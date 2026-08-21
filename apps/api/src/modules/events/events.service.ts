@@ -9,6 +9,7 @@ import { Venue } from '../venues/venue.entity';
 import { VenueSeat } from '../venues/venueSeat.entity';
 import { AdmissionMode } from './admissionMode.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
+import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
 import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
 import { EventSeat } from './eventSeat.entity';
@@ -17,8 +18,11 @@ import { CatalogItemNotFoundError } from './errors/catalogItemNotFound.error';
 import { EventCannotBePublishedError } from './errors/eventCannotBePublished.error';
 import { EventMustStartInFutureError } from './errors/eventMustStartInFuture.error';
 import { EventNotFoundError } from './errors/eventNotFound.error';
+import { InvalidEventDiscoveryPeriodError } from './errors/invalidEventDiscoveryPeriod.error';
 import { VenueHasNoSeatsError } from './errors/venueHasNoSeats.error';
 import { VenueNotFoundError } from './errors/venueNotFound.error';
+import { EventRepository } from './repositories/event.repository';
+import { EventDiscoveryPage, PublicEventDetail } from './repositories/eventRepository.interfaces';
 import { venueLocalDateTimeToDate } from './time/venueLocalDateTime';
 
 @Injectable()
@@ -28,6 +32,7 @@ export class EventsService {
     private readonly eventsRepository: Repository<Event>,
     @InjectRepository(Venue)
     private readonly venuesRepository: Repository<Venue>,
+    private readonly eventRepository: EventRepository,
     @Inject(catalogProviderToken)
     private readonly catalogProvider: CatalogProvider,
     private readonly dataSource: DataSource,
@@ -94,6 +99,38 @@ export class EventsService {
       relations: { venue: true },
       order: { startsAt: 'DESC' },
     });
+  }
+
+  /**
+   * Descobre ocorrências públicas futuras usando somente o snapshot persistido localmente.
+   * Datas de calendário são comparadas no timezone canônico de cada Venue.
+   *
+   * @param filters - Busca, filtros e página validados pelo contrato HTTP.
+   * @returns Página ordenada e indicação de continuidade para carregamento infinito.
+   */
+  public async discover(filters: DiscoverEventsQueryDto): Promise<EventDiscoveryPage> {
+    if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
+      throw new InvalidEventDiscoveryPeriodError();
+    }
+
+    return this.eventRepository.discover(filters);
+  }
+
+  /**
+   * Carrega uma ocorrência pública sem consultar novamente o catálogo externo.
+   * DRAFT permanece indistinguível de um identificador inexistente e o PostgreSQL determina se o início passou.
+   *
+   * @param eventId - Identificador público da ocorrência.
+   * @returns Event com Venue e seu estado temporal no instante da consulta.
+   */
+  public async findPublicDetail(eventId: string): Promise<PublicEventDetail> {
+    const detail = await this.eventRepository.findPublicDetail(eventId);
+
+    if (!detail) {
+      throw new EventNotFoundError();
+    }
+
+    return detail;
   }
 
   /**

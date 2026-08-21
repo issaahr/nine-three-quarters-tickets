@@ -1,4 +1,4 @@
-import { Check, Column, Entity, JoinColumn, ManyToOne, Relation } from 'typeorm';
+import { Check, Column, Entity, Index, JoinColumn, ManyToOne, Relation } from 'typeorm';
 
 import { BaseEntity } from '../../database/base.entity';
 import { CatalogSource } from '../catalog/catalogSource.enum';
@@ -21,6 +21,7 @@ import { EventStatus } from './eventStatus.enum';
    ("admissionMode" = '${AdmissionMode.GeneralAdmission}' AND "capacity" IS NOT NULL AND "capacity" > 0)`,
 )
 @Check('eventsPriceCentsNonNegative', '"priceCents" >= 0')
+@Index('eventsDiscoveryStatusStartsAtIndex', ['status', 'startsAt'])
 export class Event extends BaseEntity {
   @Column({ type: 'uuid' })
   public organizerId!: string;

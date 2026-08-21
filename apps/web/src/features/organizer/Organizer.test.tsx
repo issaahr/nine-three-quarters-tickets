@@ -7,8 +7,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../App';
 import { UserRole } from '../auth/types';
+import { AdmissionMode, EventCategory } from '../events/types';
 import { server } from '../../test/server';
-import { AdmissionMode, EventCategory, EventStatus } from './types';
+import { EventStatus } from './types';
 
 const apiUrl = 'http://api.test';
 const organizer = { id: 'organizer-1', role: UserRole.Organizer };

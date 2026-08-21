@@ -54,6 +54,16 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 
 Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.md).
 
+## Descoberta pública de Events
+
+- `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
+- A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro.
+- `GET /events/:eventId` admite `PUBLISHED` passados e `CANCELLED`, responde como não encontrado para DRAFT e recebe `isPast` calculado pelo PostgreSQL.
+- A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
+- Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
+- Filtros de calendário comparam cada ocorrência segundo o timezone IANA de seu Venue.
+- A ordenação por `startsAt` e `id` mantém páginas determinísticas dentro do modelo simples baseado em offset.
+
 ## Autenticação e autorização
 
 - Senhas utilizam bcrypt com custo 12.
@@ -80,7 +90,7 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 
 - React Router organiza rotas públicas, autenticadas e específicas por papel.
 - TanStack Query é o estado remoto da sessão.
-- `useInfiniteQuery` coordena a paginação do catálogo do organizador sem duplicar páginas em estado local.
+- `useInfiniteQuery` coordena a paginação incremental dos catálogos público e do organizador sem duplicar páginas em estado local.
 - Axios envia cookies com `withCredentials`.
 - Zod e React Hook Form validam formulários antes do envio; DTOs repetem a validação autoritativa na API.
 - Tailwind CSS 4 fornece tokens e composição visual.

@@ -82,8 +82,9 @@ apps/web/src/
 ├── config/              # configuração pública validada
 ├── features/
 │   ├── auth/            # contratos, API, hooks e páginas de autenticação
-│   ├── navigation/      # shell autenticado e navegação por papel
-│   └── organizer/       # catálogo, criação, publicação e contratos do painel
+│   ├── events/          # descoberta pública, filtros e apresentação de ocorrências
+│   ├── navigation/      # shells e navegação por papel
+│   └── organizer/       # catálogo externo, criação, publicação e contratos do painel
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
 └── test/                # configuração e servidor MSW
 ```
@@ -99,16 +100,18 @@ O fluxo de navegação autenticada é:
 ```text
 ProtectedRoute
   └── RoleHomeRedirect
-      ├── CUSTOMER  → /customer
+      ├── CUSTOMER  → /events
       ├── ORGANIZER → /organizer
       └── GATE      → /gate
 ```
 
 `RoleRoute` impede navegação acidental para a área visual de outro papel. Essa proteção é somente UX; cada endpoint de negócio continua responsável por autenticação e autorização na API.
 
-O shell de CUSTOMER e ORGANIZER utiliza a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, sem antecipar seleção de evento ou check-in.
+O catálogo em `/events` é público e restaura a sessão apenas para adaptar sua navegação, sem bloquear a descoberta anônima. CUSTOMER e ORGANIZER utilizam a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, sem antecipar seleção de evento ou check-in.
 
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
+
+A descoberta pública consulta `GET /events` sem acessar novamente o catálogo externo. A API retorna somente ocorrências `PUBLISHED` e futuras, usando o snapshot persistido no Event e o Venue associado para busca, filtros e apresentação canônica. A leitura direta por `GET /events/:eventId` também admite ocorrências passadas e `CANCELLED`, mantém DRAFT indistinguível de um recurso inexistente e deriva `isPast` no PostgreSQL.
 
 ## Fronteiras externas e futuras
 

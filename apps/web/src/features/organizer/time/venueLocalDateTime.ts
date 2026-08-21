@@ -1,8 +1,4 @@
-export interface VenueLocalDateTimeMinimum {
-  date: string;
-  time: string;
-  value: string;
-}
+import { VenueLocalDateTimeMinimum } from './venueLocalDateTime.interfaces';
 
 /**
  * Produz o primeiro minuto futuro selecionável no timezone canônico do Venue.
