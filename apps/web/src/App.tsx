@@ -13,6 +13,7 @@ import { RoleRoute } from './features/navigation/components/RoleRoute';
 import { GateHome } from './features/navigation/pages/GateHome';
 import { CreateMovieEvent } from './features/organizer/pages/CreateMovieEvent';
 import { OrganizerHome } from './features/organizer/pages/OrganizerHome';
+import { ReservationCheckoutPage } from './features/reservations/pages/ReservationCheckoutPage';
 import { UserRole } from './features/auth/types';
 
 interface AppProps {
@@ -40,6 +41,10 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
         <Route element={<AuthenticatedLayout />}>
           <Route element={<RoleRoute allowedRole={UserRole.Customer} />}>
             <Route path="/customer" element={<Navigate replace to="/events" />} />
+            <Route
+              path="/customer/reservations/:reservationId"
+              element={<ReservationCheckoutPage />}
+            />
           </Route>
 
           <Route element={<RoleRoute allowedRole={UserRole.Organizer} />}>

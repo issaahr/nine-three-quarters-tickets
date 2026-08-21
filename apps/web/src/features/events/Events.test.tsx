@@ -210,6 +210,12 @@ describe('catálogo público de eventos', () => {
   it('cria o hold apenas após confirmação da API e atualiza o mapa de assentos', async () => {
     const reservationHandler = vi.fn();
     const seatMapHandler = vi.fn(() => HttpResponse.json(seatMap));
+    const createdReservation = {
+      id: 'reservation-1',
+      eventId: event.id,
+      expiresAt: '2030-08-25T22:40:00.000Z',
+      items: [{ id: 'item-1', eventSeatId: 'event-seat-1', unitPriceCents: 2590 }],
+    };
     server.use(
       http.get(`${apiUrl}/auth/session`, () =>
         HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
@@ -217,17 +223,17 @@ describe('catálogo público de eventos', () => {
       http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
       http.get(`${apiUrl}/events/${event.id}/seats`, () => seatMapHandler()),
       http.get(`${apiUrl}/reservations/active`, () => new HttpResponse(null, { status: 204 })),
+      http.get(`${apiUrl}/reservations/${createdReservation.id}`, () =>
+        HttpResponse.json({
+          ...createdReservation,
+          status: 'ACTIVE',
+          confirmedAt: null,
+          cancelledAt: null,
+        }),
+      ),
       http.post(`${apiUrl}/reservations`, async ({ request }) => {
         reservationHandler(await request.json());
-        return HttpResponse.json(
-          {
-            id: 'reservation-1',
-            eventId: event.id,
-            expiresAt: '2030-08-25T22:40:00.000Z',
-            items: [{ id: 'item-1', eventSeatId: 'event-seat-1', unitPriceCents: 2590 }],
-          },
-          { status: 201 },
-        );
+        return HttpResponse.json(createdReservation, { status: 201 });
       }),
     );
     const user = userEvent.setup();
@@ -244,9 +250,48 @@ describe('catálogo público de eventos', () => {
       }),
     );
     expect(
-      await screen.findByText('Reserva criada. Seus assentos estão temporariamente reservados.'),
+      await screen.findByRole('heading', { name: 'Sua reserva está em andamento' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('timer', { name: 'Tempo restante da reserva' })).toBeInTheDocument();
     await waitFor(() => expect(seatMapHandler.mock.calls.length).toBeGreaterThanOrEqual(2));
+  });
+
+  it('abandona a nova seleção e retoma o checkout da Reservation ACTIVE', async () => {
+    const activeReservation = {
+      id: 'reservation-active',
+      eventId: event.id,
+      status: 'ACTIVE',
+      expiresAt: '2030-08-25T22:40:00.000Z',
+      confirmedAt: null,
+      cancelledAt: null,
+      items: [{ id: 'item-active', eventSeatId: 'event-seat-1', unitPriceCents: 2590 }],
+    };
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.get(`${apiUrl}/reservations/active`, () => HttpResponse.json(activeReservation)),
+      http.get(`${apiUrl}/reservations/${activeReservation.id}`, () =>
+        HttpResponse.json(activeReservation),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Assento A1, disponível' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar assentos' }));
+    await user.click(
+      await screen.findByRole('button', {
+        name: 'Voltar à compra',
+      }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva está em andamento' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('A1')).toBeInTheDocument();
   });
 
   it('informa conflito de assento e busca novamente a disponibilidade autoritativa', async () => {

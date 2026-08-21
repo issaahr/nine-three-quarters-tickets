@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { cancelReservation, createReservation, fetchActiveReservation } from './api';
+import {
+  cancelReservation,
+  createReservation,
+  fetchActiveReservation,
+  fetchReservation,
+} from './api';
 import {
   CreatedReservation,
   CreateReservationRequest,
@@ -11,12 +16,20 @@ import {
 const activeReservationQueryKey = (eventId: string | undefined) =>
   ['reservations', 'active', eventId] as const;
 
-/** Mantém a Reservation ACTIVE no cache remoto, que é a fonte de verdade para a retomada do fluxo. */
 export function useActiveReservation(eventId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: activeReservationQueryKey(eventId),
     queryFn: () => fetchActiveReservation(eventId!),
     enabled: Boolean(eventId) && enabled,
+    retry: false,
+  });
+}
+
+export function useReservation(reservationId: string | undefined) {
+  return useQuery({
+    queryKey: ['reservations', 'detail', reservationId],
+    queryFn: () => fetchReservation(reservationId!),
+    enabled: Boolean(reservationId),
     retry: false,
   });
 }

@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { Button, buttonVariants } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
@@ -27,6 +27,7 @@ interface LocalSeatSelection {
 /** Representa o snapshot local de uma única ocorrência e seus estados somente de leitura. */
 export function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const query = useEventDetail(eventId);
   const seatMapQuery = useEventSeatMap(eventId, query.data?.admissionMode === AdmissionMode.Seated);
@@ -45,6 +46,7 @@ export function EventDetailPage() {
     localSelection.eventId === eventId && localSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
       ? localSelection.seatIds
       : [];
+  const activeReservation = activeReservationQuery.data;
 
   if (query.isPending) {
     return (
@@ -126,9 +128,8 @@ export function EventDetailPage() {
     }
 
     try {
-      await create({ eventId, eventSeatIds: selectedSeatIds });
-      setLocalSelection({ eventId, mapUpdatedAt: seatMapQuery.dataUpdatedAt, seatIds: [] });
-      setReservationFeedback('Reserva criada. Seus assentos estão temporariamente reservados.');
+      const reservation = await create({ eventId, eventSeatIds: selectedSeatIds });
+      navigate(`/customer/reservations/${reservation.id}`);
     } catch (error) {
       const code = axios.isAxiosError<{ code?: string }>(error)
         ? error.response?.data.code
@@ -315,7 +316,7 @@ export function EventDetailPage() {
                     {reservationFeedback}
                   </p>
                 )}
-                {canSelectSeats && isCustomer && activeReservationQuery.data && (
+                {canSelectSeats && isCustomer && activeReservation && (
                   <div className="mt-4 rounded-[4px] border border-primary/20 bg-primary/5 p-4">
                     <p className="m-0 text-sm font-medium">Você já tem uma reserva em andamento.</p>
                     <Button
@@ -355,7 +356,7 @@ export function EventDetailPage() {
         </section>
       )}
 
-      {isActiveReservationDialogOpen && activeReservationQuery.data && (
+      {isActiveReservationDialogOpen && activeReservation && (
         <div
           role="dialog"
           aria-modal="true"
@@ -380,6 +381,7 @@ export function EventDetailPage() {
                     seatIds: [],
                   });
                   setIsActiveReservationDialogOpen(false);
+                  navigate(`/customer/reservations/${activeReservation.id}`);
                 }}
                 className="rounded-[4px]"
               >
@@ -398,7 +400,7 @@ export function EventDetailPage() {
         </div>
       )}
 
-      {isCancelConfirmationOpen && activeReservationQuery.data && (
+      {isCancelConfirmationOpen && activeReservation && (
         <div
           role="dialog"
           aria-modal="true"
