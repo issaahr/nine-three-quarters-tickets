@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 
-import { fetchEventDetail, fetchEventDiscovery } from './api';
+import { fetchEventDetail, fetchEventDiscovery, fetchEventSeatMap } from './api';
 import { EventDiscoveryFilters } from './types';
 
 /**
@@ -22,6 +22,18 @@ export function useEventDetail(eventId: string | undefined) {
     queryKey: ['events', 'detail', eventId],
     queryFn: () => fetchEventDetail(eventId!),
     enabled: Boolean(eventId),
+    retry: false,
+  });
+}
+
+/**
+ * Mantém o mapa materializado separado do detalhe para que sua disponibilidade possa ser atualizada.
+ */
+export function useEventSeatMap(eventId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ['events', 'seat-map', eventId],
+    queryFn: () => fetchEventSeatMap(eventId!),
+    enabled: Boolean(eventId) && enabled,
     retry: false,
   });
 }

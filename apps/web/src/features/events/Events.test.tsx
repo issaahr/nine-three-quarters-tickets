@@ -12,6 +12,8 @@ import {
   EventCategory,
   EventDetail,
   EventDiscoveryItem,
+  EventSeatMapItem,
+  EventSeatStatus,
   EventStatus,
 } from './types';
 
@@ -36,6 +38,36 @@ const eventDetail: EventDetail = {
   status: EventStatus.Published,
   isPast: false,
 };
+
+const seatMap: EventSeatMapItem[] = [
+  {
+    id: 'event-seat-1',
+    label: 'A1',
+    row: 'A',
+    number: 1,
+    x: 0,
+    y: 0,
+    status: EventSeatStatus.Available,
+  },
+  {
+    id: 'event-seat-2',
+    label: 'A2',
+    row: 'A',
+    number: 2,
+    x: 1,
+    y: 0,
+    status: EventSeatStatus.Held,
+  },
+  {
+    id: 'event-seat-3',
+    label: 'B1',
+    row: 'B',
+    number: 1,
+    x: 0,
+    y: 1,
+    status: EventSeatStatus.Sold,
+  },
+];
 
 function renderEvents(initialPath = '/events') {
   const queryClient = new QueryClient({
@@ -64,6 +96,7 @@ beforeEach(() => {
     http.get(`${apiUrl}/events`, () =>
       HttpResponse.json({ items: [event], page: 1, hasMore: false }),
     ),
+    http.get(`${apiUrl}/events/${event.id}/seats`, () => HttpResponse.json(seatMap)),
   );
 });
 
@@ -138,6 +171,42 @@ describe('catálogo público de eventos', () => {
     expect(screen.queryByText(/não aceita novas compras/i)).not.toBeInTheDocument();
   });
 
+  it('renderiza o mapa por dados e mantém a seleção somente no estado local', async () => {
+    const reserveHandler = vi.fn();
+    server.use(
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.post(`${apiUrl}/reservations`, () => {
+        reserveHandler();
+        return HttpResponse.json({});
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    const availableSeat = await screen.findByRole('button', {
+      name: 'Assento A1, disponível',
+    });
+    const heldSeat = screen.getByRole('button', { name: 'Assento A2, indisponível' });
+    const soldSeat = screen.getByRole('button', { name: 'Assento B1, indisponível' });
+
+    expect(heldSeat).toBeDisabled();
+    expect(soldSeat).toBeDisabled();
+    expect(screen.getByText('Nenhum assento selecionado.')).toBeInTheDocument();
+    expect(screen.getByText('A seleção ainda não reserva os assentos.')).toBeInTheDocument();
+
+    await user.click(availableSeat);
+
+    expect(availableSeat).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('1 assento selecionado.')).toBeInTheDocument();
+    expect(reserveHandler).not.toHaveBeenCalled();
+
+    await user.click(availableSeat);
+
+    expect(availableSeat).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText('Nenhum assento selecionado.')).toBeInTheDocument();
+  });
+
   it.each([
     [EventStatus.Published, true, 'Sessão encerrada', 'Esta sessão já aconteceu'],
     [EventStatus.Cancelled, false, 'Sessão cancelada', 'Esta sessão foi cancelada'],
@@ -154,8 +223,27 @@ describe('catálogo público de eventos', () => {
 
       expect(await screen.findByText(label)).toHaveAttribute('role', 'status');
       expect(screen.getByText(new RegExp(message))).toHaveTextContent('não aceita novas compras');
+      expect(await screen.findByRole('button', { name: 'Assento A1, disponível' })).toBeDisabled();
     },
   );
+
+  it('permite tentar novamente quando somente o mapa de assentos falha', async () => {
+    const seatMapHandler = vi.fn(() => new HttpResponse(null, { status: 500 }));
+    server.use(
+      http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)),
+      http.get(`${apiUrl}/events/${event.id}/seats`, () => seatMapHandler()),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar o mapa de assentos.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(seatMapHandler).toHaveBeenCalledTimes(2));
+  });
 
   it('representa como indisponível um DRAFT ou identificador inexistente', async () => {
     server.use(

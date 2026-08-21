@@ -14,6 +14,12 @@ export enum EventStatus {
   Cancelled = 'CANCELLED',
 }
 
+export enum EventSeatStatus {
+  Available = 'AVAILABLE',
+  Held = 'HELD',
+  Sold = 'SOLD',
+}
+
 export interface EventDiscoveryItem {
   id: string;
   title: string;
@@ -38,6 +44,16 @@ export interface EventDiscoveryPage {
 export interface EventDetail extends EventDiscoveryItem {
   status: EventStatus;
   isPast: boolean;
+}
+
+export interface EventSeatMapItem {
+  id: string;
+  label: string;
+  row: string;
+  number: number;
+  x: number;
+  y: number;
+  status: EventSeatStatus;
 }
 
 export interface EventDiscoveryFilters {

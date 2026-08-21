@@ -1,22 +1,40 @@
 import axios from 'axios';
 import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { Button, buttonVariants } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
+import { SeatMap } from '../components/SeatMap';
 import { formatEventDetailDateTime, formatEventPrice } from '../eventPresentation';
-import { useEventDetail } from '../hooks';
-import { EventCategory, EventStatus } from '../types';
+import { useEventDetail, useEventSeatMap } from '../hooks';
+import { AdmissionMode, EventCategory, EventStatus } from '../types';
 
 const categoryLabels: Record<EventCategory, string> = {
   [EventCategory.Movie]: 'Filme',
   [EventCategory.Show]: 'Show',
 };
 
+interface LocalSeatSelection {
+  eventId: string | undefined;
+  mapUpdatedAt: number;
+  seatIds: string[];
+}
+
 /** Representa o snapshot local de uma única ocorrência e seus estados somente de leitura. */
 export function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const query = useEventDetail(eventId);
+  const seatMapQuery = useEventSeatMap(eventId, query.data?.admissionMode === AdmissionMode.Seated);
+  const [localSelection, setLocalSelection] = useState<LocalSeatSelection>({
+    eventId,
+    mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+    seatIds: [],
+  });
+  const selectedSeatIds =
+    localSelection.eventId === eventId && localSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
+      ? localSelection.seatIds
+      : [];
 
   if (query.isPending) {
     return (
@@ -64,6 +82,25 @@ export function EventDetailPage() {
     : event.isPast
       ? 'Sessão encerrada'
       : undefined;
+  const canSelectSeats = !isCancelled && !event.isPast;
+
+  function toggleSeat(seatId: string): void {
+    setLocalSelection((currentSelection) => {
+      const currentSeatIds =
+        currentSelection.eventId === eventId &&
+        currentSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
+          ? currentSelection.seatIds
+          : [];
+
+      return {
+        eventId,
+        mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+        seatIds: currentSeatIds.includes(seatId)
+          ? currentSeatIds.filter((currentSeatId) => currentSeatId !== seatId)
+          : [...currentSeatIds, seatId],
+      };
+    });
+  }
 
   return (
     <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-12">
@@ -162,6 +199,55 @@ export function EventDetailPage() {
           </div>
         </div>
       </article>
+
+      {event.admissionMode === AdmissionMode.Seated && (
+        <section className="mx-auto mt-8 max-w-3xl bg-white p-6 sm:p-9">
+          {seatMapQuery.isPending && (
+            <p role="status" className="m-0 text-sm text-muted-foreground">
+              Carregando mapa de assentos...
+            </p>
+          )}
+
+          {seatMapQuery.isError && (
+            <div role="alert">
+              <p className="m-0 text-sm text-destructive">
+                Não foi possível carregar o mapa de assentos.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void seatMapQuery.refetch()}
+                className="mt-4 rounded-[4px]"
+              >
+                Tentar novamente
+              </Button>
+            </div>
+          )}
+
+          {seatMapQuery.data && (
+            <>
+              <SeatMap
+                seats={seatMapQuery.data}
+                selectedSeatIds={selectedSeatIds}
+                selectionDisabled={!canSelectSeats}
+                onToggleSeat={toggleSeat}
+              />
+              <div className="mt-6 border-t border-[#E2D9CB] pt-5">
+                <p aria-live="polite" className="m-0 text-sm font-medium">
+                  {selectedSeatIds.length === 0
+                    ? 'Nenhum assento selecionado.'
+                    : `${selectedSeatIds.length} assento${selectedSeatIds.length === 1 ? '' : 's'} selecionado${selectedSeatIds.length === 1 ? '' : 's'}.`}
+                </p>
+                {canSelectSeats && (
+                  <p className="mb-0 mt-2 text-sm text-muted-foreground">
+                    A seleção ainda não reserva os assentos.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </main>
   );
 }
