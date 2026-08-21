@@ -15,6 +15,7 @@ import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse
 import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
+import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
 
 /**
@@ -50,6 +51,26 @@ export function ApiGetEventDetail() {
     ApiNotFoundResponse({
       type: ApplicationErrorResponseDto,
       description: 'Event inexistente ou ainda em DRAFT.',
+    }),
+  );
+}
+
+/** Agrupa a documentação HTTP do mapa seated materializado de uma ocorrência. */
+export function ApiGetEventSeatMap() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Consulta o mapa público de assentos de uma ocorrência' }),
+    ApiOkResponse({
+      type: EventSeatMapItemResponseDto,
+      isArray: true,
+      description: 'Layout persistido com disponibilidade temporal calculada pelo PostgreSQL.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Identificador inválido.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event inexistente, em DRAFT ou sem mapa seated público.',
     }),
   );
 }

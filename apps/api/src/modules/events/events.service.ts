@@ -22,7 +22,9 @@ import { InvalidEventDiscoveryPeriodError } from './errors/invalidEventDiscovery
 import { VenueHasNoSeatsError } from './errors/venueHasNoSeats.error';
 import { VenueNotFoundError } from './errors/venueNotFound.error';
 import { EventRepository } from './repositories/event.repository';
+import { EventSeatRepository } from './repositories/eventSeat.repository';
 import { EventDiscoveryPage, PublicEventDetail } from './repositories/eventRepository.interfaces';
+import { PublicEventSeatMapItem } from './repositories/eventSeatRepository.interfaces';
 import { venueLocalDateTimeToDate } from './time/venueLocalDateTime';
 
 @Injectable()
@@ -33,6 +35,7 @@ export class EventsService {
     @InjectRepository(Venue)
     private readonly venuesRepository: Repository<Venue>,
     private readonly eventRepository: EventRepository,
+    private readonly eventSeatRepository: EventSeatRepository,
     @Inject(catalogProviderToken)
     private readonly catalogProvider: CatalogProvider,
     private readonly dataSource: DataSource,
@@ -131,6 +134,22 @@ export class EventsService {
     }
 
     return detail;
+  }
+
+  /**
+   * Carrega o mapa seated de uma ocorrência pública sem expor vínculos de hold de outros clientes.
+   *
+   * @param eventId - Identificador público da ocorrência.
+   * @returns Assentos materializados e seus estados temporais calculados pelo banco.
+   */
+  public async findPublicSeatMap(eventId: string): Promise<PublicEventSeatMapItem[]> {
+    const seats = await this.eventSeatRepository.findPublicMap(eventId);
+
+    if (!seats) {
+      throw new EventNotFoundError();
+    }
+
+    return seats;
   }
 
   /**
