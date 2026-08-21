@@ -24,6 +24,7 @@ export class Venue extends BaseEntity {
   @Column({ type: 'text' })
   public timeZone!: string;
 
+  // Relations
   @OneToMany(() => VenueSeat, (seat) => seat.venue)
   public seats!: Relation<VenueSeat[]>;
 }

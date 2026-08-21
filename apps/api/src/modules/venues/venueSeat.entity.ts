@@ -14,10 +14,6 @@ export class VenueSeat extends BaseEntity {
   @Column({ type: 'uuid' })
   public venueId!: string;
 
-  @ManyToOne(() => Venue, (venue) => venue.seats, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'venueSeatsVenueForeignKey' })
-  public venue!: Relation<Venue>;
-
   @Column({ type: 'text' })
   public label!: string;
 
@@ -32,4 +28,9 @@ export class VenueSeat extends BaseEntity {
 
   @Column({ type: 'integer' })
   public y!: number;
+
+  // Relations
+  @ManyToOne(() => Venue, (venue) => venue.seats, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'venueSeatsVenueForeignKey' })
+  public venue!: Relation<Venue>;
 }

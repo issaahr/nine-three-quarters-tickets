@@ -86,6 +86,23 @@ function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number
 }
 
 /**
+ * Impede holds sem prazo ou longos o bastante para degradar a disponibilidade do inventário.
+ */
+function getReservationHoldDurationSeconds(environmentVariables: NodeJS.ProcessEnv): number {
+  const holdDurationSeconds = Number(
+    getRequiredEnvironmentVariable('RESERVATION_HOLD_DURATION_SECONDS', environmentVariables),
+  );
+
+  if (!Number.isInteger(holdDurationSeconds) || holdDurationSeconds <= 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente RESERVATION_HOLD_DURATION_SECONDS deve ser um inteiro positivo',
+    );
+  }
+
+  return holdDurationSeconds;
+}
+
+/**
  * Converte a porta uma única vez antes da criação da aplicação Nest.
  */
 function getPort(environmentVariables: NodeJS.ProcessEnv): number {
@@ -178,6 +195,9 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     port: getPort(environmentVariables),
     corsOrigins: getCorsOrigins(environmentVariables),
     publicSignupEnabled: getPublicSignupEnabled(environmentVariables),
+    reservations: {
+      holdDurationSeconds: getReservationHoldDurationSeconds(environmentVariables),
+    },
     catalog: {
       tmdb: {
         accessToken: getTmdbAccessToken(environmentVariables),

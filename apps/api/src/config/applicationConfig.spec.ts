@@ -8,6 +8,7 @@ describe('loadApplicationConfig', () => {
     CORS_ORIGINS: 'http://localhost:5173, http://localhost:5173',
     JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-bytes',
     JWT_EXPIRES_IN_SECONDS: '900',
+    RESERVATION_HOLD_DURATION_SECONDS: '600',
     PUBLIC_SIGNUP_ENABLED: 'true',
     TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
     TMDB_LANGUAGE: 'pt-BR',
@@ -37,6 +38,9 @@ describe('loadApplicationConfig', () => {
           sameSite: 'lax',
           secure: false,
         },
+      },
+      reservations: {
+        holdDurationSeconds: 600,
       },
     });
   });
@@ -69,6 +73,8 @@ describe('loadApplicationConfig', () => {
     ['CORS_ORIGINS', 'https://app.example.com/path'],
     ['JWT_SECRET', 'short-secret'],
     ['JWT_EXPIRES_IN_SECONDS', '0'],
+    ['RESERVATION_HOLD_DURATION_SECONDS', '0'],
+    ['RESERVATION_HOLD_DURATION_SECONDS', undefined],
     ['PUBLIC_SIGNUP_ENABLED', 'enabled'],
     ['PUBLIC_SIGNUP_ENABLED', undefined],
     ['TMDB_API_READ_ACCESS_TOKEN', undefined],

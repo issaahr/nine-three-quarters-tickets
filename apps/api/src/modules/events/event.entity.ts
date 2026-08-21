@@ -26,16 +26,8 @@ export class Event extends BaseEntity {
   @Column({ type: 'uuid' })
   public organizerId!: string;
 
-  @ManyToOne(() => User, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'organizerId', foreignKeyConstraintName: 'eventsOrganizerForeignKey' })
-  public organizer!: Relation<User>;
-
   @Column({ type: 'uuid' })
   public venueId!: string;
-
-  @ManyToOne(() => Venue, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'eventsVenueForeignKey' })
-  public venue!: Relation<Venue>;
 
   @Column({ type: 'text' })
   public title!: string;
@@ -77,4 +69,14 @@ export class Event extends BaseEntity {
 
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   public genres!: string[];
+
+  // Relations
+  @ManyToOne(() => User, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'organizerId', foreignKeyConstraintName: 'eventsOrganizerForeignKey' })
+  public organizer!: Relation<User>;
+
+  @ManyToOne(() => Venue, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'eventsVenueForeignKey' })
+  public venue!: Relation<Venue>;
+
 }

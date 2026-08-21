@@ -1,6 +1,7 @@
 import { Check, Column, Entity, JoinColumn, ManyToOne, Relation, Unique } from 'typeorm';
 
 import { BaseEntity } from '../../database/base.entity';
+import { Reservation } from '../reservations/reservation.entity';
 import { VenueSeat } from '../venues/venueSeat.entity';
 import { Event } from './event.entity';
 
@@ -22,18 +23,9 @@ export class EventSeat extends BaseEntity {
   @Column({ type: 'uuid' })
   public eventId!: string;
 
-  @ManyToOne(() => Event, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'eventId', foreignKeyConstraintName: 'eventSeatsEventForeignKey' })
-  public event!: Relation<Event>;
-
   @Column({ type: 'uuid' })
   public venueSeatId!: string;
 
-  @ManyToOne(() => VenueSeat, { onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'venueSeatId', foreignKeyConstraintName: 'eventSeatsVenueSeatForeignKey' })
-  public venueSeat!: Relation<VenueSeat>;
-
-  // A FK será adicionada quando Reservation passar a existir no schema.
   @Column({ type: 'uuid', nullable: true })
   public holdReservationId!: string | null;
 
@@ -42,4 +34,20 @@ export class EventSeat extends BaseEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   public soldAt!: Date | null;
+
+  // Relations
+  @ManyToOne(() => Event, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'eventId', foreignKeyConstraintName: 'eventSeatsEventForeignKey' })
+  public event!: Relation<Event>;
+
+  @ManyToOne(() => VenueSeat, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'venueSeatId', foreignKeyConstraintName: 'eventSeatsVenueSeatForeignKey' })
+  public venueSeat!: Relation<VenueSeat>;
+
+  @ManyToOne(() => Reservation, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({
+    name: 'holdReservationId',
+    foreignKeyConstraintName: 'eventSeatsHoldReservationForeignKey',
+  })
+  public holdReservation!: Relation<Reservation> | null;
 }

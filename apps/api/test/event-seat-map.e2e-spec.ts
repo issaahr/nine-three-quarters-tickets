@@ -14,6 +14,7 @@ import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventSeatStatus } from '../src/modules/events/eventSeatStatus.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { User } from '../src/modules/users/user.entity';
 import { Venue } from '../src/modules/venues/venue.entity';
 import { VenueSeat } from '../src/modules/venues/venueSeat.entity';
@@ -22,9 +23,11 @@ describe('mapa público de assentos', () => {
   let app: INestApplication;
   let eventsRepository: Repository<Event>;
   let eventSeatsRepository: Repository<EventSeat>;
+  let reservationsRepository: Repository<Reservation>;
   let venuesRepository: Repository<Venue>;
   let venueSeatsRepository: Repository<VenueSeat>;
   let organizer: User;
+  let customer: User;
   let venue: Venue;
   let venueSeats: VenueSeat[];
   const createdEventIds: string[] = [];
@@ -40,11 +43,15 @@ describe('mapa público de assentos', () => {
     const dataSource = app.get(DataSource);
     eventsRepository = dataSource.getRepository(Event);
     eventSeatsRepository = dataSource.getRepository(EventSeat);
+    reservationsRepository = dataSource.getRepository(Reservation);
     venuesRepository = dataSource.getRepository(Venue);
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
     organizer = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'organizer.demo@ntq.local' });
+    customer = await dataSource
+      .getRepository(User)
+      .findOneByOrFail({ email: 'customer.one.demo@ntq.local' });
     venue = await venuesRepository.save({
       name: `Venue do mapa ${randomUUID()}`,
       address: 'Rua dos Assentos, 93',
@@ -65,6 +72,7 @@ describe('mapa público de assentos', () => {
   afterAll(async () => {
     if (createdEventIds.length > 0) {
       await eventSeatsRepository.delete({ eventId: In(createdEventIds) });
+      await reservationsRepository.delete({ eventId: In(createdEventIds) });
       await eventsRepository.delete({ id: In(createdEventIds) });
     }
     if (createdVenueSeatIds.length > 0) {
@@ -100,6 +108,22 @@ describe('mapa público de assentos', () => {
   it('expõe posições persistidas e deriva disponibilidade pelo relógio do PostgreSQL', async () => {
     const event = await createEvent();
     const [b2, a2, a1, b1] = venueSeats;
+    const [heldReservation, expiredReservation] = await reservationsRepository.save([
+      {
+        customerId: customer.id,
+        eventId: event.id,
+        expiresAt: new Date('2099-09-01T23:40:00.000Z'),
+        confirmedAt: null,
+        cancelledAt: null,
+      },
+      {
+        customerId: customer.id,
+        eventId: event.id,
+        expiresAt: new Date('2099-09-01T23:50:00.000Z'),
+        confirmedAt: null,
+        cancelledAt: null,
+      },
+    ]);
     const [available, held, expired, sold] = await eventSeatsRepository.save([
       {
         eventId: event.id,
@@ -111,14 +135,14 @@ describe('mapa público de assentos', () => {
       {
         eventId: event.id,
         venueSeatId: a2.id,
-        holdReservationId: randomUUID(),
+        holdReservationId: heldReservation.id,
         holdExpiresAt: new Date(Date.now() + 60_000),
         soldAt: null,
       },
       {
         eventId: event.id,
         venueSeatId: b1.id,
-        holdReservationId: randomUUID(),
+        holdReservationId: expiredReservation.id,
         holdExpiresAt: new Date(Date.now() - 60_000),
         soldAt: null,
       },
@@ -131,7 +155,9 @@ describe('mapa público de assentos', () => {
       },
     ]);
 
-    const response = await request(app.getHttpServer()).get(`/events/${event.id}/seats`).expect(200);
+    const response = await request(app.getHttpServer())
+      .get(`/events/${event.id}/seats`)
+      .expect(200);
 
     expect(response.body).toEqual([
       {
@@ -185,7 +211,9 @@ describe('mapa público de assentos', () => {
       soldAt: null,
     });
 
-    const response = await request(app.getHttpServer()).get(`/events/${event.id}/seats`).expect(404);
+    const response = await request(app.getHttpServer())
+      .get(`/events/${event.id}/seats`)
+      .expect(404);
 
     expect(response.body).toEqual(expect.objectContaining({ code: 'EVENT_NOT_FOUND' }));
   });
