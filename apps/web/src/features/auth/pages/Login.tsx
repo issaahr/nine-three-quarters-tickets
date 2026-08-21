@@ -49,6 +49,13 @@ export function Login({ publicSignupEnabled }: LoginProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
+  const signupCompletedNavigation = Boolean(
+    location.state &&
+    typeof location.state === 'object' &&
+    'signupCompleted' in location.state &&
+    location.state.signupCompleted,
+  );
+  const [signupCompleted] = useState(() => signupCompletedNavigation);
 
   const {
     register,
@@ -66,6 +73,13 @@ export function Login({ publicSignupEnabled }: LoginProps) {
     }
   }, [isAuthenticated, navigate]);
 
+  // Consome o flash de cadastro para que ele não reapareça após recarregar a página.
+  useEffect(() => {
+    if (signupCompletedNavigation) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, navigate, signupCompletedNavigation]);
+
   const onSubmit = async (data: LoginFormValues) => {
     try {
       await login(data);
@@ -81,13 +95,6 @@ export function Login({ publicSignupEnabled }: LoginProps) {
   };
 
   const loginErrorMessage = getLoginErrorMessage(loginError);
-  const signupCompleted = Boolean(
-    location.state &&
-    typeof location.state === 'object' &&
-    'signupCompleted' in location.state &&
-    location.state.signupCompleted,
-  );
-
   const quickAccess = (
     <div className="mt-[24px] md:mt-0">
       <div className="flex items-center gap-[12px] mb-[16px] md:my-6">

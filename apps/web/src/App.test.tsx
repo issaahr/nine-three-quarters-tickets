@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { SessionUser, UserRole } from './features/auth/types';
@@ -32,6 +32,10 @@ function renderApp(initialPath = '/', sessionUser?: SessionUser, publicSignupEna
     </QueryClientProvider>,
   );
 }
+
+beforeEach(() => {
+  server.use(http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])));
+});
 
 describe('fluxo de autenticação', () => {
   it('restaura a sessão e direciona o cliente sem expor identificador ou email', async () => {
@@ -315,7 +319,7 @@ describe('fluxo de autenticação', () => {
 
   it.each([
     [UserRole.Customer, 'Seu próximo destino começa aqui', 'Eventos'],
-    [UserRole.Organizer, 'Prepare a próxima sessão', 'Meus eventos'],
+    [UserRole.Organizer, 'Meus eventos', 'Meus eventos'],
     [UserRole.Gate, 'Pronto para validar', 'Portaria'],
   ])('apresenta início e navegação coerentes para %s', async (role, heading, navigationLabel) => {
     renderApp('/', { id: `user-${role}`, role });
@@ -341,9 +345,7 @@ describe('fluxo de autenticação', () => {
     expect(
       await screen.findByRole('heading', { name: 'Seu próximo destino começa aqui' }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('heading', { name: 'Prepare a próxima sessão' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Meus eventos' })).not.toBeInTheDocument();
   });
 
   it('mantém a superfície operacional da portaria separada da experiência geral', async () => {
@@ -365,6 +367,6 @@ describe('fluxo de autenticação', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Não foi possível encerrar a sessão. Tente novamente.',
     );
-    expect(screen.getByRole('heading', { name: 'Prepare a próxima sessão' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Meus eventos' })).toBeInTheDocument();
   });
 });

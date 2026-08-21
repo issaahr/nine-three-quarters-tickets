@@ -10,6 +10,7 @@ afterEach(() => {
   cleanup();
   server.resetHandlers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 afterAll(() => server.close());

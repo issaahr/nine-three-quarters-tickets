@@ -9,7 +9,8 @@ import { RoleHomeRedirect } from './features/navigation/components/RoleHomeRedir
 import { RoleRoute } from './features/navigation/components/RoleRoute';
 import { CustomerHome } from './features/navigation/pages/CustomerHome';
 import { GateHome } from './features/navigation/pages/GateHome';
-import { OrganizerHome } from './features/navigation/pages/OrganizerHome';
+import { CreateMovieEvent } from './features/organizer/pages/CreateMovieEvent';
+import { OrganizerHome } from './features/organizer/pages/OrganizerHome';
 import { UserRole } from './features/auth/types';
 
 interface AppProps {
@@ -32,6 +33,7 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
           </Route>
           <Route element={<RoleRoute allowedRole={UserRole.Organizer} />}>
             <Route path="/organizer" element={<OrganizerHome />} />
+            <Route path="/organizer/events/new" element={<CreateMovieEvent />} />
           </Route>
           <Route element={<RoleRoute allowedRole={UserRole.Gate} />}>
             <Route path="/gate" element={<GateHome />} />
