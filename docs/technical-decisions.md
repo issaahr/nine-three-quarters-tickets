@@ -52,6 +52,8 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - A listagem privada usa `GET /organizer/me/events` e deriva o proprietário exclusivamente da sessão autenticada.
 - O frontend executa criação e publicação como ações separadas. Se somente a publicação falhar, o DRAFT permanece recuperável no painel.
 
+Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.md).
+
 ## Autenticação e autorização
 
 - Senhas utilizam bcrypt com custo 12.
