@@ -14,7 +14,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { applicationConfig } from '../../config/applicationConfig';
-import { AuthenticatedUser } from './auth.types';
+import { OptionalAuthenticatedRequest } from './auth.types';
 import { AuthService } from './auth.service';
 import { ApiGetSession, ApiLogin, ApiLogout, ApiSignup } from './auth.swagger';
 import { LoginRequestDto } from './dto/loginRequest.dto';
@@ -24,10 +24,6 @@ import { SignupRequestDto } from './dto/signupRequest.dto';
 import { SignupResponseDto } from './dto/signupResponse.dto';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
 import { PublicSignupGuard } from './guards/publicSignup.guard';
-
-interface AuthenticatedRequest {
-  user: AuthenticatedUser | null;
-}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -69,7 +65,7 @@ export class AuthController {
   @UseGuards(OptionalJwtAuthGuard)
   @ApiGetSession()
   public getSession(
-    @Req() request: AuthenticatedRequest,
+    @Req() request: OptionalAuthenticatedRequest,
     @Res({ passthrough: true }) response: Response,
   ): SessionResponseDto | void {
     if (!request.user) {

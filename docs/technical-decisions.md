@@ -30,6 +30,30 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - Timestamps de migrations são produzidos pelos comandos do TypeORM e mantêm ordem cronológica.
 - Constraints do banco protegem invariantes estruturais e concorrentes.
 
+## Catálogo e horário de Events
+
+- A API autentica na TMDb com API Read Access Token em Bearer; a credencial nunca é exposta ao frontend.
+- `TmdbCatalogProvider` utiliza o `fetch` nativo do Node e normaliza respostas externas para `CatalogItem`.
+- A descoberta inicial usa filmes populares da TMDb; descoberta e pesquisa preservam paginação em um contrato normalizado próprio.
+- Gêneros e configuração de imagens são mantidos apenas em cache de processo e uma falha não permanece cacheada.
+- A criação de filme recebe somente identidade externa e dados locais; o snapshot é reconstruído pela API antes de persistir o Event.
+- Chamadas externas não ocorrem dentro de transações PostgreSQL.
+- Horários informados pelo organizador são interpretados no timezone IANA do Venue por `@js-temporal/polyfill`.
+- Horários locais inexistentes ou ambíguos em transições de offset são rejeitados em vez de ajustados silenciosamente.
+- Testes e CI substituem a port de catálogo e não dependem da disponibilidade real da TMDb.
+
+## Publicação e inventário SEATED
+
+- A publicação é uma transição explícita de `DRAFT` para `PUBLISHED`.
+- Para Events `SEATED`, publicação e materialização de `EventSeat` acontecem na mesma transação PostgreSQL.
+- O Event é bloqueado durante a transição; chamadas concorrentes para um Event já publicado são idempotentes e não recriam inventário.
+- Cada `VenueSeat` aplicável produz exatamente um `EventSeat`, protegido por `UNIQUE(eventId, venueSeatId)`.
+- O status percebido do assento é derivado de `holdReservationId`, `holdExpiresAt` e `soldAt`; não existe enum persistido de disponibilidade.
+- A listagem privada usa `GET /organizer/me/events` e deriva o proprietário exclusivamente da sessão autenticada.
+- O frontend executa criação e publicação como ações separadas. Se somente a publicação falhar, o DRAFT permanece recuperável no painel.
+
+Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.md).
+
 ## Autenticação e autorização
 
 - Senhas utilizam bcrypt com custo 12.
@@ -56,10 +80,12 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 
 - React Router organiza rotas públicas, autenticadas e específicas por papel.
 - TanStack Query é o estado remoto da sessão.
+- `useInfiniteQuery` coordena a paginação do catálogo do organizador sem duplicar páginas em estado local.
 - Axios envia cookies com `withCredentials`.
 - Zod e React Hook Form validam formulários antes do envio; DTOs repetem a validação autoritativa na API.
 - Tailwind CSS 4 fornece tokens e composição visual.
 - Componentes Shadcn no estilo Base Nova são incorporados como código local somente quando existe uso concreto.
+- `react-number-format` trata a entrada monetária para preservar cursor, colagem e separadores sem reimplementar uma máscara própria.
 - A navegação por papel no frontend é UX e nunca substitui autorização no backend.
 - CUSTOMER e ORGANIZER usam a superfície clara; GATE usa a superfície escura operacional.
 - Imports diretos são preferidos. Um `index.ts` só deve existir quando houver uma fronteira pública concreta para representar.
