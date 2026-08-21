@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/readme-banner.png" alt="9¾ Tickets" width="480" />
+  <img src="docs/readme-banner.png" alt="9¾ Tickets" width="800" />
 </p>
 
 # 9¾ Tickets
@@ -196,13 +196,17 @@ Cada aplicação mantém suas dependências e configurações de TypeScript, ESL
 
 ## Credits
 
-<p>
-  <img
-    src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_1-5bdc75aaebeb75dc7ae79426ddd9be3b2be1e342510f8202baf6bffa71d7f5c4.svg"
-    alt="TMDB logo"
-    width="40"
-    align="left"
-    hspace="12"
-  />
-  This website uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
-</p>
+<table>
+  <tr>
+    <td width="60">
+      <img
+        src="https://www.themoviedb.org/assets/v4/logos/v2/blue_square_1-5bdc75aaebeb75dc7ae79426ddd9be3b2be1e342510f8202baf6bffa71d7f5c4.svg"
+        alt="TMDB logo"
+        width="40"
+      />
+    </td>
+    <td>
+      This website uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.
+    </td>
+  </tr>
+</table>
