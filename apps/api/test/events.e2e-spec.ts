@@ -4,8 +4,8 @@ import { Test } from '@nestjs/testing';
 import { DataSource, DeepPartial, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
-import { CatalogSource } from '../src/modules/events/catalogSource.enum';
 import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';

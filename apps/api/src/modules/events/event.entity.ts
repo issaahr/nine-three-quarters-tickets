@@ -1,10 +1,10 @@
 import { Check, Column, Entity, JoinColumn, ManyToOne, Relation } from 'typeorm';
 
 import { BaseEntity } from '../../database/base.entity';
+import { CatalogSource } from '../catalog/catalogSource.enum';
 import { User } from '../users/user.entity';
 import { Venue } from '../venues/venue.entity';
 import { AdmissionMode } from './admissionMode.enum';
-import { CatalogSource } from './catalogSource.enum';
 import { EventCategory } from './eventCategory.enum';
 import { EventStatus } from './eventStatus.enum';
 
