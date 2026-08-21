@@ -47,6 +47,37 @@ describe('persistência de Venues', () => {
     return venue;
   }
 
+  it('disponibiliza o Venue inicial com um layout de 60 assentos e corredor central', async () => {
+    const venue = await venuesRepository.findOneOrFail({
+      where: { name: 'Cine Imperial · Sala A' },
+      relations: { seats: true },
+    });
+
+    expect(venue).toMatchObject({
+      address: 'Rua das Lanternas, 93',
+      city: 'São Paulo',
+      state: 'São Paulo',
+      country: 'Brasil',
+      timeZone: 'America/Sao_Paulo',
+    });
+    expect(venue.seats).toHaveLength(60);
+    expect(new Set(venue.seats.map(({ row }) => row))).toEqual(
+      new Set(['A', 'B', 'C', 'D', 'E', 'F']),
+    );
+    for (const row of ['A', 'B', 'C', 'D', 'E', 'F']) {
+      expect(venue.seats.filter((seat) => seat.row === row)).toHaveLength(10);
+    }
+    expect(venue.seats.some(({ x }) => x === 5)).toBe(false);
+    expect(venue.seats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: 'A1', row: 'A', number: 1, x: 0, y: 0 }),
+        expect.objectContaining({ label: 'A10', row: 'A', number: 10, x: 10, y: 0 }),
+        expect.objectContaining({ label: 'F1', row: 'F', number: 1, x: 0, y: 5 }),
+        expect.objectContaining({ label: 'F10', row: 'F', number: 10, x: 10, y: 5 }),
+      ]),
+    );
+  });
+
   it('persiste o layout físico associado ao Venue', async () => {
     const venue = await createVenue('issue2.layout');
     await venueSeatsRepository.save({
