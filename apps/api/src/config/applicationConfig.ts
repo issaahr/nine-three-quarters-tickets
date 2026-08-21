@@ -70,7 +70,7 @@ function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Garante que a duração possa ser usada diretamente na assinatura e no cookie.
-*/
+ */
 function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number {
   const expiresInSeconds = Number(
     getRequiredEnvironmentVariable('JWT_EXPIRES_IN_SECONDS', environmentVariables),

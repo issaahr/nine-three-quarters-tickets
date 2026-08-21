@@ -1,16 +1,11 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
 
 import { UserRole } from '../../users/userRole.enum';
 import { rolesMetadataKey } from '../auth.constants';
-import { AuthenticatedUser } from '../auth.types';
+import { OptionalAuthenticatedRequest } from '../auth.types';
 import { AuthenticationRequiredError } from '../errors/authenticationRequired.error';
 import { ForbiddenRoleError } from '../errors/forbiddenRole.error';
-
-interface AuthenticatedRequest extends Request {
-  user?: AuthenticatedUser;
-}
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -26,7 +21,7 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const request = context.switchToHttp().getRequest<OptionalAuthenticatedRequest>();
 
     if (!request.user) {
       throw new AuthenticationRequiredError();
