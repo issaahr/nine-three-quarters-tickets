@@ -121,10 +121,7 @@ describe('persistência de Venues', () => {
     );
 
     const customerCookie = await authenticate('customer.one.demo@ntq.local');
-    await request(app.getHttpServer())
-      .get('/venues')
-      .set('Cookie', customerCookie)
-      .expect(403);
+    await request(app.getHttpServer()).get('/venues').set('Cookie', customerCookie).expect(403);
   });
 
   it('persiste o layout físico associado ao Venue', async () => {
