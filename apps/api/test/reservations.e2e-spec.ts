@@ -142,6 +142,28 @@ describe('Reservations seated', () => {
       .getCount();
   }
 
+  /**
+   * Cria uma Reservation expirada para validar o lifecycle sem depender de temporizadores da aplicação.
+   */
+  async function createExpiredReservation(
+    customerId: string,
+    eventId: string,
+  ): Promise<Reservation> {
+    const createdAt = new Date('2020-01-01T00:00:00.000Z');
+    const expiresAt = new Date('2020-01-01T00:10:00.000Z');
+    const rows = (await dataSource.query(
+      `
+        INSERT INTO "reservations" (
+          "customerId", "eventId", "createdAt", "updatedAt", "expiresAt", "confirmedAt", "cancelledAt"
+        ) VALUES ($1, $2, $3, $3, $4, NULL, NULL)
+        RETURNING "id"
+      `,
+      [customerId, eventId, createdAt, expiresAt],
+    )) as Array<{ id: string }>;
+
+    return reservationsRepository.findOneByOrFail({ id: rows[0].id });
+  }
+
   it('cria hold para todos os assentos e persiste o snapshot de preço do Event', async () => {
     const event = await createEvent({ priceCents: 2590 });
     const [firstSeat, secondSeat] = await createEventSeats(event, 2);
@@ -250,20 +272,10 @@ describe('Reservations seated', () => {
   it('reutiliza um EventSeat cujo hold expirou sem exigir scheduler', async () => {
     const event = await createEvent();
     const [seat] = await createEventSeats(event, 1);
-    const createdAt = new Date('2020-01-01T00:00:00.000Z');
-    const expiresAt = new Date('2020-01-01T00:10:00.000Z');
-    const rows = (await dataSource.query(
-      `
-        INSERT INTO "reservations" (
-          "customerId", "eventId", "createdAt", "updatedAt", "expiresAt", "confirmedAt", "cancelledAt"
-        ) VALUES ($1, $2, $3, $3, $4, NULL, NULL)
-        RETURNING "id"
-      `,
-      [customerOne.id, event.id, createdAt, expiresAt],
-    )) as Array<{ id: string }>;
+    const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
     await eventSeatsRepository.update(seat.id, {
-      holdReservationId: rows[0].id,
-      holdExpiresAt: expiresAt,
+      holdReservationId: expiredReservation.id,
+      holdExpiresAt: expiredReservation.expiresAt,
     });
     const cookie = await authenticate(customerTwo.email);
 
@@ -301,6 +313,160 @@ describe('Reservations seated', () => {
       holdReservationId: null,
       holdExpiresAt: null,
     });
+  });
+
+  it('consulta a Reservation própria e não a expõe para outro CUSTOMER', async () => {
+    const event = await createEvent();
+    const [seat] = await createEventSeats(event, 1);
+    const [customerOneCookie, customerTwoCookie] = await Promise.all([
+      authenticate(customerOne.email),
+      authenticate(customerTwo.email),
+    ]);
+    const creation = await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', customerOneCookie)
+      .send({ eventId: event.id, eventSeatIds: [seat.id] })
+      .expect(201);
+
+    const ownReservation = await request(app.getHttpServer())
+      .get(`/reservations/${creation.body.id}`)
+      .set('Cookie', customerOneCookie)
+      .expect(200);
+
+    expect(ownReservation.body).toEqual(
+      expect.objectContaining({
+        id: creation.body.id,
+        eventId: event.id,
+        status: 'ACTIVE',
+        items: [expect.objectContaining({ eventSeatId: seat.id, unitPriceCents: 2500 })],
+      }),
+    );
+    await request(app.getHttpServer())
+      .get(`/reservations/${creation.body.id}`)
+      .set('Cookie', customerTwoCookie)
+      .expect(404)
+      .expect(({ body }) =>
+        expect(body).toEqual(expect.objectContaining({ code: 'RESERVATION_NOT_FOUND' })),
+      );
+  });
+
+  it('retorna somente a Reservation ACTIVE e ignora as expiradas ou canceladas', async () => {
+    const event = await createEvent();
+    const [firstSeat] = await createEventSeats(event, 1);
+    const customerOneCookie = await authenticate(customerOne.email);
+    const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
+
+    await request(app.getHttpServer())
+      .get(`/reservations/${expiredReservation.id}`)
+      .set('Cookie', customerOneCookie)
+      .expect(200)
+      .expect(({ body }) => expect(body).toEqual(expect.objectContaining({ status: 'EXPIRED' })));
+
+    await request(app.getHttpServer())
+      .get('/reservations/active')
+      .set('Cookie', customerOneCookie)
+      .query({ eventId: event.id })
+      .expect(204);
+
+    const creation = await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', customerOneCookie)
+      .send({ eventId: event.id, eventSeatIds: [firstSeat.id] })
+      .expect(201);
+    const active = await request(app.getHttpServer())
+      .get('/reservations/active')
+      .set('Cookie', customerOneCookie)
+      .query({ eventId: event.id })
+      .expect(200);
+
+    expect(active.body).toEqual(
+      expect.objectContaining({ id: creation.body.id, status: 'ACTIVE' }),
+    );
+    await request(app.getHttpServer())
+      .post(`/reservations/${creation.body.id}/cancel`)
+      .set('Cookie', customerOneCookie)
+      .expect(200);
+    await request(app.getHttpServer())
+      .get('/reservations/active')
+      .set('Cookie', customerOneCookie)
+      .query({ eventId: event.id })
+      .expect(204);
+  });
+
+  it('cancela atomicamente a Reservation e libera todos os EventSeats para outro CUSTOMER', async () => {
+    const event = await createEvent();
+    const [firstSeat, secondSeat] = await createEventSeats(event, 2);
+    const [customerOneCookie, customerTwoCookie] = await Promise.all([
+      authenticate(customerOne.email),
+      authenticate(customerTwo.email),
+    ]);
+    const creation = await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', customerOneCookie)
+      .send({ eventId: event.id, eventSeatIds: [firstSeat.id, secondSeat.id] })
+      .expect(201);
+
+    const cancellation = await request(app.getHttpServer())
+      .post(`/reservations/${creation.body.id}/cancel`)
+      .set('Cookie', customerOneCookie)
+      .expect(200);
+
+    expect(cancellation.body).toEqual(
+      expect.objectContaining({
+        id: creation.body.id,
+        status: 'CANCELLED',
+        cancelledAt: expect.any(String),
+      }),
+    );
+    await expect(
+      eventSeatsRepository.findBy({ id: In([firstSeat.id, secondSeat.id]) }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ holdReservationId: null, holdExpiresAt: null }),
+        expect.objectContaining({ holdReservationId: null, holdExpiresAt: null }),
+      ]),
+    );
+    await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', customerTwoCookie)
+      .send({ eventId: event.id, eventSeatIds: [firstSeat.id, secondSeat.id] })
+      .expect(201);
+  });
+
+  it('serializa cancelamentos concorrentes e não permite cancelar Reservation expirada', async () => {
+    const event = await createEvent();
+    const [seat] = await createEventSeats(event, 1);
+    const customerOneCookie = await authenticate(customerOne.email);
+    const creation = await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', customerOneCookie)
+      .send({ eventId: event.id, eventSeatIds: [seat.id] })
+      .expect(201);
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/reservations/${creation.body.id}/cancel`)
+        .set('Cookie', customerOneCookie),
+      request(app.getHttpServer())
+        .post(`/reservations/${creation.body.id}/cancel`)
+        .set('Cookie', customerOneCookie),
+    ]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 409]);
+    expect(responses).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          body: expect.objectContaining({ code: 'RESERVATION_NOT_ACTIVE' }),
+        }),
+      ]),
+    );
+    const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
+    await request(app.getHttpServer())
+      .post(`/reservations/${expiredReservation.id}/cancel`)
+      .set('Cookie', customerOneCookie)
+      .expect(409)
+      .expect(({ body }) =>
+        expect(body).toEqual(expect.objectContaining({ code: 'RESERVATION_NOT_ACTIVE' })),
+      );
   });
 
   it.each([

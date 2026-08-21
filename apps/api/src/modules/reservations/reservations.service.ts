@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { AdmissionMode } from '../events/admissionMode.enum';
@@ -12,8 +12,13 @@ import { ActiveReservationExistsError } from './errors/activeReservationExists.e
 import { EventAlreadyStartedError } from './errors/eventAlreadyStarted.error';
 import { EventCannotBeReservedError } from './errors/eventCannotBeReserved.error';
 import { SeatUnavailableError } from './errors/seatUnavailable.error';
+import { ReservationNotActiveError } from './errors/reservationNotActive.error';
+import { ReservationNotFoundError } from './errors/reservationNotFound.error';
+import { ReservationDetail } from './repositories/reservationRepository.interfaces';
+import { ReservationRepository } from './repositories/reservation.repository';
 import { ReservationItem } from './reservationItem.entity';
 import { Reservation } from './reservation.entity';
+import { ReservationStatus } from './reservationStatus.enum';
 
 interface DatabaseTimestampRow {
   now: Date;
@@ -21,7 +26,10 @@ interface DatabaseTimestampRow {
 
 @Injectable()
 export class ReservationsService {
-  public constructor(private readonly dataSource: DataSource) {}
+  public constructor(
+    private readonly dataSource: DataSource,
+    private readonly reservationRepository: ReservationRepository,
+  ) {}
 
   /**
    * Cria uma Reservation seated somente quando todos os EventSeats ainda podem ser adquiridos.
@@ -42,10 +50,7 @@ export class ReservationsService {
       const eventSeatsRepository = manager.getRepository(EventSeat);
       const reservationsRepository = manager.getRepository(Reservation);
       const reservationItemsRepository = manager.getRepository(ReservationItem);
-      const timestampRows = (await manager.query(
-        'SELECT CURRENT_TIMESTAMP AS "now"',
-      )) as DatabaseTimestampRow[];
-      const now = new Date(timestampRows[0].now);
+      const now = await this.getDatabaseTimestamp(manager);
       const expiresAt = new Date(
         now.getTime() + applicationConfig.reservations.holdDurationSeconds * 1000,
       );
@@ -112,5 +117,94 @@ export class ReservationsService {
 
       return { reservation, items };
     });
+  }
+
+  /**
+   * Retorna uma Reservation pertencente ao CUSTOMER, com seu estado temporal calculado no PostgreSQL.
+   *
+   * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
+   * @param reservationId - Identificador da Reservation solicitada.
+   * @returns Reservation detalhada pertencente ao CUSTOMER.
+   */
+  public async findOwned(customerId: string, reservationId: string): Promise<ReservationDetail> {
+    const detail = await this.reservationRepository.findOwnedDetail(customerId, reservationId);
+
+    if (!detail) {
+      throw new ReservationNotFoundError();
+    }
+
+    return detail;
+  }
+
+  /**
+   * Retorna a Reservation ativa do CUSTOMER para a ocorrência, quando ela ainda existir.
+   *
+   * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
+   * @param eventId - Identificador da ocorrência consultada.
+   * @returns Reservation ativa detalhada ou null quando não existir uma.
+   */
+  public findActive(customerId: string, eventId: string): Promise<ReservationDetail | null> {
+    return this.reservationRepository.findActiveByCustomerAndEvent(customerId, eventId);
+  }
+
+  /**
+   * Cancela uma Reservation ainda ativa e libera exclusivamente os EventSeats que ela mantém em hold.
+   *
+   * O bloqueio da Reservation serializa cancelamentos concorrentes e a condição no UPDATE impede que
+   * um EventSeat reatribuído seja liberado por engano.
+   *
+   * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
+   * @param reservationId - Identificador da Reservation que deve ser cancelada.
+   * @returns Reservation cancelada com seus itens e estado derivado.
+   */
+  public async cancel(customerId: string, reservationId: string): Promise<ReservationDetail> {
+    return this.dataSource.transaction(async (manager) => {
+      const reservationsRepository = manager.getRepository(Reservation);
+      const reservationItemsRepository = manager.getRepository(ReservationItem);
+      const eventSeatsRepository = manager.getRepository(EventSeat);
+      const now = await this.getDatabaseTimestamp(manager);
+      const reservation = await reservationsRepository.findOne({
+        where: { id: reservationId, customerId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!reservation) {
+        throw new ReservationNotFoundError();
+      }
+
+      if (
+        reservation.confirmedAt ||
+        reservation.cancelledAt ||
+        reservation.expiresAt.getTime() <= now.getTime()
+      ) {
+        throw new ReservationNotActiveError();
+      }
+
+      reservation.cancelledAt = now;
+      await reservationsRepository.save(reservation);
+      await eventSeatsRepository
+        .createQueryBuilder()
+        .update(EventSeat)
+        .set({ holdReservationId: null, holdExpiresAt: null })
+        .where('"holdReservationId" = :reservationId', { reservationId })
+        .execute();
+      const items = await reservationItemsRepository.findBy({ reservationId });
+
+      return { reservation, items, status: ReservationStatus.Cancelled };
+    });
+  }
+
+  /**
+   * Obtém o instante autoritativo da mesma conexão PostgreSQL que executará a transação.
+   *
+   * @param manager - EntityManager vinculado à transaction corrente.
+   * @returns Instante atual fornecido pelo PostgreSQL.
+   */
+  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
+    const timestampRows = (await manager.query(
+      'SELECT CURRENT_TIMESTAMP AS "now"',
+    )) as DatabaseTimestampRow[];
+
+    return new Date(timestampRows[0].now);
   }
 }

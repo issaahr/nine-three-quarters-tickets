@@ -6,12 +6,13 @@ import { Event } from '../events/event.entity';
 import { EventSeat } from '../events/eventSeat.entity';
 import { ReservationItem } from './reservationItem.entity';
 import { Reservation } from './reservation.entity';
+import { ReservationRepository } from './repositories/reservation.repository';
 import { ReservationsController } from './reservations.controller';
 import { ReservationsService } from './reservations.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Event, EventSeat, Reservation, ReservationItem]), AuthModule],
   controllers: [ReservationsController],
-  providers: [ReservationsService],
+  providers: [ReservationsService, ReservationRepository],
 })
 export class ReservationsModule {}
