@@ -1,8 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { Application } from '../src/application';
 import { Venue } from '../src/modules/venues/venue.entity';
 import { VenueSeat } from '../src/modules/venues/venueSeat.entity';
 
@@ -16,6 +18,7 @@ describe('persistência de Venues', () => {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
     app = testingModule.createNestApplication();
+    new Application().configure(app);
     await app.init();
 
     const dataSource = app.get(DataSource);
@@ -32,7 +35,12 @@ describe('persistência de Venues', () => {
     await app.close();
   });
 
-  /** Cria um Venue isolado e o registra para limpeza ao final da suíte. */
+  /**
+   * Cria um Venue isolado e o registra para limpeza ao final da suíte.
+   *
+   * @param name - Nome único que identifica o cenário.
+   * @returns Venue disponível para configurar seu layout.
+   */
   async function createVenue(name: string): Promise<Venue> {
     const venue = await venuesRepository.save({
       name,
@@ -45,6 +53,23 @@ describe('persistência de Venues', () => {
 
     venueIds.push(venue.id);
     return venue;
+  }
+
+  /**
+   * Percorre o login real para validar a autorização do endpoint de Venues.
+   *
+   * @param email - Conta de demonstração que deve acessar a rota.
+   * @returns Cookie de sessão emitido pela API.
+   */
+  async function authenticate(email: string): Promise<string> {
+    const response = await request(app.getHttpServer()).post('/auth/login').send({
+      email,
+      password: process.env.DEMO_USERS_PASSWORD,
+    });
+    const setCookie = response.headers['set-cookie'];
+    const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+
+    return cookie.split(';', 1)[0];
   }
 
   it('disponibiliza o Venue inicial com um layout de 60 assentos e corredor central', async () => {
@@ -76,6 +101,30 @@ describe('persistência de Venues', () => {
         expect.objectContaining({ label: 'F10', row: 'F', number: 10, x: 10, y: 5 }),
       ]),
     );
+  });
+
+  it('expõe os Venues configurados somente ao papel ORGANIZER', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+    const response = await request(app.getHttpServer())
+      .get('/venues')
+      .set('Cookie', organizerCookie)
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Cine Imperial · Sala A',
+          city: 'São Paulo',
+          timeZone: 'America/Sao_Paulo',
+        }),
+      ]),
+    );
+
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/venues')
+      .set('Cookie', customerCookie)
+      .expect(403);
   });
 
   it('persiste o layout físico associado ao Venue', async () => {

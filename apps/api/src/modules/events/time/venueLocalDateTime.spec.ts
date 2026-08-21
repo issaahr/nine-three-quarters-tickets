@@ -1,5 +1,5 @@
-import { InvalidEventStartError } from './errors/invalidEventStart.error';
-import { InvalidVenueTimeZoneError } from './errors/invalidVenueTimeZone.error';
+import { InvalidEventStartError } from '../errors/invalidEventStart.error';
+import { InvalidVenueTimeZoneError } from '../errors/invalidVenueTimeZone.error';
 import { venueLocalDateTimeToDate } from './venueLocalDateTime';
 
 describe('venueLocalDateTimeToDate', () => {

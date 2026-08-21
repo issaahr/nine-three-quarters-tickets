@@ -1,7 +1,7 @@
 import { Temporal } from '@js-temporal/polyfill';
 
-import { InvalidEventStartError } from './errors/invalidEventStart.error';
-import { InvalidVenueTimeZoneError } from './errors/invalidVenueTimeZone.error';
+import { InvalidEventStartError } from '../errors/invalidEventStart.error';
+import { InvalidVenueTimeZoneError } from '../errors/invalidVenueTimeZone.error';
 
 /**
  * Interpreta uma data local exclusivamente no timezone IANA persistido pelo Venue.

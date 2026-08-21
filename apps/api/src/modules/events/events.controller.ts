@@ -1,17 +1,22 @@
-import { Body, Controller, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
-import { AuthenticatedUser } from '../auth/auth.types';
+import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
-import { ApiCreateMovieEvent } from './events.swagger';
+import { ApiCreateMovieEvent, ApiPublishEvent } from './events.swagger';
 import { EventsService } from './events.service';
-
-interface AuthenticatedRequest {
-  user: AuthenticatedUser;
-}
 
 @ApiTags('Events')
 @Controller('events')
@@ -29,6 +34,21 @@ export class EventsController {
     @Body() data: CreateMovieEventRequestDto,
   ): Promise<CreateMovieEventResponseDto> {
     const event = await this.eventsService.createMovie(request.user.id, data);
+    return CreateMovieEventResponseDto.fromEvent(event);
+  }
+
+  /**
+   * Publica a ocorrência do organizador autenticado e materializa seu inventário.
+   */
+  @Post(':eventId/publish')
+  @HttpCode(HttpStatus.OK)
+  @Roles(UserRole.Organizer)
+  @ApiPublishEvent()
+  public async publish(
+    @Req() request: AuthenticatedRequest,
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
+  ): Promise<CreateMovieEventResponseDto> {
+    const event = await this.eventsService.publish(request.user.id, eventId);
     return CreateMovieEventResponseDto.fromEvent(event);
   }
 }
