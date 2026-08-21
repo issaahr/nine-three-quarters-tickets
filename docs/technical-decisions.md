@@ -54,6 +54,15 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 
 Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.md).
 
+## Descoberta pública de Events
+
+- `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
+- A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro.
+- A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
+- Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
+- Filtros de calendário comparam cada ocorrência segundo o timezone IANA de seu Venue.
+- A ordenação por `startsAt` e `id` mantém páginas determinísticas dentro do modelo simples baseado em offset.
+
 ## Autenticação e autorização
 
 - Senhas utilizam bcrypt com custo 12.

@@ -110,6 +110,8 @@ O shell de CUSTOMER e ORGANIZER utiliza a superfície clara da identidade visual
 
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 
+A descoberta pública consulta `GET /events` sem acessar novamente o catálogo externo. A API retorna somente ocorrências `PUBLISHED` e futuras, usando o snapshot persistido no Event e o Venue associado para busca, filtros e apresentação canônica.
+
 ## Fronteiras externas e futuras
 
 - A TMDb implementa a port `CatalogProvider`; sua resposta é normalizada antes de alcançar Events e nunca fornece inventário ou dados locais de venda.

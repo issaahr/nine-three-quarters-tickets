@@ -1,6 +1,10 @@
+<p align="center">
+  <img src="docs/readme-banner.png" alt="9¾ Tickets" width="480" />
+</p>
+
 # 9¾ Tickets
 
-Monorepo da plataforma 9¾ Tickets.
+Código fonte da plataforma 9¾ Tickets.
 
 ## Documentação
 
