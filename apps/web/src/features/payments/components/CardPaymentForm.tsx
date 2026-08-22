@@ -295,10 +295,17 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
                 variant="outline"
                 onClick={() => setIsCancellationConfirmationOpen(false)}
                 disabled={isCancelling}
+                className="rounded-[4px]"
               >
                 Voltar
               </Button>
-              <Button type="button" variant="destructive" onClick={confirmCancellation} disabled={isCancelling}>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={confirmCancellation}
+                disabled={isCancelling}
+                className="rounded-[4px]"
+              >
                 {isCancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
               </Button>
             </div>

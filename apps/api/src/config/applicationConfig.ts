@@ -1,7 +1,9 @@
 import { ConfigurationError } from '../errors/configuration.error';
 import { getRequiredEnvironmentVariable } from './environment';
+import { NodeEnv } from './nodeEnv.enum';
 
-const supportedEnvironments = ['development', 'test', 'production'] as const;
+const supportedEnvironments = [NodeEnv.Development, NodeEnv.Test, NodeEnv.Production] as const;
+
 type RuntimeEnvironment = (typeof supportedEnvironments)[number];
 
 /**
@@ -234,8 +236,8 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         name: 'accessToken',
         httpOnly: true,
         path: '/',
-        sameSite: environment === 'production' ? ('none' as const) : ('lax' as const),
-        secure: environment === 'production',
+        sameSite: environment === NodeEnv.Production ? ('none' as const) : ('lax' as const),
+        secure: environment === NodeEnv.Production,
       },
     },
   } as const;
