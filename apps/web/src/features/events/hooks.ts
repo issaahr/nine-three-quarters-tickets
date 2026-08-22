@@ -3,6 +3,8 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { fetchEventDetail, fetchEventDiscovery, fetchEventSeatMap } from './api';
 import { EventDiscoveryFilters } from './types';
 
+const seatMapPassiveReconciliationIntervalMilliseconds = 15_000;
+
 /**
  * Mantém filtros e páginas na mesma chave remota para reiniciar o catálogo a cada nova consulta.
  */
@@ -28,12 +30,14 @@ export function useEventDetail(eventId: string | undefined) {
 
 /**
  * Mantém o mapa materializado separado do detalhe para que sua disponibilidade possa ser atualizada.
+ * O refetch periódico reconcilia holds expirados pela leitura temporal autoritativa do PostgreSQL.
  */
 export function useEventSeatMap(eventId: string | undefined, enabled: boolean) {
   return useQuery({
     queryKey: ['events', 'seat-map', eventId],
     queryFn: () => fetchEventSeatMap(eventId!),
     enabled: Boolean(eventId) && enabled,
+    refetchInterval: seatMapPassiveReconciliationIntervalMilliseconds,
     retry: false,
   });
 }

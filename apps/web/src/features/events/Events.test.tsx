@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
@@ -17,13 +17,24 @@ import {
   EventStatus,
 } from './types';
 
+const eventsSocketMock = vi.hoisted(() => {
+  const listeners = new Map<string, (...arguments_: unknown[]) => void>();
+
+  return {
+    listeners,
+    socket: {
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+      emit: vi.fn(),
+      on: vi.fn((socketEvent: string, listener: (...arguments_: unknown[]) => void) => {
+        listeners.set(socketEvent, listener);
+      }),
+    },
+  };
+});
+
 vi.mock('socket.io-client', () => ({
-  io: vi.fn(() => ({
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    emit: vi.fn(),
-    on: vi.fn(),
-  })),
+  io: vi.fn(() => eventsSocketMock.socket),
 }));
 
 const apiUrl = 'http://api.test';
@@ -76,6 +87,15 @@ const seatMap: EventSeatMapItem[] = [
     y: 1,
     status: EventSeatStatus.Sold,
   },
+  {
+    id: 'event-seat-4',
+    label: 'A3',
+    row: 'A',
+    number: 3,
+    x: 2,
+    y: 0,
+    status: EventSeatStatus.Available,
+  },
 ];
 
 function renderEvents(initialPath = '/events') {
@@ -93,6 +113,8 @@ function renderEvents(initialPath = '/events') {
 }
 
 beforeEach(() => {
+  eventsSocketMock.listeners.clear();
+  vi.clearAllMocks();
   vi.stubGlobal(
     'IntersectionObserver',
     class {
@@ -233,6 +255,52 @@ describe('catálogo público de eventos', () => {
 
     expect(availableSeat).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText('Selecione seus assentos')).toBeInTheDocument();
+  });
+
+  it('remove somente o assento selecionado que ficou indisponível em realtime', async () => {
+    server.use(http.get(`${apiUrl}/events/${event.id}`, () => HttpResponse.json(eventDetail)));
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${event.id}`);
+
+    const firstSeat = await screen.findByRole('button', {
+      name: 'Assento A1, disponível',
+    });
+    const secondSeat = screen.getByRole('button', { name: 'Assento A3, disponível' });
+    await user.click(firstSeat);
+    await user.click(secondSeat);
+
+    expect(screen.getByText('2 assentos selecionados.')).toBeInTheDocument();
+
+    act(() => {
+      eventsSocketMock.listeners.get('seat.held')?.({
+        eventId: event.id,
+        eventSeatIds: ['event-seat-1'],
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Assento A1, indisponível' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Assento A3, selecionado' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('1 assento selecionado.')).toBeInTheDocument();
+
+    act(() => {
+      eventsSocketMock.listeners.get('seat.released')?.({
+        eventId: event.id,
+        eventSeatIds: ['event-seat-1'],
+      });
+    });
+
+    expect(await screen.findByRole('button', { name: 'Assento A1, disponível' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Assento A3, selecionado' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('cria o hold apenas após confirmação da API e atualiza o mapa de assentos', async () => {

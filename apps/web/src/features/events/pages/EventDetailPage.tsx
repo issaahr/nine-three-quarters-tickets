@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { Button, buttonVariants } from '../../../components/ui/button';
@@ -12,7 +12,13 @@ import { SeatMap } from '../components/SeatMap';
 import { formatEventDetailDateTime, formatEventPrice } from '../eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../hooks';
 import { useSeatRealtime } from '../seatRealtime';
-import { AdmissionMode, EventCategory, EventStatus } from '../types';
+import {
+  AdmissionMode,
+  EventCategory,
+  EventSeatMapItem,
+  EventSeatStatus,
+  EventStatus,
+} from '../types';
 
 const categoryLabels: Record<EventCategory, string> = {
   [EventCategory.Movie]: 'Filme',
@@ -21,7 +27,7 @@ const categoryLabels: Record<EventCategory, string> = {
 
 interface LocalSeatSelection {
   eventId: string | undefined;
-  mapUpdatedAt: number;
+  reconciledSeatMap: EventSeatMapItem[] | undefined;
   seatIds: string[];
 }
 
@@ -39,17 +45,37 @@ export function EventDetailPage() {
   const { create, cancel, isCreating, isCancelling } = useReservationMutations(eventId);
   const [localSelection, setLocalSelection] = useState<LocalSeatSelection>({
     eventId,
-    mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+    reconciledSeatMap: seatMapQuery.data,
     seatIds: [],
   });
   const [isActiveReservationDialogOpen, setIsActiveReservationDialogOpen] = useState(false);
   const [isCancelConfirmationOpen, setIsCancelConfirmationOpen] = useState(false);
   const [reservationFeedback, setReservationFeedback] = useState<string | null>(null);
+  const availableSeatIds = useMemo(
+    () =>
+      new Set(
+        seatMapQuery.data
+          ?.filter((seat) => seat.status === EventSeatStatus.Available)
+          .map((seat) => seat.id),
+      ),
+    [seatMapQuery.data],
+  );
   const selectedSeatIds =
-    localSelection.eventId === eventId && localSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
-      ? localSelection.seatIds
+    localSelection.eventId === eventId
+      ? localSelection.seatIds.filter((seatId) => availableSeatIds.has(seatId))
       : [];
   const activeReservation = activeReservationQuery.data;
+
+  if (
+    localSelection.eventId === eventId &&
+    localSelection.reconciledSeatMap !== seatMapQuery.data
+  ) {
+    setLocalSelection({
+      eventId,
+      reconciledSeatMap: seatMapQuery.data,
+      seatIds: selectedSeatIds,
+    });
+  }
 
   if (query.isPending) {
     return (
@@ -98,14 +124,13 @@ export function EventDetailPage() {
   function toggleSeat(seatId: string): void {
     setLocalSelection((currentSelection) => {
       const currentSeatIds =
-        currentSelection.eventId === eventId &&
-        currentSelection.mapUpdatedAt === seatMapQuery.dataUpdatedAt
-          ? currentSelection.seatIds
+        currentSelection.eventId === eventId
+          ? currentSelection.seatIds.filter((currentSeatId) => availableSeatIds.has(currentSeatId))
           : [];
 
       return {
         eventId,
-        mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+        reconciledSeatMap: seatMapQuery.data,
         seatIds: currentSeatIds.includes(seatId)
           ? currentSeatIds.filter((currentSeatId) => currentSeatId !== seatId)
           : [...currentSeatIds, seatId],
@@ -162,7 +187,7 @@ export function EventDetailPage() {
       await cancel(activeReservation.id);
       setIsCancelConfirmationOpen(false);
       setIsActiveReservationDialogOpen(false);
-      setLocalSelection({ eventId, mapUpdatedAt: seatMapQuery.dataUpdatedAt, seatIds: [] });
+      setLocalSelection({ eventId, reconciledSeatMap: seatMapQuery.data, seatIds: [] });
       setReservationFeedback('Reserva cancelada. Os assentos foram liberados.');
     } catch {
       setReservationFeedback('Não foi possível cancelar a reserva. Tente novamente.');
@@ -383,7 +408,7 @@ export function EventDetailPage() {
                 onClick={() => {
                   setLocalSelection({
                     eventId,
-                    mapUpdatedAt: seatMapQuery.dataUpdatedAt,
+                    reconciledSeatMap: seatMapQuery.data,
                     seatIds: [],
                   });
                   setIsActiveReservationDialogOpen(false);
