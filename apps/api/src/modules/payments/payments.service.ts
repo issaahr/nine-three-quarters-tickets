@@ -18,7 +18,7 @@ import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
 import { PaymentRepository } from './repositories/payment.repository';
-import { Ticket } from '../tickets/ticket.entity';
+import { TicketsService } from '../tickets/tickets.service';
 
 interface DatabaseTimestampRow {
   now: Date;
@@ -37,6 +37,7 @@ export class PaymentsService {
     private readonly dataSource: DataSource,
     private readonly paymentRepository: PaymentRepository,
     @Inject(paymentGatewayToken) private readonly paymentGateway: PaymentGateway,
+    private readonly ticketsService: TicketsService,
   ) {}
 
   /**
@@ -195,7 +196,6 @@ export class PaymentsService {
         const reservationsRepository = manager.getRepository(Reservation);
         const reservationItemsRepository = manager.getRepository(ReservationItem);
         const eventSeatsRepository = manager.getRepository(EventSeat);
-        const ticketsRepository = manager.getRepository(Ticket);
         const eventsRepository = manager.getRepository(Event);
         const payment = await paymentsRepository.findOne({
           where: { id: paymentId },
@@ -255,10 +255,10 @@ export class PaymentsService {
         payment.status = PaymentStatus.Approved;
         payment.approvedAt = now;
         await reservationsRepository.save(reservation);
-        await ticketsRepository.save(
-          items.map((item) =>
-            ticketsRepository.create({ reservationItemId: item.id, issuedAt: now }),
-          ),
+        await this.ticketsService.issueForReservationItems(
+          manager,
+          items.map((item) => item.id),
+          now,
         );
 
         return paymentsRepository.save(payment);

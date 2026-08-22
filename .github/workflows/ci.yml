@@ -69,8 +69,9 @@ jobs:
       POSTGRES_PASSWORD: test
       DATABASE_URL: postgresql://test:test@localhost:5432/nine_three_quarters_test
       DEMO_USERS_PASSWORD: demo-password
-      JWT_SECRET: ci-test-jwt-secret
+      JWT_SECRET: ci-test-jwt-secret-with-at-least-32-bytes
       JWT_EXPIRES_IN_SECONDS: "3600"
+      TICKET_HMAC_SECRET: ci-test-ticket-secret-with-at-least-32-bytes
       RESERVATION_HOLD_DURATION_SECONDS: "600"
       PAYMENT_CARD_PENDING_TIMEOUT_SECONDS: "600"
       CORS_ORIGINS: http://localhost:5173

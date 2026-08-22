@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button';
 import { useAuth } from '../../auth/hooks';
+import { UserRole } from '../../auth/types';
 import { BrandLink } from '../../navigation/components/BrandLink';
 import { getRoleNavigation } from '../../navigation/roleNavigation';
 
@@ -49,6 +50,20 @@ export function EventsLayout() {
               >
                 {user && hasDedicatedArea ? navigation?.homeLabel : 'Eventos'}
               </NavLink>
+              {user?.role === UserRole.Customer && (
+                <NavLink
+                  to="/customer/tickets"
+                  className={({ isActive }) =>
+                    `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
+                      isActive
+                        ? 'text-primary-foreground'
+                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                    }`
+                  }
+                >
+                  Meus ingressos
+                </NavLink>
+              )}
             </nav>
 
             {user ? (

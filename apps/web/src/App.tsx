@@ -4,6 +4,7 @@ import { environment } from './config/environment';
 import { ProtectedRoute } from './features/auth/components/ProtectedRoute';
 import { Login } from './features/auth/pages/Login';
 import { Signup } from './features/auth/pages/Signup';
+import { UserRole } from './features/auth/types';
 import { EventsLayout } from './features/events/components/EventsLayout';
 import { EventCatalog } from './features/events/pages/EventCatalog';
 import { EventDetailPage } from './features/events/pages/EventDetailPage';
@@ -14,7 +15,8 @@ import { GateHome } from './features/navigation/pages/GateHome';
 import { CreateMovieEvent } from './features/organizer/pages/CreateMovieEvent';
 import { OrganizerHome } from './features/organizer/pages/OrganizerHome';
 import { ReservationCheckoutPage } from './features/reservations/pages/ReservationCheckoutPage';
-import { UserRole } from './features/auth/types';
+import { MyTicketsPage } from './features/tickets/pages/MyTicketsPage';
+import { TicketPresentationPage } from './features/tickets/pages/TicketPresentationPage';
 
 interface AppProps {
   publicSignupEnabled?: boolean;
@@ -32,6 +34,8 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
         element={publicSignupEnabled ? <Signup /> : <Navigate replace to="/login" />}
       />
 
+      <Route path="/tickets/shared/:credential" element={<TicketPresentationPage shared />} />
+
       <Route element={<EventsLayout />}>
         <Route path="/events" element={<EventCatalog />} />
         <Route path="/events/:eventId" element={<EventDetailPage />} />
@@ -45,6 +49,8 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
               path="/customer/reservations/:reservationId"
               element={<ReservationCheckoutPage />}
             />
+            <Route path="/customer/tickets" element={<MyTicketsPage />} />
+            <Route path="/customer/tickets/:credential" element={<TicketPresentationPage />} />
           </Route>
 
           <Route element={<RoleRoute allowedRole={UserRole.Organizer} />}>
