@@ -11,6 +11,7 @@ import { useActiveReservation, useReservationMutations } from '../../reservation
 import { SeatMap } from '../components/SeatMap';
 import { formatEventDetailDateTime, formatEventPrice } from '../eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../hooks';
+import { useSeatRealtime } from '../seatRealtime';
 import { AdmissionMode, EventCategory, EventStatus } from '../types';
 
 const categoryLabels: Record<EventCategory, string> = {
@@ -30,7 +31,9 @@ export function EventDetailPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const query = useEventDetail(eventId);
-  const seatMapQuery = useEventSeatMap(eventId, query.data?.admissionMode === AdmissionMode.Seated);
+  const hasSeatMap = query.data?.admissionMode === AdmissionMode.Seated;
+  const seatMapQuery = useEventSeatMap(eventId, hasSeatMap);
+  useSeatRealtime(eventId, hasSeatMap);
   const isCustomer = user?.role === UserRole.Customer;
   const activeReservationQuery = useActiveReservation(eventId, isCustomer);
   const { create, cancel, isCreating, isCancelling } = useReservationMutations(eventId);

@@ -20,6 +20,13 @@ export enum EventSeatStatus {
   Sold = 'SOLD',
 }
 
+export enum RealtimeEvent {
+  EventJoin = 'event.join',
+  SeatHeld = 'seat.held',
+  SeatSold = 'seat.sold',
+  SeatReleased = 'seat.released',
+}
+
 export interface EventDiscoveryItem {
   id: string;
   title: string;
@@ -54,6 +61,15 @@ export interface EventSeatMapItem {
   x: number;
   y: number;
   status: EventSeatStatus;
+}
+
+export interface SeatRealtimeDelta {
+  eventId: string;
+  eventSeatIds: string[];
+}
+
+export interface EventRoomJoined {
+  eventId: string;
 }
 
 export interface EventDiscoveryFilters {

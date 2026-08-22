@@ -17,6 +17,15 @@ import {
   EventStatus,
 } from './types';
 
+vi.mock('socket.io-client', () => ({
+  io: vi.fn(() => ({
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    emit: vi.fn(),
+    on: vi.fn(),
+  })),
+}));
+
 const apiUrl = 'http://api.test';
 const event: EventDiscoveryItem = {
   id: 'event-1',
