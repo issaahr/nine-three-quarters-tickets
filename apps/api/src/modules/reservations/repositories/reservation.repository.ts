@@ -1,19 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 
+import { EventSeat } from '../../events/eventSeat.entity';
 import { ReservationItem } from '../reservationItem.entity';
 import { Reservation } from '../reservation.entity';
 import { ReservationStatus } from '../reservationStatus.enum';
-import { ReservationDetail } from './reservationRepository.interfaces';
+import {
+  AcquireEventSeatsParameters,
+  ReleasedEventSeatRow,
+  ReservationDetail,
+} from './reservationRepository.interfaces';
 
 interface ReservationStatusRow {
   reservationStatus: ReservationStatus;
 }
 
-/**
- * Concentra leituras de Reservation cujo estado temporal precisa ser calculado pelo PostgreSQL.
- */
+/** Concentra consultas semânticas e escritas condicionais do lifecycle de Reservations. */
 @Injectable()
 export class ReservationRepository {
   public constructor(
@@ -22,6 +25,59 @@ export class ReservationRepository {
     @InjectRepository(ReservationItem)
     private readonly reservationItemsRepository: Repository<ReservationItem>,
   ) {}
+
+  /**
+   * Adquire todos os EventSeats elegíveis por uma única escrita condicional dentro da transaction.
+   *
+   * @param manager - EntityManager vinculado à transaction da Reservation.
+   * @param parameters - Identificadores e timestamps autoritativos usados na aquisição.
+   * @returns Quantidade de EventSeats adquiridos pela escrita condicional.
+   */
+  public async acquireEventSeats(
+    manager: EntityManager,
+    parameters: AcquireEventSeatsParameters,
+  ): Promise<number> {
+    const result = await manager
+      .getRepository(EventSeat)
+      .createQueryBuilder()
+      .update(EventSeat)
+      .set({
+        holdReservationId: parameters.reservationId,
+        holdExpiresAt: parameters.expiresAt,
+      })
+      .where('"id" IN (:...eventSeatIds)', { eventSeatIds: parameters.eventSeatIds })
+      .andWhere('"eventId" = :eventId', { eventId: parameters.eventId })
+      .andWhere('"soldAt" IS NULL')
+      .andWhere('("holdReservationId" IS NULL OR "holdExpiresAt" <= :now)', {
+        now: parameters.now,
+      })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Libera somente os EventSeats cujo hold ainda pertence à Reservation informada.
+   *
+   * @param manager - EntityManager vinculado à transaction de cancelamento.
+   * @param reservationId - Reservation proprietária dos holds que devem ser liberados.
+   * @returns Identificadores dos EventSeats efetivamente alterados.
+   */
+  public async releaseHeldEventSeats(
+    manager: EntityManager,
+    reservationId: string,
+  ): Promise<string[]> {
+    const result = await manager
+      .getRepository(EventSeat)
+      .createQueryBuilder()
+      .update(EventSeat)
+      .set({ holdReservationId: null, holdExpiresAt: null })
+      .where('"holdReservationId" = :reservationId', { reservationId })
+      .returning('"id"')
+      .execute();
+
+    return (result.raw as ReleasedEventSeatRow[]).map(({ id }) => id);
+  }
 
   /**
    * Carrega uma Reservation do CUSTOMER com seus itens, sem revelar recursos de outro usuário.

@@ -13,6 +13,7 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { User } from '../src/modules/users/user.entity';
@@ -27,6 +28,7 @@ describe('Reservations seated', () => {
   let reservationsRepository: Repository<Reservation>;
   let reservationItemsRepository: Repository<ReservationItem>;
   let venueSeatsRepository: Repository<VenueSeat>;
+  let seatRealtimeGateway: SeatRealtimeGateway;
   let customerOne: User;
   let customerTwo: User;
   let organizer: User;
@@ -46,6 +48,9 @@ describe('Reservations seated', () => {
     reservationsRepository = dataSource.getRepository(Reservation);
     reservationItemsRepository = dataSource.getRepository(ReservationItem);
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
+    seatRealtimeGateway = app.get(SeatRealtimeGateway);
+    jest.spyOn(seatRealtimeGateway, 'emitHeld').mockImplementation();
+    jest.spyOn(seatRealtimeGateway, 'emitReleased').mockImplementation();
     customerOne = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'customer.one.demo@ntq.local' });
@@ -215,6 +220,10 @@ describe('Reservations seated', () => {
         }),
       ]),
     );
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: [firstSeat.id, secondSeat.id],
+    });
   });
 
   it('permite que somente um CUSTOMER adquira o mesmo EventSeat sob requests concorrentes', async () => {
@@ -244,6 +253,11 @@ describe('Reservations seated', () => {
     );
     await expect(reservationsRepository.countBy({ eventId: event.id })).resolves.toBe(1);
     await expect(countReservationItemsForEvent(event.id)).resolves.toBe(1);
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledTimes(1);
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: [seat.id],
+    });
   });
 
   it('reverte Reservation, itens e holds quando qualquer assento solicitado está indisponível', async () => {
@@ -267,6 +281,7 @@ describe('Reservations seated', () => {
       holdReservationId: null,
       holdExpiresAt: null,
     });
+    expect(seatRealtimeGateway.emitHeld).not.toHaveBeenCalled();
   });
 
   it('reutiliza um EventSeat cujo hold expirou sem exigir scheduler', async () => {
@@ -426,6 +441,13 @@ describe('Reservations seated', () => {
         expect.objectContaining({ holdReservationId: null, holdExpiresAt: null }),
       ]),
     );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: expect.arrayContaining([firstSeat.id, secondSeat.id]),
+    });
+    const [releasedDelta] = jest.mocked(seatRealtimeGateway.emitReleased).mock.calls[0];
+    expect(releasedDelta.eventSeatIds).toHaveLength(2);
     await request(app.getHttpServer())
       .post('/reservations')
       .set('Cookie', customerTwoCookie)
@@ -459,6 +481,7 @@ describe('Reservations seated', () => {
         }),
       ]),
     );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
     const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
     await request(app.getHttpServer())
       .post(`/reservations/${expiredReservation.id}/cancel`)
@@ -467,6 +490,7 @@ describe('Reservations seated', () => {
       .expect(({ body }) =>
         expect(body).toEqual(expect.objectContaining({ code: 'RESERVATION_NOT_ACTIVE' })),
       );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
   });
 
   it.each([

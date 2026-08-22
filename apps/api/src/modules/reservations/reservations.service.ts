@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, IsNull, MoreThan } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
-import { EventSeat } from '../events/eventSeat.entity';
 import { EventStatus } from '../events/eventStatus.enum';
 import { EventNotFoundError } from '../events/errors/eventNotFound.error';
+import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { CreateReservationRequestDto } from './dto/createReservationRequest.dto';
 import { ActiveReservationExistsError } from './errors/activeReservationExists.error';
 import { EventAlreadyStartedError } from './errors/eventAlreadyStarted.error';
@@ -14,21 +14,22 @@ import { EventCannotBeReservedError } from './errors/eventCannotBeReserved.error
 import { SeatUnavailableError } from './errors/seatUnavailable.error';
 import { ReservationNotActiveError } from './errors/reservationNotActive.error';
 import { ReservationNotFoundError } from './errors/reservationNotFound.error';
-import { ReservationDetail } from './repositories/reservationRepository.interfaces';
+import {
+  CancellationTransactionResult,
+  DatabaseTimestampRow,
+  ReservationDetail,
+} from './repositories/reservationRepository.interfaces';
 import { ReservationRepository } from './repositories/reservation.repository';
 import { ReservationItem } from './reservationItem.entity';
 import { Reservation } from './reservation.entity';
 import { ReservationStatus } from './reservationStatus.enum';
-
-interface DatabaseTimestampRow {
-  now: Date;
-}
 
 @Injectable()
 export class ReservationsService {
   public constructor(
     private readonly dataSource: DataSource,
     private readonly reservationRepository: ReservationRepository,
+    private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
 
   /**
@@ -36,6 +37,7 @@ export class ReservationsService {
    *
    * A escrita condicional dos assentos e a criação dos itens compartilham a mesma transaction,
    * portanto qualquer conflito reverte a Reservation inteira.
+   * O delta realtime é emitido somente depois que a transaction confirma o hold.
    *
    * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
    * @param request - Event e EventSeats escolhidos apenas como intenção local de compra.
@@ -45,9 +47,8 @@ export class ReservationsService {
     customerId: string,
     request: CreateReservationRequestDto,
   ): Promise<{ reservation: Reservation; items: ReservationItem[] }> {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const eventsRepository = manager.getRepository(Event);
-      const eventSeatsRepository = manager.getRepository(EventSeat);
       const reservationsRepository = manager.getRepository(Reservation);
       const reservationItemsRepository = manager.getRepository(ReservationItem);
       const now = await this.getDatabaseTimestamp(manager);
@@ -68,15 +69,16 @@ export class ReservationsService {
         throw new EventAlreadyStartedError();
       }
 
-      const activeReservation = await reservationsRepository
-        .createQueryBuilder('reservation')
-        .select('reservation.id')
-        .where('"reservation"."customerId" = :customerId', { customerId })
-        .andWhere('"reservation"."eventId" = :eventId', { eventId: event.id })
-        .andWhere('"reservation"."confirmedAt" IS NULL')
-        .andWhere('"reservation"."cancelledAt" IS NULL')
-        .andWhere('"reservation"."expiresAt" > :now', { now })
-        .getOne();
+      const activeReservation = await reservationsRepository.findOne({
+        select: { id: true },
+        where: {
+          customerId,
+          eventId: event.id,
+          confirmedAt: IsNull(),
+          cancelledAt: IsNull(),
+          expiresAt: MoreThan(now),
+        },
+      });
 
       if (activeReservation) {
         throw new ActiveReservationExistsError();
@@ -91,17 +93,15 @@ export class ReservationsService {
           cancelledAt: null,
         }),
       );
-      const acquiredSeats = await eventSeatsRepository
-        .createQueryBuilder()
-        .update(EventSeat)
-        .set({ holdReservationId: reservation.id, holdExpiresAt: expiresAt })
-        .where('"id" IN (:...eventSeatIds)', { eventSeatIds: request.eventSeatIds })
-        .andWhere('"eventId" = :eventId', { eventId: event.id })
-        .andWhere('"soldAt" IS NULL')
-        .andWhere('("holdReservationId" IS NULL OR "holdExpiresAt" <= :now)', { now })
-        .execute();
+      const acquiredSeatCount = await this.reservationRepository.acquireEventSeats(manager, {
+        eventId: event.id,
+        eventSeatIds: request.eventSeatIds,
+        reservationId: reservation.id,
+        expiresAt,
+        now,
+      });
 
-      if (acquiredSeats.affected !== request.eventSeatIds.length) {
+      if (acquiredSeatCount !== request.eventSeatIds.length) {
         throw new SeatUnavailableError();
       }
 
@@ -117,6 +117,13 @@ export class ReservationsService {
 
       return { reservation, items };
     });
+
+    this.seatRealtimeGateway.emitHeld({
+      eventId: result.reservation.eventId,
+      eventSeatIds: [...request.eventSeatIds],
+    });
+
+    return result;
   }
 
   /**
@@ -152,46 +159,58 @@ export class ReservationsService {
    *
    * O bloqueio da Reservation serializa cancelamentos concorrentes e a condição no UPDATE impede que
    * um EventSeat reatribuído seja liberado por engano.
+   * O delta realtime contém apenas os EventSeats efetivamente liberados e sai depois do commit.
    *
    * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
    * @param reservationId - Identificador da Reservation que deve ser cancelada.
    * @returns Reservation cancelada com seus itens e estado derivado.
    */
   public async cancel(customerId: string, reservationId: string): Promise<ReservationDetail> {
-    return this.dataSource.transaction(async (manager) => {
-      const reservationsRepository = manager.getRepository(Reservation);
-      const reservationItemsRepository = manager.getRepository(ReservationItem);
-      const eventSeatsRepository = manager.getRepository(EventSeat);
-      const now = await this.getDatabaseTimestamp(manager);
-      const reservation = await reservationsRepository.findOne({
-        where: { id: reservationId, customerId },
-        lock: { mode: 'pessimistic_write' },
+    const result = await this.dataSource.transaction<CancellationTransactionResult>(
+      async (manager) => {
+        const reservationsRepository = manager.getRepository(Reservation);
+        const reservationItemsRepository = manager.getRepository(ReservationItem);
+        const now = await this.getDatabaseTimestamp(manager);
+        const reservation = await reservationsRepository.findOne({
+          where: { id: reservationId, customerId },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!reservation) {
+          throw new ReservationNotFoundError();
+        }
+
+        if (
+          reservation.confirmedAt ||
+          reservation.cancelledAt ||
+          reservation.expiresAt.getTime() <= now.getTime()
+        ) {
+          throw new ReservationNotActiveError();
+        }
+
+        reservation.cancelledAt = now;
+        await reservationsRepository.save(reservation);
+        const releasedEventSeatIds = await this.reservationRepository.releaseHeldEventSeats(
+          manager,
+          reservationId,
+        );
+        const items = await reservationItemsRepository.findBy({ reservationId });
+
+        return {
+          detail: { reservation, items, status: ReservationStatus.Cancelled },
+          releasedEventSeatIds,
+        };
+      },
+    );
+
+    if (result.releasedEventSeatIds.length > 0) {
+      this.seatRealtimeGateway.emitReleased({
+        eventId: result.detail.reservation.eventId,
+        eventSeatIds: result.releasedEventSeatIds,
       });
+    }
 
-      if (!reservation) {
-        throw new ReservationNotFoundError();
-      }
-
-      if (
-        reservation.confirmedAt ||
-        reservation.cancelledAt ||
-        reservation.expiresAt.getTime() <= now.getTime()
-      ) {
-        throw new ReservationNotActiveError();
-      }
-
-      reservation.cancelledAt = now;
-      await reservationsRepository.save(reservation);
-      await eventSeatsRepository
-        .createQueryBuilder()
-        .update(EventSeat)
-        .set({ holdReservationId: null, holdExpiresAt: null })
-        .where('"holdReservationId" = :reservationId', { reservationId })
-        .execute();
-      const items = await reservationItemsRepository.findBy({ reservationId });
-
-      return { reservation, items, status: ReservationStatus.Cancelled };
-    });
+    return result.detail;
   }
 
   /**
