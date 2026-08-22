@@ -1,7 +1,9 @@
 import { ConfigurationError } from '../errors/configuration.error';
 import { getRequiredEnvironmentVariable } from './environment';
+import { NodeEnv } from './nodeEnv.enum';
 
-const supportedEnvironments = ['development', 'test', 'production'] as const;
+const supportedEnvironments = [NodeEnv.Development, NodeEnv.Test, NodeEnv.Production] as const;
+
 type RuntimeEnvironment = (typeof supportedEnvironments)[number];
 
 /**
@@ -103,6 +105,24 @@ function getReservationHoldDurationSeconds(environmentVariables: NodeJS.ProcessE
 }
 
 /**
+ * Define por quanto tempo uma tentativa CARD PENDING pode bloquear uma Reservation
+ * antes de ser recuperada como falha técnica.
+ */
+function getPaymentCardPendingTimeoutSeconds(environmentVariables: NodeJS.ProcessEnv): number {
+  const pendingTimeoutSeconds = Number(
+    getRequiredEnvironmentVariable('PAYMENT_CARD_PENDING_TIMEOUT_SECONDS', environmentVariables),
+  );
+
+  if (!Number.isInteger(pendingTimeoutSeconds) || pendingTimeoutSeconds <= 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente PAYMENT_CARD_PENDING_TIMEOUT_SECONDS deve ser um inteiro positivo',
+    );
+  }
+
+  return pendingTimeoutSeconds;
+}
+
+/**
  * Converte a porta uma única vez antes da criação da aplicação Nest.
  */
 function getPort(environmentVariables: NodeJS.ProcessEnv): number {
@@ -198,6 +218,9 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     reservations: {
       holdDurationSeconds: getReservationHoldDurationSeconds(environmentVariables),
     },
+    payments: {
+      cardPendingTimeoutSeconds: getPaymentCardPendingTimeoutSeconds(environmentVariables),
+    },
     catalog: {
       tmdb: {
         accessToken: getTmdbAccessToken(environmentVariables),
@@ -213,8 +236,8 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         name: 'accessToken',
         httpOnly: true,
         path: '/',
-        sameSite: environment === 'production' ? ('none' as const) : ('lax' as const),
-        secure: environment === 'production',
+        sameSite: environment === NodeEnv.Production ? ('none' as const) : ('lax' as const),
+        secure: environment === NodeEnv.Production,
       },
     },
   } as const;

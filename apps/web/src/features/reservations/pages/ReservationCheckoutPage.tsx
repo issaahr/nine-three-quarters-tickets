@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Clock3, MapPin, Ticket } from 'lucide-react';
+import { CheckCircle2, Clock3, MapPin, Ticket } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import { useEventDetail, useEventSeatMap } from '../../events/hooks';
 import { getReservationCountdown } from '../reservationCountdown';
 import { useReservation } from '../hooks';
 import { ReservationStatus } from '../types';
+import { CardPaymentForm } from '../../payments/components/CardPaymentForm';
 
 export function ReservationCheckoutPage() {
   const { reservationId } = useParams<{ reservationId: string }>();
@@ -88,6 +89,7 @@ export function ReservationCheckoutPage() {
   const isExpired = reservation.status === ReservationStatus.Expired;
   const isCancelled = reservation.status === ReservationStatus.Cancelled;
   const isActive = reservation.status === ReservationStatus.Active;
+  const isConfirmed = reservation.status === ReservationStatus.Confirmed;
   const seatLabelsById = new Map(
     seatMapQuery.data?.map((seat) => [seat.id, seat.label] as const) ?? [],
   );
@@ -105,7 +107,9 @@ export function ReservationCheckoutPage() {
               ? 'Sua reserva expirou'
               : isCancelled
                 ? 'Sua reserva foi cancelada'
-                : 'Sua reserva está em andamento'}
+                : isConfirmed
+                  ? 'Pagamento confirmado'
+                  : 'Sua reserva está em andamento'}
           </h1>
 
           {isActive && countdown && (
@@ -137,10 +141,30 @@ export function ReservationCheckoutPage() {
             </div>
           )}
 
+          {isConfirmed && (
+            <div
+              role="status"
+              className="mt-6 flex gap-3 border-l-4 border-[#3E6B4F] bg-[#3E6B4F]/10 p-4 text-sm leading-6 text-[#285039]"
+            >
+              <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                A compra foi confirmada e os ingressos individuais foram emitidos. A visualização
+                dos ingressos será disponibilizada em seguida.
+              </span>
+            </div>
+          )}
+
           {isActive && (
-            <p className="mb-0 mt-8 border-t border-[#E2D9CB] pt-6 text-sm leading-6 text-muted-foreground">
-              Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.
-            </p>
+            <>
+              <p className="mb-0 mt-8 text-sm leading-6 text-muted-foreground">
+                Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.
+              </p>
+              <CardPaymentForm
+                reservationId={reservation.id}
+                eventId={reservation.eventId}
+                totalPriceCents={totalPriceCents}
+              />
+            </>
           )}
         </section>
 

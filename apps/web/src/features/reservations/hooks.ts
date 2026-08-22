@@ -56,8 +56,9 @@ export function useReservationMutations(eventId: string | undefined) {
   });
   const cancelMutation = useMutation({
     mutationFn: cancelReservation,
-    onSuccess: () => {
+    onSuccess: (reservation: ReservationDetail) => {
       queryClient.setQueryData(activeReservationQueryKey(eventId), null);
+      queryClient.setQueryData(['reservations', 'detail', reservation.id], reservation);
     },
     onSettled: invalidateSeatMap,
   });

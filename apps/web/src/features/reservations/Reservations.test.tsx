@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -31,6 +32,19 @@ const reservationItems = [
   { id: 'item-1', eventSeatId: 'event-seat-1', unitPriceCents: 2590 },
   { id: 'item-2', eventSeatId: 'event-seat-2', unitPriceCents: 2590 },
 ];
+const payButtonName = /Pagar R\$\s*51,80/;
+
+function createPaymentResponse(status: 'APPROVED' | 'DECLINED' | 'FAILED') {
+  return {
+    id: 'payment-1',
+    reservationId,
+    method: 'CARD',
+    status,
+    amountCents: 5180,
+    approvedAt: status === 'APPROVED' ? '2030-08-01T12:00:00.000Z' : null,
+    failedAt: status === 'FAILED' ? '2030-08-01T12:00:00.000Z' : null,
+  };
+}
 
 function renderCheckout() {
   const queryClient = new QueryClient({
@@ -116,5 +130,187 @@ describe('checkout de Reservation', () => {
       'href',
       `/events/${eventId}`,
     );
+  });
+
+  it('envia o cartão aprovado e apresenta a confirmação sem depender de nova navegação', async () => {
+    const user = userEvent.setup();
+    const idempotencyKeys: string[] = [];
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/payments/card`, async ({ request }) => {
+        idempotencyKeys.push(request.headers.get('Idempotency-Key') ?? '');
+        return HttpResponse.json(createPaymentResponse('APPROVED'));
+      }),
+    );
+
+    renderCheckout();
+
+    await user.click(await screen.findByRole('button', { name: 'Usar cartão aprovado' }));
+    await user.click(screen.getByRole('button', { name: payButtonName }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('ingressos individuais foram emitidos');
+    expect(idempotencyKeys).toHaveLength(1);
+    expect(idempotencyKeys[0]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it('mantém a Reservation ativa após recusa e permite uma nova tentativa', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/payments/card`, () =>
+        HttpResponse.json(createPaymentResponse('DECLINED')),
+      ),
+    );
+
+    renderCheckout();
+
+    await user.click(await screen.findByRole('button', { name: 'Usar cartão recusado' }));
+    await user.click(screen.getByRole('button', { name: payButtonName }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pagamento recusado');
+    expect(
+      screen.getByRole('heading', { name: 'Sua reserva está em andamento' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: payButtonName })).toBeEnabled();
+  });
+
+  it('ignora double-click enquanto a mutation de pagamento está em andamento', async () => {
+    const user = userEvent.setup();
+    let paymentCalls = 0;
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/payments/card`, async () => {
+        paymentCalls += 1;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+        return HttpResponse.json(createPaymentResponse('APPROVED'));
+      }),
+    );
+
+    renderCheckout();
+
+    await user.dblClick(await screen.findByRole('button', { name: payButtonName }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
+    ).toBeInTheDocument();
+    expect(paymentCalls).toBe(1);
+  });
+
+  it('reutiliza a idempotency key após uma falha técnica de rede', async () => {
+    const user = userEvent.setup();
+    const idempotencyKeys: string[] = [];
+    let attempts = 0;
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/payments/card`, async ({ request }) => {
+        attempts += 1;
+        idempotencyKeys.push(request.headers.get('Idempotency-Key') ?? '');
+
+        return attempts === 1
+          ? HttpResponse.error()
+          : HttpResponse.json(createPaymentResponse('APPROVED'));
+      }),
+    );
+
+    renderCheckout();
+
+    const submitButton = await screen.findByRole('button', { name: payButtonName });
+    await user.click(submitButton);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível concluir o pagamento',
+    );
+    await user.click(screen.getByRole('button', { name: payButtonName }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
+    ).toBeInTheDocument();
+    expect(idempotencyKeys).toHaveLength(2);
+    expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
+  });
+
+  it('confirma o cancelamento e atualiza a tela da Reservation', async () => {
+    const user = userEvent.setup();
+    let cancellationCalls = 0;
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/cancel`, () => {
+        cancellationCalls += 1;
+        return HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'CANCELLED',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: '2030-08-01T12:00:00.000Z',
+          items: reservationItems,
+        });
+      }),
+    );
+
+    renderCheckout();
+
+    await user.click(await screen.findByRole('button', { name: 'Cancelar reserva' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('libera os assentos imediatamente');
+    await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva foi cancelada' }),
+    ).toBeInTheDocument();
+    expect(cancellationCalls).toBe(1);
   });
 });

@@ -9,6 +9,7 @@ describe('loadApplicationConfig', () => {
     JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-bytes',
     JWT_EXPIRES_IN_SECONDS: '900',
     RESERVATION_HOLD_DURATION_SECONDS: '600',
+    PAYMENT_CARD_PENDING_TIMEOUT_SECONDS: '60',
     PUBLIC_SIGNUP_ENABLED: 'true',
     TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
     TMDB_LANGUAGE: 'pt-BR',
@@ -41,6 +42,9 @@ describe('loadApplicationConfig', () => {
       },
       reservations: {
         holdDurationSeconds: 600,
+      },
+      payments: {
+        cardPendingTimeoutSeconds: 60,
       },
     });
   });
@@ -75,6 +79,8 @@ describe('loadApplicationConfig', () => {
     ['JWT_EXPIRES_IN_SECONDS', '0'],
     ['RESERVATION_HOLD_DURATION_SECONDS', '0'],
     ['RESERVATION_HOLD_DURATION_SECONDS', undefined],
+    ['PAYMENT_CARD_PENDING_TIMEOUT_SECONDS', '0'],
+    ['PAYMENT_CARD_PENDING_TIMEOUT_SECONDS', undefined],
     ['PUBLIC_SIGNUP_ENABLED', 'enabled'],
     ['PUBLIC_SIGNUP_ENABLED', undefined],
     ['TMDB_API_READ_ACCESS_TOKEN', undefined],
