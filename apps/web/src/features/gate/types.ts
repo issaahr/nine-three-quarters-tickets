@@ -5,3 +5,15 @@ export interface GateEvent {
   venueTimeZone: string;
   startsAt: string;
 }
+
+export enum CheckInResult {
+  Valid = 'VALID',
+  Invalid = 'INVALID',
+  AlreadyUsed = 'ALREADY_USED',
+  EventMismatch = 'EVENT_MISMATCH',
+  Cancelled = 'CANCELLED',
+}
+
+export interface CheckInResponse {
+  result: CheckInResult;
+}

@@ -3,13 +3,24 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../App';
 import { UserRole } from '../auth/types';
 import { server } from '../../test/server';
+import { CheckInResult } from './types';
 
 const apiUrl = 'http://api.test';
+const scannerMock = vi.hoisted(() => ({
+  decodeFromVideoDevice: vi.fn(),
+  stop: vi.fn(),
+}));
+
+vi.mock('@zxing/browser', () => ({
+  BrowserQRCodeReader: vi.fn(function BrowserQRCodeReader() {
+    return { decodeFromVideoDevice: scannerMock.decodeFromVideoDevice };
+  }),
+}));
 
 const gateEvents = [
   {
@@ -37,6 +48,11 @@ function renderGate(initialPath = '/gate') {
 }
 
 describe('Contexto ativo da portaria', () => {
+  beforeEach(() => {
+    scannerMock.decodeFromVideoDevice.mockReset();
+    scannerMock.stop.mockReset();
+  });
+
   it('permite ao GATE selecionar um Event e mostra seu contexto operacional', async () => {
     server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
     const user = userEvent.setup();
@@ -112,5 +128,104 @@ describe('Contexto ativo da portaria', () => {
 
     expect(await screen.findByRole('heading', { name: 'Event indisponível' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Escolher Event' })).toHaveAttribute('href', '/gate');
+  });
+
+  it.each([
+    [CheckInResult.Valid, 'Entrada liberada'],
+    [CheckInResult.Invalid, 'Credencial inválida'],
+    [CheckInResult.AlreadyUsed, 'Ingresso já utilizado'],
+    [CheckInResult.EventMismatch, 'Evento diferente'],
+    [CheckInResult.Cancelled, 'Ingresso cancelado'],
+  ])('apresenta o resultado operacional %s da entrada manual', async (result, title) => {
+    let requestBody: unknown;
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ result });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.type(await screen.findByLabelText('Código manual'), '7k4p m9q2');
+    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
+
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+    expect(requestBody).toEqual({ manualCode: '7k4p m9q2' });
+    expect(screen.getByRole('button', { name: 'Nova validação' })).toBeInTheDocument();
+  });
+
+  it('informa falha técnica sem fabricar resultado de check-in', async () => {
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.post(
+        `${apiUrl}/gate/events/event-1/check-in/manual-code`,
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
+    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível validar o ingresso. Tente novamente.',
+    );
+    expect(screen.queryByRole('heading', { name: 'Entrada liberada' })).not.toBeInTheDocument();
+  });
+
+  it('envia a credencial detectada pela câmera para a validação da portaria', async () => {
+    let requestBody: unknown;
+    scannerMock.decodeFromVideoDevice.mockImplementation(
+      async (
+        _deviceId: string | undefined,
+        _videoElement: unknown,
+        onResult: (
+          result: { getText: () => string } | undefined,
+          error: unknown,
+          controls: { stop: () => void },
+        ) => void,
+      ) => {
+        onResult({ getText: () => 'v1.ticket.signature' }, undefined, {
+          stop: scannerMock.stop,
+        });
+        return { stop: scannerMock.stop };
+      },
+    );
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.post(`${apiUrl}/gate/events/event-1/check-in`, async ({ request }) => {
+        requestBody = await request.json();
+        return HttpResponse.json({ result: CheckInResult.Valid });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.click(await screen.findByRole('button', { name: 'Ativar câmera' }));
+
+    expect(await screen.findByRole('heading', { name: 'Entrada liberada' })).toBeInTheDocument();
+    expect(requestBody).toEqual({ credential: 'v1.ticket.signature' });
+    expect(scannerMock.stop).toHaveBeenCalledOnce();
+  });
+
+  it('mantém entrada manual disponível quando não consegue acessar a câmera', async () => {
+    scannerMock.decodeFromVideoDevice.mockRejectedValueOnce(new Error('Câmera indisponível'));
+    server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.click(await screen.findByRole('button', { name: 'Ativar câmera' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Não foi possível acessar a câmera. Verifique a permissão ou use o código manual.',
+    );
+    expect(screen.getByLabelText('Código manual')).toBeEnabled();
   });
 });
