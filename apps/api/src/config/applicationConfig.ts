@@ -103,6 +103,24 @@ function getReservationHoldDurationSeconds(environmentVariables: NodeJS.ProcessE
 }
 
 /**
+ * Define por quanto tempo uma tentativa CARD PENDING pode bloquear uma Reservation
+ * antes de ser recuperada como falha técnica.
+ */
+function getPaymentCardPendingTimeoutSeconds(environmentVariables: NodeJS.ProcessEnv): number {
+  const pendingTimeoutSeconds = Number(
+    getRequiredEnvironmentVariable('PAYMENT_CARD_PENDING_TIMEOUT_SECONDS', environmentVariables),
+  );
+
+  if (!Number.isInteger(pendingTimeoutSeconds) || pendingTimeoutSeconds <= 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente PAYMENT_CARD_PENDING_TIMEOUT_SECONDS deve ser um inteiro positivo',
+    );
+  }
+
+  return pendingTimeoutSeconds;
+}
+
+/**
  * Converte a porta uma única vez antes da criação da aplicação Nest.
  */
 function getPort(environmentVariables: NodeJS.ProcessEnv): number {
@@ -197,6 +215,9 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     publicSignupEnabled: getPublicSignupEnabled(environmentVariables),
     reservations: {
       holdDurationSeconds: getReservationHoldDurationSeconds(environmentVariables),
+    },
+    payments: {
+      cardPendingTimeoutSeconds: getPaymentCardPendingTimeoutSeconds(environmentVariables),
     },
     catalog: {
       tmdb: {
