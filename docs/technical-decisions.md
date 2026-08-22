@@ -70,7 +70,7 @@ Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md)
 ## Descoberta pública de Events
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
-- A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro.
+- A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro; filtros de calendário explícitos também podem consultar Events passados da data selecionada.
 - `GET /events/:eventId` admite `PUBLISHED` passados e `CANCELLED`, responde como não encontrado para DRAFT e recebe `isPast` calculado pelo PostgreSQL.
 - A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
 - Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
