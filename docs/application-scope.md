@@ -1323,6 +1323,12 @@ Cine Imperial · Sala A
 
 Trocar de Event altera o contexto da portaria.
 
+Não existe fechamento automático por tempo da operação da portaria na V1. Um Event permanece
+operável enquanto seu status for `PUBLISHED`, sem teto temporal derivado de `startsAt`. As fontes
+de catálogo não garantem duração ou horário de término consistente, e heurísticas fixas falham em
+filmes longos, shows que passam da meia-noite e Events de vários dias. O fechamento futuro será
+uma ação manual do organizador, não uma inferência sobre os dados disponíveis.
+
 ---
 
 ## 36. Resultado do check-in

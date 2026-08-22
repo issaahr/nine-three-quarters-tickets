@@ -89,11 +89,7 @@ export function EventDetailPage() {
 
   const event = query.data;
   const isCancelled = event.status === EventStatus.Cancelled;
-  const stateLabel = isCancelled
-    ? 'Sessão cancelada'
-    : event.isPast
-      ? 'Sessão encerrada'
-      : undefined;
+  const stateLabel = isCancelled ? 'Sessão cancelada' : event.isPast ? 'Encerrado' : undefined;
   const canSelectSeats = !isCancelled && !event.isPast;
 
   function toggleSeat(seatId: string): void {
@@ -181,7 +177,7 @@ export function EventDetailPage() {
       </Link>
 
       <article className="mx-auto grid max-w-5xl overflow-hidden bg-[#D8CEBE] p-px [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_16px),calc(100%_-_16px)_100%,0_100%)] sm:grid-cols-[240px_minmax(0,1fr)]">
-        <div className="bg-white">
+        <div className="bg-white p-2 sm:p-3">
           {event.imageUrl ? (
             <img
               src={event.imageUrl}

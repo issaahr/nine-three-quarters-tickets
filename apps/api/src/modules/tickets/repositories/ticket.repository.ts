@@ -89,6 +89,63 @@ export class TicketRepository {
       .getOne();
   }
 
+  /**
+   * Carrega o Ticket e seu Event para decidir o resultado semântico do check-in.
+   *
+   * @param publicId - Identificador público obtido de uma credencial QR já validada.
+   * @returns Ticket confirmado com o contexto do Event ou null quando não existir.
+   */
+  public findForCheckInByPublicId(publicId: string): Promise<Ticket | null> {
+    return this.createCheckInQuery()
+      .where('"ticket"."publicId" = :publicId', { publicId })
+      .getOne();
+  }
+
+  /**
+   * Carrega o Ticket e seu Event pelo código manual já normalizado.
+   *
+   * @param manualCode - Código manual no formato canônico persistido.
+   * @returns Ticket confirmado com o contexto do Event ou null quando não existir.
+   */
+  public findForCheckInByManualCode(manualCode: string): Promise<Ticket | null> {
+    return this.createCheckInQuery()
+      .where('"ticket"."manualCode" = :manualCode', { manualCode })
+      .getOne();
+  }
+
+  /**
+   * Recarrega o estado corrente depois que uma escrita condicional perde a disputa.
+   *
+   * @param ticketId - Identificador interno do Ticket consultado anteriormente.
+   * @returns Ticket confirmado com seu estado corrente ou null quando não existir.
+   */
+  public findForCheckInById(ticketId: string): Promise<Ticket | null> {
+    return this.createCheckInQuery().where('"ticket"."id" = :ticketId', { ticketId }).getOne();
+  }
+
+  /**
+   * Registra o uso uma única vez, sem depender de uma leitura anterior como garantia de concorrência.
+   *
+   * @param ticketId - Identificador interno do Ticket que deve receber o check-in.
+   * @param gateUserId - Identificador do operador GATE responsável pela tentativa.
+   * @returns true quando a escrita condicional registrou o check-in ou false quando o Ticket deixou de ser elegível.
+   */
+  public async markCheckedIn(ticketId: string, gateUserId: string): Promise<boolean> {
+    const result = await this.ticketsRepository
+      .createQueryBuilder()
+      .update(Ticket)
+      .set({
+        checkedInAt: () => 'CURRENT_TIMESTAMP',
+        checkedInByUserId: gateUserId,
+      })
+      .where('"id" = :ticketId', { ticketId })
+      .andWhere('"checkedInAt" IS NULL')
+      .andWhere('"cancelledAt" IS NULL')
+      .execute();
+
+    return result.affected === 1;
+  }
+
   private createPresentationQuery(): SelectQueryBuilder<Ticket> {
     return this.ticketsRepository
       .createQueryBuilder('ticket')
@@ -98,5 +155,14 @@ export class TicketRepository {
       .innerJoinAndSelect('event.venue', 'venue')
       .leftJoinAndSelect('reservationItem.eventSeat', 'eventSeat')
       .leftJoinAndSelect('eventSeat.venueSeat', 'venueSeat');
+  }
+
+  private createCheckInQuery(): SelectQueryBuilder<Ticket> {
+    return this.ticketsRepository
+      .createQueryBuilder('ticket')
+      .innerJoinAndSelect('ticket.reservationItem', 'reservationItem')
+      .innerJoinAndSelect('reservationItem.reservation', 'reservation')
+      .innerJoinAndSelect('reservation.event', 'event')
+      .andWhere('"reservation"."confirmedAt" IS NOT NULL');
   }
 }

@@ -39,6 +39,61 @@ export function formatEventDetailDateTime(startsAt: string, timeZone: string): s
 }
 
 /**
+ * Formata o contexto operacional da portaria com os dados locais do Venue.
+ *
+ * @param startsAt - Instante persistido pela API.
+ * @param timeZone - Identificador IANA do Venue.
+ * @returns Data, horário e offset no formato compacto usado pela portaria.
+ */
+export function formatGateEventDateTime(startsAt: string, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone,
+    weekday: 'short',
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'longOffset',
+  }).formatToParts(new Date(startsAt));
+  const getPart = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? '';
+  const weekday = getPart('weekday').replace('.', '').toUpperCase();
+  const month = getPart('month').replace('.', '').toUpperCase();
+  const offset = getPart('timeZoneName').replace('GMT', 'UTC').replace('-', '−');
+
+  return `${weekday} · ${getPart('day')} ${month} · ${getPart('hour')}:${getPart('minute')} · ${offset}`;
+}
+
+/**
+ * Formata data e horário compactos para a apresentação individual do ingresso.
+ *
+ * @param startsAt - Instante persistido pela API.
+ * @param timeZone - Identificador IANA do Venue.
+ * @returns Data e horário no formato curto do ingresso.
+ */
+export function formatTicketEventDateTime(startsAt: string, timeZone: string): string {
+  const date = new Date(startsAt);
+  const weekday = new Intl.DateTimeFormat('pt-BR', { timeZone, weekday: 'short' })
+    .format(date)
+    .replace('.', '')
+    .toUpperCase()
+    .replace('QUI', 'QUIN');
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone,
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((part) => part.type === type)?.value ?? '';
+
+  return `${weekday} · ${getPart('day')} ${getPart('month').replace('.', '').toUpperCase()} · ${getPart('hour')}:${getPart('minute')}`;
+}
+
+/**
  * Apresenta o preço inteiro persistido pela API como moeda brasileira.
  *
  * @param priceCents - Preço em centavos.

@@ -8,10 +8,11 @@ import { UserRole } from './features/auth/types';
 import { EventsLayout } from './features/events/components/EventsLayout';
 import { EventCatalog } from './features/events/pages/EventCatalog';
 import { EventDetailPage } from './features/events/pages/EventDetailPage';
+import { GateEventContextPage } from './features/gate/pages/GateEventContextPage';
+import { GateEventSelectionPage } from './features/gate/pages/GateEventSelectionPage';
 import { AuthenticatedLayout } from './features/navigation/components/AuthenticatedLayout';
 import { RoleHomeRedirect } from './features/navigation/components/RoleHomeRedirect';
 import { RoleRoute } from './features/navigation/components/RoleRoute';
-import { GateHome } from './features/navigation/pages/GateHome';
 import { CreateMovieEvent } from './features/organizer/pages/CreateMovieEvent';
 import { OrganizerHome } from './features/organizer/pages/OrganizerHome';
 import { ReservationCheckoutPage } from './features/reservations/pages/ReservationCheckoutPage';
@@ -59,7 +60,8 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
           </Route>
 
           <Route element={<RoleRoute allowedRole={UserRole.Gate} />}>
-            <Route path="/gate" element={<GateHome />} />
+            <Route path="/gate" element={<GateEventSelectionPage />} />
+            <Route path="/gate/events/:eventId" element={<GateEventContextPage />} />
           </Route>
 
           <Route path="*" element={<RoleHomeRedirect />} />

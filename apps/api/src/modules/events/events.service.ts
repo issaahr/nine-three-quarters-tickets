@@ -23,7 +23,11 @@ import { VenueHasNoSeatsError } from './errors/venueHasNoSeats.error';
 import { VenueNotFoundError } from './errors/venueNotFound.error';
 import { EventRepository } from './repositories/event.repository';
 import { EventSeatRepository } from './repositories/eventSeat.repository';
-import { EventDiscoveryPage, PublicEventDetail } from './repositories/eventRepository.interfaces';
+import {
+  EventDiscoveryPage,
+  OrganizerEventWithStats,
+  PublicEventDetail,
+} from './repositories/eventRepository.interfaces';
 import { PublicEventSeatMapItem } from './repositories/eventSeatRepository.interfaces';
 import { venueLocalDateTimeToDate } from './time/venueLocalDateTime';
 
@@ -96,17 +100,26 @@ export class EventsService {
    * @param organizerId - Identidade obtida da sessão autenticada.
    * @returns Events do organizador, ordenados da ocorrência mais recente para a mais antiga.
    */
-  public findByOrganizerId(organizerId: string): Promise<Event[]> {
+  public findByOrganizerId(organizerId: string): Promise<OrganizerEventWithStats[]> {
+    return this.eventRepository.findForOrganizerWithStats(organizerId);
+  }
+
+  /**
+   * Lista Events publicados para seleção da portaria sem inferir um fechamento temporal.
+   *
+   * @returns Ocorrências operáveis, carregadas com o Venue necessário ao contexto visual.
+   */
+  public findOperableForGate(): Promise<Event[]> {
     return this.eventsRepository.find({
-      where: { organizerId },
+      where: { status: EventStatus.Published },
       relations: { venue: true },
-      order: { startsAt: 'DESC' },
+      order: { startsAt: 'ASC', id: 'ASC' },
     });
   }
 
   /**
-   * Descobre ocorrências públicas futuras usando somente o snapshot persistido localmente.
-   * Datas de calendário são comparadas no timezone canônico de cada Venue.
+   * Descobre ocorrências públicas usando somente o snapshot persistido localmente.
+   * Eventos passados permanecem acessíveis quando a data é selecionada explicitamente no calendário local do Venue.
    *
    * @param filters - Busca, filtros e página validados pelo contrato HTTP.
    * @returns Página ordenada e indicação de continuidade para carregamento infinito.

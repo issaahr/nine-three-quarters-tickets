@@ -115,7 +115,7 @@ ProtectedRoute
 
 `RoleRoute` impede navegação acidental para a área visual de outro papel. Essa proteção é somente UX; cada endpoint de negócio continua responsável por autenticação e autorização na API.
 
-O catálogo em `/events` é público e restaura a sessão apenas para adaptar sua navegação, sem bloquear a descoberta anônima. CUSTOMER e ORGANIZER utilizam a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, sem antecipar seleção de evento ou check-in.
+O catálogo em `/events` é público e restaura a sessão apenas para adaptar sua navegação, sem bloquear a descoberta anônima. CUSTOMER e ORGANIZER utilizam a superfície clara da identidade visual. GATE utiliza a superfície operacional escura documentada para a portaria, seleciona explicitamente o Event em operação e valida ingressos por QR ou código manual no contexto desse Event.
 
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 

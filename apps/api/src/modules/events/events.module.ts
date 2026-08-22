@@ -9,6 +9,7 @@ import { Event } from './event.entity';
 import { EventSeat } from './eventSeat.entity';
 import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
+import { GateEventsController } from './gateEvents.controller';
 import { OrganizerEventsController } from './organizerEvents.controller';
 import { EventSeatRepository } from './repositories/eventSeat.repository';
 import { EventRepository } from './repositories/event.repository';
@@ -19,7 +20,7 @@ import { EventRepository } from './repositories/event.repository';
     AuthModule,
     CatalogModule,
   ],
-  controllers: [EventsController, OrganizerEventsController],
+  controllers: [EventsController, OrganizerEventsController, GateEventsController],
   providers: [EventsService, EventRepository, EventSeatRepository],
 })
 export class EventsModule {}

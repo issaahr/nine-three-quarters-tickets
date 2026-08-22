@@ -30,7 +30,7 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
   const isDraft = event.status === EventStatus.Draft;
 
   return (
-    <article className="grid grid-cols-[64px_minmax(0,1fr)] gap-4 border border-[#DED6C7] bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)] sm:grid-cols-[72px_minmax(0,1fr)] lg:grid-cols-[72px_minmax(0,1fr)_auto] lg:items-center">
+    <article className="relative grid grid-cols-[64px_minmax(0,1fr)] gap-4 border border-[#DED6C7] bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)] sm:grid-cols-[72px_minmax(0,1fr)] lg:grid-cols-[72px_minmax(0,1fr)_auto] lg:items-center">
       {event.imageUrl ? (
         <img
           src={event.imageUrl}
@@ -55,20 +55,40 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
           <MapPin className="size-4 shrink-0" aria-hidden="true" />
           {event.venueName} · {event.venueCity}
         </p>
+        <div className="mt-5 text-right lg:hidden">
+          <p className="m-0 font-mono text-sm font-medium text-foreground">
+            {event.inventoryTotal == null
+              ? '—'
+              : `${event.soldTickets ?? 0}/${event.inventoryTotal}`}
+          </p>
+          <p className="m-0 text-[10px] text-muted-foreground">vendidos</p>
+        </div>
       </div>
 
-      <div className="col-span-2 flex flex-wrap items-center justify-between gap-3 border-t border-[#E8E1D5] pt-3 sm:col-start-2 sm:col-end-3 lg:col-auto lg:min-w-36 lg:flex-col lg:items-end lg:border-0 lg:pt-0">
-        <span
-          className={cn(
-            'inline-flex w-fit rounded-[2px] px-2 py-1 text-[10px] font-semibold uppercase tracking-[1px]',
-            statusClassNames[event.status],
-          )}
-        >
-          {statusLabels[event.status]}
-        </span>
-        <p className="m-0 font-mono text-sm font-medium text-foreground lg:my-1">
-          {formatEventPrice(event.priceCents)}
-        </p>
+      <span
+        className={cn(
+          'absolute right-4 top-4 inline-flex w-fit rounded-[2px] px-2 py-1 text-[10px] font-semibold uppercase tracking-[1px] lg:right-5 lg:top-5',
+          statusClassNames[event.status],
+        )}
+      >
+        {statusLabels[event.status]}
+      </span>
+
+      <div className="col-span-2 flex items-end justify-between gap-3 border-t border-[#E8E1D5] pt-3 sm:col-start-2 sm:col-end-3 lg:col-start-3 lg:row-start-1 lg:self-end lg:border-0 lg:pt-0">
+        <div className="hidden text-right lg:block">
+          <p className="m-0 font-mono text-sm font-medium text-foreground">
+            {event.inventoryTotal == null
+              ? '—'
+              : `${event.soldTickets ?? 0}/${event.inventoryTotal}`}
+          </p>
+          <p className="m-0 text-[10px] text-muted-foreground">vendidos</p>
+        </div>
+        <div className="ml-auto text-right lg:ml-0">
+          <p className="m-0 font-mono text-sm font-medium text-foreground">
+            {formatEventPrice(event.priceCents)}
+          </p>
+          <p className="m-0 text-[10px] text-muted-foreground">Preço unitário</p>
+        </div>
         {isDraft && (
           <Button
             type="button"

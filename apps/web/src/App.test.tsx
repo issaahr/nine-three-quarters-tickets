@@ -38,6 +38,7 @@ beforeEach(() => {
   server.use(
     http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
     http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
+    http.get(`${apiUrl}/gate/events`, () => HttpResponse.json([])),
   );
 });
 
@@ -182,7 +183,9 @@ describe('fluxo de autenticação', () => {
   it('redireciona do login quando a sessão já está conhecida no cache', async () => {
     renderApp('/login', { id: 'user-4', role: UserRole.Gate });
 
-    expect(await screen.findByRole('heading', { name: 'Pronto para validar' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Nenhum Event disponível' }),
+    ).toBeInTheDocument();
     expect(screen.getAllByText('Portaria').length).toBeGreaterThan(0);
   });
 
@@ -324,16 +327,18 @@ describe('fluxo de autenticação', () => {
 
   it.each([
     [UserRole.Customer, 'Encontre sua próxima experiência', 'Eventos'],
-    [UserRole.Organizer, 'Meus eventos', 'Meus eventos'],
-    [UserRole.Gate, 'Pronto para validar', 'Portaria'],
+    [UserRole.Organizer, 'Meus eventos', undefined],
+    [UserRole.Gate, 'Nenhum Event disponível', undefined],
   ])('apresenta início e navegação coerentes para %s', async (role, heading, navigationLabel) => {
     renderApp(getRoleNavigation(role).homePath, { id: `user-${role}`, role });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    if (navigationLabel) {
+      expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    }
 
     const otherNavigationLabels = ['Eventos', 'Meus eventos', 'Portaria'].filter(
       (label) => label !== navigationLabel,
@@ -356,7 +361,8 @@ describe('fluxo de autenticação', () => {
   it('mantém a superfície operacional da portaria separada da experiência geral', async () => {
     renderApp('/gate', { id: 'gate-operational', role: UserRole.Gate });
 
-    const main = await screen.findByRole('main');
+    await screen.findByRole('heading', { name: 'Nenhum Event disponível' });
+    const main = screen.getByRole('main');
 
     expect(main.parentElement).toHaveClass('bg-[#1A0A0D]');
     expect(screen.getByText('Operação de portaria')).toBeInTheDocument();

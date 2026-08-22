@@ -77,6 +77,12 @@ export function MovieCatalogPicker({ selectedMovie, onSelect }: MovieCatalogPick
       onSelect(undefined);
       setVisibleMovieCount(10);
       setSubmittedQuery(normalizedQuery);
+      return;
+    }
+
+    if (!normalizedQuery) {
+      setVisibleMovieCount(10);
+      setSubmittedQuery(undefined);
     }
   }
 
@@ -84,10 +90,20 @@ export function MovieCatalogPicker({ selectedMovie, onSelect }: MovieCatalogPick
     <section aria-labelledby="movie-search-title">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <h2 id="movie-search-title" className="font-heading text-2xl font-semibold">
-          {submittedQuery ? 'Resultados da pesquisa' : 'Filmes em alta'}
+          {submittedQuery ? `Resultados para “${submittedQuery}”` : 'Filmes em alta'}
         </h2>
         {submittedQuery && (
-          <span className="text-xs text-muted-foreground">Busca por “{submittedQuery}”</span>
+          <button
+            type="button"
+            onClick={() => {
+              setMovieQuery('');
+              setVisibleMovieCount(10);
+              setSubmittedQuery(undefined);
+            }}
+            className="text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            ← Voltar aos filmes em destaque
+          </button>
         )}
       </div>
       <form onSubmit={handleMovieSearch} className="mt-4 flex gap-2">
@@ -99,14 +115,12 @@ export function MovieCatalogPicker({ selectedMovie, onSelect }: MovieCatalogPick
           value={movieQuery}
           onChange={(event) => setMovieQuery(event.target.value)}
           placeholder="Digite ao menos 2 caracteres"
-          minLength={2}
           maxLength={100}
-          required
           className={fieldClassName}
         />
         <Button
           type="submit"
-          disabled={movieQuery.trim().length < 2 || movieCatalog.isFetching}
+          disabled={movieCatalog.isFetching}
           className="h-11 rounded-[4px] px-4"
         >
           <Search aria-hidden="true" />

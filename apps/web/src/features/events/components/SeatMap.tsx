@@ -36,7 +36,7 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
             Selecionado
           </span>
           <span className="flex items-center gap-2">
-            <span aria-hidden="true" className="size-3 rounded-sm bg-muted-foreground" />
+            <span aria-hidden="true" className="size-3 rounded-sm bg-[#B7AFA3]" />
             Indisponível
           </span>
         </div>
