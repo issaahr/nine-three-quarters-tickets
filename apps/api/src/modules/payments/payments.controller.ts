@@ -32,7 +32,7 @@ export class PaymentsController {
       throw new InvalidIdempotencyKeyError();
     }
 
-    const payment = await this.paymentsService.startCardPayment(
+    const payment = await this.paymentsService.processCardPayment(
       request.user.id,
       reservationId,
       idempotencyKey,
