@@ -16,6 +16,7 @@ import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto'
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
+import { GateEventResponseDto } from './dto/gateEventResponse.dto';
 import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
 
 /**
@@ -139,6 +140,18 @@ export function ApiListOrganizerEvents() {
       type: OrganizerEventResponseDto,
       isArray: true,
       description: 'Rascunhos, Events publicados e históricos do próprio organizador.',
+    }),
+  );
+}
+
+/** Agrupa a documentação HTTP da seleção de contexto pela portaria. */
+export function ApiListGateEvents() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Lista Events publicados operáveis pela portaria' }),
+    ApiOkResponse({
+      type: GateEventResponseDto,
+      isArray: true,
+      description: 'Ocorrências publicadas, sem fechamento temporal inferido pelo sistema.',
     }),
   );
 }

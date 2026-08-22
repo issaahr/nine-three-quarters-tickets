@@ -105,6 +105,19 @@ export class EventsService {
   }
 
   /**
+   * Lista Events publicados para seleção da portaria sem inferir um fechamento temporal.
+   *
+   * @returns Ocorrências operáveis, carregadas com o Venue necessário ao contexto visual.
+   */
+  public findOperableForGate(): Promise<Event[]> {
+    return this.eventsRepository.find({
+      where: { status: EventStatus.Published },
+      relations: { venue: true },
+      order: { startsAt: 'ASC', id: 'ASC' },
+    });
+  }
+
+  /**
    * Descobre ocorrências públicas futuras usando somente o snapshot persistido localmente.
    * Datas de calendário são comparadas no timezone canônico de cada Venue.
    *
