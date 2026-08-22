@@ -23,6 +23,12 @@ export class Ticket extends BaseEntity {
   @Column({ type: 'timestamptz' })
   public issuedAt!: Date;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  public checkedInAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  public cancelledAt!: Date | null;
+
   // Relations
   @ManyToOne(() => ReservationItem, { onDelete: 'RESTRICT' })
   @JoinColumn({
