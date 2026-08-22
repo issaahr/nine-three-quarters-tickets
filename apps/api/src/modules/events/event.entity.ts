@@ -78,5 +78,4 @@ export class Event extends BaseEntity {
   @ManyToOne(() => Venue, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'eventsVenueForeignKey' })
   public venue!: Relation<Venue>;
-
 }
