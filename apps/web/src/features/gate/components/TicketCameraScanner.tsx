@@ -71,12 +71,6 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
 
   useEffect(() => stopCamera, []);
 
-  useEffect(() => {
-    if (disabled && isActive) {
-      stopCamera();
-    }
-  }, [disabled, isActive]);
-
   return (
     <section className="relative flex flex-col rounded-[4px] border border-[#3A1A20] bg-[#0D0507] p-5">
       <h2 className="font-heading text-xl font-semibold">Leitor por câmera</h2>
