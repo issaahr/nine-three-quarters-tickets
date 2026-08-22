@@ -8,6 +8,7 @@ describe('loadApplicationConfig', () => {
     CORS_ORIGINS: 'http://localhost:5173, http://localhost:5173',
     JWT_SECRET: 'test-only-jwt-secret-with-at-least-32-bytes',
     JWT_EXPIRES_IN_SECONDS: '900',
+    TICKET_HMAC_SECRET: 'test-only-ticket-secret-with-at-least-32-bytes',
     RESERVATION_HOLD_DURATION_SECONDS: '600',
     PAYMENT_CARD_PENDING_TIMEOUT_SECONDS: '60',
     PUBLIC_SIGNUP_ENABLED: 'true',
@@ -46,6 +47,9 @@ describe('loadApplicationConfig', () => {
       payments: {
         cardPendingTimeoutSeconds: 60,
       },
+      tickets: {
+        hmacSecret: 'test-only-ticket-secret-with-at-least-32-bytes',
+      },
     });
   });
 
@@ -76,6 +80,8 @@ describe('loadApplicationConfig', () => {
     ['NODE_ENV', 'staging'],
     ['CORS_ORIGINS', 'https://app.example.com/path'],
     ['JWT_SECRET', 'short-secret'],
+    ['TICKET_HMAC_SECRET', 'short-secret'],
+    ['TICKET_HMAC_SECRET', undefined],
     ['JWT_EXPIRES_IN_SECONDS', '0'],
     ['RESERVATION_HOLD_DURATION_SECONDS', '0'],
     ['RESERVATION_HOLD_DURATION_SECONDS', undefined],

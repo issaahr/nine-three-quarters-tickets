@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
-import { Ticket } from '../tickets/ticket.entity';
+import { TicketsModule } from '../tickets/tickets.module';
 import { Event } from '../events/event.entity';
 import { EventSeat } from '../events/eventSeat.entity';
 import { FakePaymentGateway } from './fakePaymentGateway';
@@ -16,8 +16,9 @@ import { PaymentRepository } from './repositories/payment.repository';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment, Reservation, ReservationItem, Event, EventSeat, Ticket]),
+    TypeOrmModule.forFeature([Payment, Reservation, ReservationItem, Event, EventSeat]),
     AuthModule,
+    TicketsModule,
   ],
   controllers: [PaymentsController],
   providers: [

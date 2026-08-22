@@ -26,6 +26,7 @@ import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { Ticket } from '../src/modules/tickets/ticket.entity';
+import { TicketCredentialService } from '../src/modules/tickets/ticketCredential.service';
 import { User } from '../src/modules/users/user.entity';
 import { Venue } from '../src/modules/venues/venue.entity';
 import { VenueSeat } from '../src/modules/venues/venueSeat.entity';
@@ -48,6 +49,7 @@ describe('Payments', () => {
   let reservationItemsRepository: Repository<ReservationItem>;
   let reservationsRepository: Repository<Reservation>;
   let ticketsRepository: Repository<Ticket>;
+  let ticketCredentialService: TicketCredentialService;
   let venueSeatsRepository: Repository<VenueSeat>;
   let customer: User;
   let organizer: User;
@@ -73,6 +75,7 @@ describe('Payments', () => {
     reservationItemsRepository = dataSource.getRepository(ReservationItem);
     reservationsRepository = dataSource.getRepository(Reservation);
     ticketsRepository = dataSource.getRepository(Ticket);
+    ticketCredentialService = app.get(TicketCredentialService);
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
     customer = await dataSource
       .getRepository(User)
@@ -131,6 +134,7 @@ describe('Payments', () => {
 
   async function createActiveReservation(
     expiresAt = new Date('2099-09-01T23:30:00.000Z'),
+    itemCount = 1,
   ): Promise<Reservation> {
     const event = await eventsRepository.save({
       organizerId: organizer.id,
@@ -149,7 +153,16 @@ describe('Payments', () => {
       externalId: randomUUID(),
     });
     createdEventIds.push(event.id);
-    const venueSeat = await venueSeatsRepository.findOneOrFail({ where: { venueId: venue.id } });
+    const venueSeats = await venueSeatsRepository.find({
+      where: { venueId: venue.id },
+      order: { row: 'ASC', number: 'ASC' },
+      take: itemCount,
+    });
+
+    if (venueSeats.length !== itemCount) {
+      throw new Error('Venue de demonstração não possui assentos suficientes para o teste');
+    }
+
     const reservation =
       expiresAt.getTime() > Date.now()
         ? await reservationsRepository.save({
@@ -160,18 +173,26 @@ describe('Payments', () => {
             cancelledAt: null,
           })
         : await createExpiredReservation(customer.id, event.id, expiresAt);
-    const eventSeat = await eventSeatsRepository.save({
-      eventId: event.id,
-      venueSeatId: venueSeat.id,
-      holdReservationId: reservation.id,
-      holdExpiresAt: expiresAt,
-      soldAt: null,
-    });
-    await reservationItemsRepository.save({
-      reservationId: reservation.id,
-      eventSeatId: eventSeat.id,
-      unitPriceCents: 2590,
-    });
+    const eventSeats = await eventSeatsRepository.save(
+      venueSeats.map((venueSeat) =>
+        eventSeatsRepository.create({
+          eventId: event.id,
+          venueSeatId: venueSeat.id,
+          holdReservationId: reservation.id,
+          holdExpiresAt: expiresAt,
+          soldAt: null,
+        }),
+      ),
+    );
+    await reservationItemsRepository.save(
+      eventSeats.map((eventSeat) =>
+        reservationItemsRepository.create({
+          reservationId: reservation.id,
+          eventSeatId: eventSeat.id,
+          unitPriceCents: 2590,
+        }),
+      ),
+    );
 
     return reservation;
   }
@@ -354,6 +375,37 @@ describe('Payments', () => {
     expect(eventSeat.soldAt).not.toBeNull();
     expect(eventSeat.holdReservationId).toBeNull();
     await expect(ticketsRepository.countBy({ reservationItemId: items[0].id })).resolves.toBe(1);
+  });
+
+  it('emite credenciais individuais para cada ReservationItem confirmado', async () => {
+    const reservation = await createActiveReservation(undefined, 2);
+    const cookie = await authenticate();
+
+    await createPaymentRequest(reservation.id, randomUUID(), cookie).expect(201);
+
+    const items = await reservationItemsRepository.find({
+      where: { reservationId: reservation.id },
+      order: { createdAt: 'ASC' },
+    });
+    const tickets = await ticketsRepository.find({
+      where: { reservationItemId: In(items.map((item) => item.id)) },
+      order: { createdAt: 'ASC' },
+    });
+
+    expect(tickets).toHaveLength(2);
+    expect(new Set(tickets.map((ticket) => ticket.reservationItemId)).size).toBe(2);
+    expect(new Set(tickets.map((ticket) => ticket.publicId)).size).toBe(2);
+    expect(new Set(tickets.map((ticket) => ticket.manualCode)).size).toBe(2);
+    for (const ticket of tickets) {
+      expect(ticket.publicId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      expect(ticket.manualCode).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+    }
+    expect(
+      new Set(tickets.map((ticket) => ticketCredentialService.createCredential(ticket.publicId)))
+        .size,
+    ).toBe(2);
   });
 
   it('marca falha técnica e permite nova tentativa intencional', async () => {

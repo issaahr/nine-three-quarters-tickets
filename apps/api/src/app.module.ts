@@ -6,6 +6,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { EventsModule } from './modules/events/events.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
 import { VenuesModule } from './modules/venues/venues.module';
 
 @Module({
@@ -16,6 +17,7 @@ import { VenuesModule } from './modules/venues/venues.module';
     VenuesModule,
     ReservationsModule,
     PaymentsModule,
+    TicketsModule,
   ],
 })
 export class AppModule {}

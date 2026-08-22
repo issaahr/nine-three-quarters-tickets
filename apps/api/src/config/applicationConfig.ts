@@ -71,6 +71,21 @@ function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
 }
 
 /**
+ * Mantém a credencial pública do Ticket independente do segredo usado pela sessão.
+ */
+function getTicketHmacSecret(environmentVariables: NodeJS.ProcessEnv): string {
+  const secret = getRequiredEnvironmentVariable('TICKET_HMAC_SECRET', environmentVariables);
+
+  if (Buffer.byteLength(secret, 'utf8') < 32) {
+    throw new ConfigurationError(
+      'Variável de ambiente TICKET_HMAC_SECRET deve possuir ao menos 32 bytes',
+    );
+  }
+
+  return secret;
+}
+
+/**
  * Garante que a duração possa ser usada diretamente na assinatura e no cookie.
  */
 function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number {
@@ -239,6 +254,9 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         sameSite: environment === NodeEnv.Production ? ('none' as const) : ('lax' as const),
         secure: environment === NodeEnv.Production,
       },
+    },
+    tickets: {
+      hmacSecret: getTicketHmacSecret(environmentVariables),
     },
   } as const;
 }
