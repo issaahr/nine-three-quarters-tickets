@@ -171,7 +171,7 @@ export function EventDetailPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-12">
+    <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-12 lg:px-12">
       <Link
         to="/events"
         className="mb-6 inline-flex items-center gap-2 rounded-sm text-sm font-medium text-primary no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
@@ -180,22 +180,22 @@ export function EventDetailPage() {
         Voltar aos eventos
       </Link>
 
-      <article className="grid overflow-hidden bg-[#D8CEBE] p-px [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_16px),calc(100%_-_16px)_100%,0_100%)] lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.35fr)]">
-        <div className="h-full bg-white">
+      <article className="mx-auto grid max-w-5xl overflow-hidden bg-[#D8CEBE] p-px [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_16px),calc(100%_-_16px)_100%,0_100%)] sm:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="bg-white">
           {event.imageUrl ? (
             <img
               src={event.imageUrl}
               alt=""
-              className="aspect-[4/5] h-full max-h-[720px] w-full bg-muted object-cover lg:aspect-auto"
+              className="aspect-[2/3] w-full bg-muted object-cover"
             />
           ) : (
-            <div className="flex aspect-[4/5] h-full min-h-80 w-full items-center justify-center bg-secondary-foreground font-heading text-7xl text-primary-foreground lg:aspect-auto">
+            <div className="flex aspect-[2/3] min-h-64 w-full items-center justify-center bg-secondary-foreground font-heading text-5xl text-primary-foreground">
               9¾
             </div>
           )}
         </div>
 
-        <div className="flex min-w-0 flex-col bg-white p-6 sm:p-9 lg:p-12">
+        <div className="flex min-w-0 flex-col bg-white p-6 sm:p-8">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-[2px] bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[1.3px] text-primary">
               {categoryLabels[event.category]}
@@ -210,7 +210,7 @@ export function EventDetailPage() {
             )}
           </div>
 
-          <h1 className="mb-0 mt-5 break-words font-heading text-4xl font-semibold leading-tight sm:text-5xl">
+          <h1 className="mb-0 mt-4 break-words font-heading text-3xl font-semibold leading-tight sm:text-4xl">
             {event.title}
           </h1>
 
@@ -220,11 +220,11 @@ export function EventDetailPage() {
             </p>
           )}
 
-          <p className="mb-0 mt-6 whitespace-pre-line text-sm leading-7 text-muted-foreground sm:text-base">
+          <p className="mb-0 mt-4 whitespace-pre-line text-sm leading-6 text-muted-foreground">
             {event.description || 'Sem descrição disponível.'}
           </p>
 
-          <dl className="mt-8 grid gap-5 border-y border-[#E2D9CB] py-6 sm:grid-cols-2">
+          <dl className="mt-6 grid gap-4 border-y border-[#E2D9CB] py-4 sm:grid-cols-2">
             <div>
               <dt className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[1.3px] text-primary">
                 <CalendarDays className="size-4" aria-hidden="true" />
@@ -247,7 +247,7 @@ export function EventDetailPage() {
             </div>
           </dl>
 
-          <div className="mt-6 flex flex-wrap items-end justify-between gap-5">
+          <div className="mt-5 flex flex-wrap items-end justify-between gap-5">
             <div>
               <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground">
                 Ingresso a partir de
@@ -269,7 +269,7 @@ export function EventDetailPage() {
       </article>
 
       {event.admissionMode === AdmissionMode.Seated && (
-        <section className="mx-auto mt-8 max-w-3xl bg-white p-6 sm:p-9">
+        <section className="mx-auto mt-8 max-w-4xl bg-white p-6 sm:p-8">
           {seatMapQuery.isPending && (
             <p role="status" className="m-0 text-sm text-muted-foreground">
               Carregando mapa de assentos...
@@ -301,13 +301,8 @@ export function EventDetailPage() {
                 onToggleSeat={toggleSeat}
               />
               <div className="mt-6 border-t border-[#E2D9CB] pt-5">
-                <p aria-live="polite" className="m-0 text-sm font-medium">
-                  {selectedSeatIds.length === 0
-                    ? 'Nenhum assento selecionado.'
-                    : `${selectedSeatIds.length} assento${selectedSeatIds.length === 1 ? '' : 's'} selecionado${selectedSeatIds.length === 1 ? '' : 's'}.`}
-                </p>
                 {canSelectSeats && (
-                  <p className="mb-0 mt-2 text-sm text-muted-foreground">
+                  <p className="mb-0 text-sm text-muted-foreground">
                     A seleção ainda não reserva os assentos.
                   </p>
                 )}
@@ -330,13 +325,25 @@ export function EventDetailPage() {
                   </div>
                 )}
                 {canSelectSeats && (
-                  <div className="mt-5 flex flex-wrap gap-3">
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-4 bg-[#2B0A10] p-4 text-primary-foreground sm:p-5">
+                    <div>
+                      <p aria-live="polite" className="m-0 text-sm font-medium text-[#F5F2EC]">
+                        {selectedSeatIds.length === 0
+                          ? 'Selecione seus assentos'
+                          : `${selectedSeatIds.length} assento${selectedSeatIds.length === 1 ? '' : 's'} selecionado${selectedSeatIds.length === 1 ? '' : 's'}.`}
+                      </p>
+                      {selectedSeatIds.length > 0 && (
+                        <p className="mb-0 mt-1 font-mono text-sm text-[#D9C7A0]">
+                          {formatEventPrice(selectedSeatIds.length * event.priceCents)}
+                        </p>
+                      )}
+                    </div>
                     {isCustomer ? (
                       <Button
                         type="button"
                         disabled={selectedSeatIds.length === 0 || isCreating}
                         onClick={() => void startReservation()}
-                        className="rounded-[4px]"
+                        className="rounded-[4px] bg-[#681E2B] text-primary-foreground hover:bg-[#4E1420]"
                       >
                         {isCreating ? 'Reservando...' : 'Reservar assentos'}
                       </Button>

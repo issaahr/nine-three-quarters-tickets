@@ -94,8 +94,8 @@ export function ReservationCheckoutPage() {
   const totalPriceCents = reservation.items.reduce((total, item) => total + item.unitPriceCents, 0);
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-12">
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+    <main className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 lg:px-12">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
         <section className="bg-white p-6 sm:p-9">
           <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
             Checkout
@@ -137,45 +137,56 @@ export function ReservationCheckoutPage() {
             </div>
           )}
 
-          <div className="mt-8 border-t border-[#E2D9CB] pt-6">
-            <h2 className="m-0 font-heading text-2xl font-semibold">Resumo da reserva</h2>
-            <p className="mb-0 mt-3 text-lg font-medium">{event?.title ?? 'Evento reservado'}</p>
-            {event && (
-              <div className="mt-4 grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
-                <p className="m-0 flex items-start gap-2">
-                  <Ticket className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  {formatEventDetailDateTime(event.startsAt, event.venueTimeZone)}
-                </p>
-                <p className="m-0 flex items-start gap-2">
-                  <MapPin className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-                  {event.venueName} · {event.venueCity}
-                </p>
-              </div>
-            )}
-
-            <ul className="mb-0 mt-6 space-y-3 p-0">
-              {reservation.items.map((item, index) => (
-                <li
-                  key={item.id}
-                  className="flex items-center justify-between gap-4 border-b border-[#E2D9CB] pb-3 text-sm"
-                >
-                  <span>{seatLabelsById.get(item.eventSeatId) ?? `Assento ${index + 1}`}</span>
-                  <span className="font-mono font-medium">
-                    {formatEventPrice(item.unitPriceCents)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {isActive && (
+            <p className="mb-0 mt-8 border-t border-[#E2D9CB] pt-6 text-sm leading-6 text-muted-foreground">
+              Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.
+            </p>
+          )}
         </section>
 
-        <aside className="h-fit bg-secondary-foreground p-6 text-primary-foreground sm:p-8">
-          <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#C9BBA6]">
-            Total
+        <aside className="order-first h-fit bg-[#2B0A10] p-6 text-primary-foreground [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)] sm:p-8 lg:order-last lg:sticky lg:top-6">
+          <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#A9855B]">
+            Resumo do pedido
           </p>
-          <p className="mb-0 mt-2 font-mono text-3xl font-semibold">
-            {formatEventPrice(totalPriceCents)}
-          </p>
+          <h2 className="mb-0 mt-2 font-heading text-2xl font-semibold text-[#F5F2EC]">
+            {event?.title ?? 'Evento reservado'}
+          </h2>
+          {event && (
+            <div className="mt-4 space-y-2 text-sm text-[#C9BBA6]">
+              <p className="m-0 flex items-start gap-2">
+                <Ticket className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {formatEventDetailDateTime(event.startsAt, event.venueTimeZone)}
+              </p>
+              <p className="m-0 flex items-start gap-2">
+                <MapPin className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                {event.venueName} · {event.venueCity}
+              </p>
+            </div>
+          )}
+          <ul className="mb-0 mt-6 space-y-3 p-0">
+            {reservation.items.map((item, index) => (
+              <li
+                key={item.id}
+                className="flex items-center justify-between gap-4 text-sm text-[#D9C7A0]"
+              >
+                <span>{seatLabelsById.get(item.eventSeatId) ?? `Assento ${index + 1}`}</span>
+                <span className="font-mono font-medium">
+                  {formatEventPrice(item.unitPriceCents)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="my-6 flex gap-1" aria-hidden="true">
+            {Array.from({ length: 24 }, (_, index) => (
+              <span key={index} className="size-1 rounded-full bg-[#4A2028]" />
+            ))}
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="m-0 text-sm font-medium text-[#F5F2EC]">Total</p>
+            <p className="m-0 font-mono text-2xl font-semibold text-[#D9C7A0]">
+              {formatEventPrice(totalPriceCents)}
+            </p>
+          </div>
           <p className="mb-0 mt-5 text-sm leading-6 text-[#C9BBA6]">
             O preço foi registrado no momento em que a reserva foi criada.
           </p>

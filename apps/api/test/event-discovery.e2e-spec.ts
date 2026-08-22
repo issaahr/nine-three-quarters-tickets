@@ -21,6 +21,7 @@ describe('descoberta pública de Events', () => {
   let venuesRepository: Repository<Venue>;
   let organizer: User;
   let venue: Venue;
+  let accentedVenue: Venue;
   const createdEventIds: string[] = [];
 
   beforeAll(async () => {
@@ -44,6 +45,14 @@ describe('descoberta pública de Events', () => {
       country: 'Brasil',
       timeZone: 'Pacific/Kiritimati',
     });
+    accentedVenue = await venuesRepository.save({
+      name: `Cinema São Paulo ${randomUUID()}`,
+      address: 'Rua Acentuada, 93',
+      city: 'São Paulo',
+      state: 'SP',
+      country: 'Brasil',
+      timeZone: 'America/Sao_Paulo',
+    });
   });
 
   afterAll(async () => {
@@ -51,6 +60,7 @@ describe('descoberta pública de Events', () => {
       await eventsRepository.delete(createdEventIds);
     }
     await venuesRepository.delete(venue.id);
+    await venuesRepository.delete(accentedVenue.id);
     await app.close();
   });
 
@@ -129,7 +139,21 @@ describe('descoberta pública de Events', () => {
       })
       .expect(200);
 
-    expect(response.body.items.map(({ id }: { id: string }) => id)).toEqual([event.id]);
+    expect(response.body.items.map(({ id }: { id: string }) => id)).toContain(event.id);
+  });
+
+  it('encontra cidade independente de acentos', async () => {
+    const event = await createEvent({
+      title: 'Cidade Acentuada',
+      venueId: accentedVenue.id,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/events')
+      .query({ city: 'sao paulo' })
+      .expect(200);
+
+    expect(response.body.items.map(({ id }: { id: string }) => id)).toContain(event.id);
   });
 
   it('fornece páginas estáveis com hasMore para carregamento infinito', async () => {

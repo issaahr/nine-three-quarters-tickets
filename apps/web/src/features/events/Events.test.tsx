@@ -129,6 +129,7 @@ describe('catálogo público de eventos', () => {
     renderEvents();
 
     await screen.findByRole('heading', { name: 'Nenhum evento disponível' });
+    await user.click(screen.getByRole('button', { name: 'Filtros' }));
     await user.type(screen.getByLabelText('Buscar'), '  cinema   clássico  ');
     await user.type(screen.getByLabelText('Cidade'), '  Fortaleza  ');
     await user.type(screen.getByLabelText('A partir de'), '2030-08-01');
@@ -141,6 +142,23 @@ describe('catálogo público de eventos', () => {
     expect(requestedUrl?.searchParams.has('genre')).toBe(false);
   });
 
+  it('mantém a barra de busca disponível enquanto os filtros avançados estão recolhidos', async () => {
+    const user = userEvent.setup();
+    renderEvents();
+
+    expect(await screen.findByRole('button', { name: 'Filtros' })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByLabelText('Cidade')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filtros' }));
+
+    expect(screen.getByLabelText('Cidade')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ocultar filtros' }));
+    expect(screen.queryByLabelText('Cidade')).not.toBeInTheDocument();
+  });
+
   it('diferencia uma busca sem correspondências do catálogo vazio', async () => {
     server.use(
       http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
@@ -149,6 +167,7 @@ describe('catálogo público de eventos', () => {
     renderEvents();
 
     await screen.findByRole('heading', { name: 'Nenhum evento disponível' });
+    await user.click(screen.getByRole('button', { name: 'Filtros' }));
     await user.type(screen.getByLabelText('Gênero'), 'Jazz');
     await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
 
@@ -192,7 +211,7 @@ describe('catálogo público de eventos', () => {
 
     expect(heldSeat).toBeDisabled();
     expect(soldSeat).toBeDisabled();
-    expect(screen.getByText('Nenhum assento selecionado.')).toBeInTheDocument();
+    expect(screen.getByText('Selecione seus assentos')).toBeInTheDocument();
     expect(screen.getByText('A seleção ainda não reserva os assentos.')).toBeInTheDocument();
 
     await user.click(availableSeat);
@@ -204,7 +223,7 @@ describe('catálogo público de eventos', () => {
     await user.click(availableSeat);
 
     expect(availableSeat).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('Nenhum assento selecionado.')).toBeInTheDocument();
+    expect(screen.getByText('Selecione seus assentos')).toBeInTheDocument();
   });
 
   it('cria o hold apenas após confirmação da API e atualiza o mapa de assentos', async () => {
