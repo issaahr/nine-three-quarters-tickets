@@ -272,4 +272,45 @@ describe('checkout de Reservation', () => {
     expect(idempotencyKeys).toHaveLength(2);
     expect(idempotencyKeys[0]).toBe(idempotencyKeys[1]);
   });
+
+  it('confirma o cancelamento e atualiza a tela da Reservation', async () => {
+    const user = userEvent.setup();
+    let cancellationCalls = 0;
+    server.use(
+      http.get(`${apiUrl}/reservations/${reservationId}`, () =>
+        HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'ACTIVE',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: null,
+          items: reservationItems,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/${reservationId}/cancel`, () => {
+        cancellationCalls += 1;
+        return HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'CANCELLED',
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          confirmedAt: null,
+          cancelledAt: '2030-08-01T12:00:00.000Z',
+          items: reservationItems,
+        });
+      }),
+    );
+
+    renderCheckout();
+
+    await user.click(await screen.findByRole('button', { name: 'Cancelar reserva' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('libera os assentos imediatamente');
+    await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva foi cancelada' }),
+    ).toBeInTheDocument();
+    expect(cancellationCalls).toBe(1);
+  });
 });
