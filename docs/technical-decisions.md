@@ -54,6 +54,19 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 
 Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.md).
 
+## Reservations temporárias SEATED
+
+- `Reservation`, seus `ReservationItem` e a aquisição de todos os `EventSeat` solicitados são persistidos na mesma transação PostgreSQL.
+- A aquisição utiliza um `UPDATE` condicional que aceita somente assentos não vendidos e sem hold válido; divergência entre a quantidade solicitada e a quantidade afetada reverte a transação inteira.
+- O preço de cada item é fotografado de `Event.priceCents` durante a criação e não é aceito do frontend.
+- `CURRENT_TIMESTAMP` do PostgreSQL determina criação, validade e expiração; a duração do hold vem de `RESERVATION_HOLD_DURATION_SECONDS`.
+- A correção da expiração não depende de scheduler: um hold com `holdExpiresAt` vencido pode ser substituído por uma nova aquisição válida.
+- A reserva ativa por CUSTOMER/Event é uma política de fluxo. Não são usados advisory lock, lock artificial de User ou infraestrutura adicional para transformá-la em invariante crítica.
+- O cancelamento bloqueia a `Reservation`, valida seu estado com o horário do banco e libera somente os assentos cujo `holdReservationId` ainda corresponde a ela, no mesmo commit.
+- O checkout é uma rota autenticada de CUSTOMER. Seu countdown deriva de `expiresAt`, provoca nova consulta ao chegar a zero e nunca substitui a validação autoritativa da API.
+
+Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md).
+
 ## Descoberta pública de Events
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.

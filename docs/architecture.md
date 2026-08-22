@@ -43,15 +43,16 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md) para o
 
 ```text
 apps/api/src/
-├── config/       # leitura e validação centralizada do ambiente
-├── database/     # DataSource, entidade base e migrations
-├── errors/       # contrato comum de erros controlados
+├── config/              # leitura e validação centralizada do ambiente
+├── database/            # DataSource, entidade base e migrations
+├── errors/              # contrato comum de erros controlados
 └── modules/
-    ├── auth/     # login, sessão, cadastro, JWT e autorização
-    ├── catalog/  # port de catálogo e adapter da TMDb
-    ├── events/   # ocorrência, publicação e inventário seated materializado
-    ├── users/    # entidade User e enum de papéis
-    └── venues/   # locais e layouts físicos reutilizáveis
+    ├── auth/            # login, sessão, cadastro, JWT e autorização
+    ├── catalog/         # port de catálogo e adapter da TMDb
+    ├── events/          # ocorrência, publicação e inventário seated materializado
+    ├── reservations/    # holds temporários, itens, retomada e cancelamento
+    ├── users/           # entidade User e enum de papéis
+    └── venues/          # locais e layouts físicos reutilizáveis
 ```
 
 Cada módulo de domínio deve manter próximos os seus contratos HTTP, entidades, regras e erros. Uma pasta de módulo não precisa conter controller, service ou repository próprios quando não existir comportamento que os justifique.
@@ -84,7 +85,8 @@ apps/web/src/
 │   ├── auth/            # contratos, API, hooks e páginas de autenticação
 │   ├── events/          # descoberta pública, filtros e apresentação de ocorrências
 │   ├── navigation/      # shells e navegação por papel
-│   └── organizer/       # catálogo externo, criação, publicação e contratos do painel
+│   ├── organizer/       # catálogo externo, criação, publicação e contratos do painel
+│   └── reservations/    # cliente HTTP, estado remoto, checkout e countdown derivado
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
 └── test/                # configuração e servidor MSW
 ```
@@ -99,10 +101,13 @@ O fluxo de navegação autenticada é:
 
 ```text
 ProtectedRoute
-  └── RoleHomeRedirect
-      ├── CUSTOMER  → /events
-      ├── ORGANIZER → /organizer
-      └── GATE      → /gate
+  └── AuthenticatedLayout
+      ├── RoleRoute CUSTOMER
+      │   ├── /customer → /events
+      │   └── /customer/reservations/:reservationId
+      ├── RoleRoute ORGANIZER → /organizer
+      ├── RoleRoute GATE → /gate
+      └── RoleHomeRedirect → fallback conforme papel
 ```
 
 `RoleRoute` impede navegação acidental para a área visual de outro papel. Essa proteção é somente UX; cada endpoint de negócio continua responsável por autenticação e autorização na API.
@@ -112,6 +117,8 @@ O catálogo em `/events` é público e restaura a sessão apenas para adaptar su
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 
 A descoberta pública consulta `GET /events` sem acessar novamente o catálogo externo. A API retorna somente ocorrências `PUBLISHED` e futuras, usando o snapshot persistido no Event e o Venue associado para busca, filtros e apresentação canônica. A leitura direta por `GET /events/:eventId` também admite ocorrências passadas e `CANCELLED`, mantém DRAFT indistinguível de um recurso inexistente e deriva `isPast` no PostgreSQL.
+
+O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criação bem-sucedida de `Reservation` abre o checkout protegido. TanStack Query mantém Reservation ativa, detalhe e mapa no estado remoto; criação e cancelamento invalidam o mapa. O countdown é derivado de `expiresAt` para apresentação, enquanto a API e os timestamps do PostgreSQL permanecem autoritativos para validade e inventário.
 
 ## Fronteiras externas e futuras
 
