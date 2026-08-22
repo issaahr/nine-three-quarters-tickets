@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
   ParseUUIDPipe,
@@ -84,6 +85,7 @@ export class ReservationsController {
    * Cancela uma Reservation ativa e libera seus EventSeats no mesmo commit.
    */
   @Post(':reservationId/cancel')
+  @HttpCode(HttpStatus.OK)
   @Roles(UserRole.Customer)
   @ApiCancelReservation()
   public async cancel(
