@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { buttonVariants } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
+import { formatEventPrice } from '../../events/eventPresentation';
 import { OrganizerEventCard } from '../components/OrganizerEventCard';
 import { useOrganizerEvents, usePublishEvent } from '../hooks';
 
@@ -21,6 +22,10 @@ export function OrganizerHome() {
   const [eventPublished] = useState(() => navigationState?.eventPublished === true);
   const eventsQuery = useOrganizerEvents();
   const publishMutation = usePublishEvent();
+  const organizerEvents = eventsQuery.data ?? [];
+  const activeEvents = organizerEvents.filter((event) => event.isActive).length;
+  const soldTickets = organizerEvents.reduce((total, event) => total + event.soldTickets, 0);
+  const revenueCents = organizerEvents.reduce((total, event) => total + event.revenueCents, 0);
 
   // Remove o flash do histórico sem ocultá-lo durante a navegação que o originou.
   useEffect(() => {
@@ -70,6 +75,26 @@ export function OrganizerHome() {
         <p role="alert" className="mb-6 text-sm text-destructive">
           Não foi possível publicar o evento. Tente novamente.
         </p>
+      )}
+
+      {eventsQuery.data && organizerEvents.length > 0 && (
+        <section className="mb-8 grid gap-3 sm:grid-cols-3" aria-label="Resumo dos eventos">
+          {[
+            ['Eventos ativos', String(activeEvents)],
+            ['Ingressos vendidos', String(soldTickets)],
+            ['Receita total', formatEventPrice(revenueCents)],
+          ].map(([label, value]) => (
+            <article
+              key={label}
+              className="bg-[#2B0A10] p-4 text-[#D9C7A0] [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]"
+            >
+              <p className="m-0 text-[10px] font-medium uppercase tracking-[1.2px] text-[#A9855B]">
+                {label}
+              </p>
+              <p className="mb-0 mt-2 font-mono text-2xl font-semibold">{value}</p>
+            </article>
+          ))}
+        </section>
       )}
 
       {eventsQuery.isLoading && <p role="status">Carregando seus eventos...</p>}

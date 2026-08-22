@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { AdmissionMode } from '../admissionMode.enum';
-import { Event } from '../event.entity';
 import { EventCategory } from '../eventCategory.enum';
 import { EventStatus } from '../eventStatus.enum';
+import { OrganizerEventWithStats } from '../repositories/eventRepository.interfaces';
 
 export class OrganizerEventResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -48,13 +48,31 @@ export class OrganizerEventResponseDto {
   @ApiProperty({ minimum: 0 })
   public priceCents!: number;
 
+  @ApiProperty()
+  public isActive!: boolean;
+
+  @ApiProperty({ minimum: 0 })
+  public soldTickets!: number;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  public inventoryTotal!: number | null;
+
+  @ApiProperty({ minimum: 0 })
+  public revenueCents!: number;
+
   /**
    * Constrói o contrato do painel sem expor relações ou metadados internos da entidade.
    *
-   * @param event - Event carregado com seu Venue.
+   * @param organizerEvent - Event e métricas agregadas carregadas para o organizador.
    * @returns Dados necessários para gestão inicial pelo organizador.
    */
-  public static fromEvent(event: Event): OrganizerEventResponseDto {
+  public static fromEvent({
+    event,
+    isActive,
+    soldTickets,
+    inventoryTotal,
+    revenueCents,
+  }: OrganizerEventWithStats): OrganizerEventResponseDto {
     return {
       id: event.id,
       venueId: event.venueId,
@@ -70,6 +88,10 @@ export class OrganizerEventResponseDto {
       status: event.status,
       startsAt: event.startsAt,
       priceCents: event.priceCents,
+      isActive,
+      soldTickets,
+      inventoryTotal,
+      revenueCents,
     };
   }
 }

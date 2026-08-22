@@ -35,8 +35,12 @@ export function CreateMovieEvent() {
       </div>
 
       <div className="grid gap-8 xl:grid-cols-[minmax(0,1.35fr)_minmax(390px,0.65fr)]">
-        <MovieCatalogPicker selectedMovie={selectedMovie} onSelect={setSelectedMovie} />
-        <MovieEventForm selectedMovie={selectedMovie} />
+        <div className="order-2 xl:order-1">
+          <MovieCatalogPicker selectedMovie={selectedMovie} onSelect={setSelectedMovie} />
+        </div>
+        <div className="order-1 xl:order-2">
+          <MovieEventForm selectedMovie={selectedMovie} />
+        </div>
       </div>
     </main>
   );

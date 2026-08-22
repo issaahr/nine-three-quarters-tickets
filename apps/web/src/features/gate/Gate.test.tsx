@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '../../App';
 import { UserRole } from '../auth/types';
+import { formatGateEventDateTime } from '../events/eventPresentation';
 import { server } from '../../test/server';
 import { CheckInResult } from './types';
 
@@ -53,6 +54,12 @@ describe('Contexto ativo da portaria', () => {
     scannerMock.stop.mockReset();
   });
 
+  it('formata o contexto da portaria no timezone do Venue', () => {
+    expect(formatGateEventDateTime('2030-08-21T23:30:00.000Z', 'America/Fortaleza')).toBe(
+      'QUA · 21 AGO · 20:30 · UTC−03:00',
+    );
+  });
+
   it('permite ao GATE selecionar um Event e mostra seu contexto operacional', async () => {
     server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
     const user = userEvent.setup();
@@ -66,7 +73,7 @@ describe('Contexto ativo da portaria', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sessão em operação' })).toBeInTheDocument();
     expect(screen.getByText('Cine Imperial · Sala A')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Trocar Event' })).toHaveAttribute('href', '/gate');
+    expect(screen.getByRole('link', { name: 'Trocar Evento' })).toHaveAttribute('href', '/gate');
   });
 
   it('explica quando não há Events publicados para operar', async () => {
@@ -126,8 +133,8 @@ describe('Contexto ativo da portaria', () => {
 
     renderGate('/gate/events/event-inexistente');
 
-    expect(await screen.findByRole('heading', { name: 'Event indisponível' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Escolher Event' })).toHaveAttribute('href', '/gate');
+    expect(await screen.findByRole('heading', { name: 'Evento indisponível' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Escolher Evento' })).toHaveAttribute('href', '/gate');
   });
 
   it.each([
@@ -155,6 +162,23 @@ describe('Contexto ativo da portaria', () => {
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
     expect(requestBody).toEqual({ manualCode: '7k4p m9q2' });
     expect(screen.getByRole('button', { name: 'Nova validação' })).toBeInTheDocument();
+  });
+
+  it('usa a mensagem única de evento diferente', async () => {
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, () =>
+        HttpResponse.json({ result: CheckInResult.EventMismatch }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
+    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
+
+    expect(await screen.findByText('Ingresso não pertence a este evento')).toBeInTheDocument();
   });
 
   it('informa falha técnica sem fabricar resultado de check-in', async () => {

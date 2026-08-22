@@ -52,11 +52,11 @@ export function MyTicketsPage() {
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-12">
       <header className="max-w-2xl">
         <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
-          Área do cliente
+          Histórico
         </p>
         <h1 className="mb-0 mt-3 font-heading text-4xl font-semibold">Meus ingressos</h1>
         <p className="mb-0 mt-3 text-sm leading-6 text-muted-foreground">
-          Cada item representa uma entrada individual e possui sua própria credencial.
+          Cada ingresso é individual e possui seu próprio código de acesso.
         </p>
       </header>
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { CheckCircle2, Clock3, MapPin, Ticket } from 'lucide-react';
+import { Check, Clock3, MapPin, Ticket } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -125,9 +125,6 @@ export function ReservationCheckoutPage() {
               >
                 {countdown.formatted}
               </p>
-              <p className="mb-0 mt-3 text-xs leading-5 text-muted-foreground">
-                A validade definitiva é conferida pela API antes de qualquer operação posterior.
-              </p>
             </div>
           )}
 
@@ -142,15 +139,20 @@ export function ReservationCheckoutPage() {
           )}
 
           {isConfirmed && (
-            <div
-              role="status"
-              className="mt-6 flex gap-3 border-l-4 border-[#3E6B4F] bg-[#3E6B4F]/10 p-4 text-sm leading-6 text-[#285039]"
-            >
-              <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <span>
-                A compra foi confirmada e os ingressos individuais foram emitidos. A visualização
-                dos ingressos será disponibilizada em seguida.
+            <div role="status" className="mt-8 flex flex-col items-center text-center">
+              <span className="flex size-11 items-center justify-center rounded-full bg-[#3E6B4F] text-[#F5F2EC]">
+                <Check className="size-6" aria-hidden="true" />
               </span>
+              <p className="mb-0 mt-5 font-heading text-xl font-semibold">Pagamento confirmado</p>
+              <p className="mb-0 mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+                Seus ingressos já estão disponíveis em Meus ingressos.
+              </p>
+              <Link
+                to="/customer/tickets"
+                className={cn(buttonVariants(), 'mt-6 rounded-[4px] no-underline')}
+              >
+                Ver meus ingressos
+              </Link>
             </div>
           )}
 
@@ -200,7 +202,7 @@ export function ReservationCheckoutPage() {
               </li>
             ))}
           </ul>
-          <div className="my-6 flex gap-1" aria-hidden="true">
+          <div className="my-6 flex justify-center gap-1" aria-hidden="true">
             {Array.from({ length: 24 }, (_, index) => (
               <span key={index} className="size-1 rounded-full bg-[#4A2028]" />
             ))}
@@ -211,9 +213,6 @@ export function ReservationCheckoutPage() {
               {formatEventPrice(totalPriceCents)}
             </p>
           </div>
-          <p className="mb-0 mt-5 text-sm leading-6 text-[#C9BBA6]">
-            O preço foi registrado no momento em que a reserva foi criada.
-          </p>
           <Link
             to={eventId ? `/events/${eventId}` : '/events'}
             className={cn(

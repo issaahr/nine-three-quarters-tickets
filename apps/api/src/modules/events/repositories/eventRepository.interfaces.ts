@@ -21,3 +21,11 @@ export interface PublicEventDetail {
   event: Event;
   isPast: boolean;
 }
+
+export interface OrganizerEventWithStats {
+  event: Event;
+  isActive: boolean;
+  soldTickets: number;
+  inventoryTotal: number | null;
+  revenueCents: number;
+}

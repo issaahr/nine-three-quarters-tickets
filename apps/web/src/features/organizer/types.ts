@@ -43,6 +43,10 @@ export interface OrganizerEvent {
   status: EventStatus;
   startsAt: string;
   priceCents: number;
+  isActive: boolean;
+  soldTickets: number;
+  inventoryTotal: number | null;
+  revenueCents: number;
 }
 
 export interface CreateMovieEventRequest {

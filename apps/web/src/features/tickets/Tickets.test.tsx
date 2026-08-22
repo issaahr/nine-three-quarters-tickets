@@ -179,9 +179,11 @@ describe('Meus ingressos', () => {
     expect(
       await screen.findByRole('heading', { name: 'Sessão compartilhada' }),
     ).toBeInTheDocument();
-    expect(screen.getByText('Assento C1')).toBeInTheDocument();
+    expect(screen.getByText('C1')).toBeInTheDocument();
     expect(screen.getByText('Utilizado')).toBeInTheDocument();
     expect(screen.getByLabelText('Código QR do ingresso')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Compartilhar' })).toBeInTheDocument();
+    expect(screen.getByText('O seguinte ingresso foi compartilhado com você')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Compartilhar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ver eventos' })).not.toBeInTheDocument();
   });
 });

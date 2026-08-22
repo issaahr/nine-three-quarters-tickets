@@ -1,23 +1,23 @@
 import axios from 'axios';
-import { CalendarDays, MapPin, Share2 } from 'lucide-react';
+import { ArrowLeft, Share2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button';
-import { formatEventDetailDateTime } from '../../events/eventPresentation';
+import { formatTicketEventDateTime } from '../../events/eventPresentation';
 import { useSharedTicket } from '../hooks';
-import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentation';
+import { getTicketStatusLabel } from '../ticketPresentation';
 import { TicketStatus } from '../types';
 
 interface TicketPresentationPageProps {
   shared?: boolean;
 }
 
-const ticketStatusClassName: Record<TicketStatus, string> = {
-  [TicketStatus.Valid]: 'bg-[#3E6B4F] text-[#D9F0DE]',
-  [TicketStatus.Used]: 'bg-[#6B5636] text-[#F5F2EC]',
-  [TicketStatus.Cancelled]: 'bg-[#8B3A3A] text-[#F5F2EC]',
+const ticketStatusTextClassName: Record<TicketStatus, string> = {
+  [TicketStatus.Valid]: 'text-[#8FBF9F]',
+  [TicketStatus.Used]: 'text-[#D9C7A0]',
+  [TicketStatus.Cancelled]: 'text-[#D99999]',
 };
 
 export function TicketPresentationPage({ shared = false }: TicketPresentationPageProps) {
@@ -54,8 +54,6 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
   }
 
   const ticket = ticketQuery.data;
-  const returnPath = shared ? '/events' : '/customer/tickets';
-
   async function handleShare(): Promise<void> {
     const shareUrl = new URL(
       `/tickets/shared/${encodeURIComponent(ticket.credential)}`,
@@ -77,15 +75,22 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
 
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-12">
-      <Link
-        to={returnPath}
-        className="text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      >
-        {shared ? 'Ver eventos' : 'Voltar aos meus ingressos'}
-      </Link>
+      {shared ? (
+        <p className="mb-0 text-center text-sm font-medium text-muted-foreground">
+          O seguinte ingresso foi compartilhado com você
+        </p>
+      ) : (
+        <Link
+          to="/customer/tickets"
+          className="inline-flex items-center gap-2 text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Voltar aos meus ingressos
+        </Link>
+      )}
 
       <div className="mt-6 flex w-full justify-center">
-        <article className="w-full max-w-xl overflow-hidden bg-[#2B0A10] text-[#F5F2EC] [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_22px),calc(100%_-_22px)_100%,0_100%)]">
+        <article className="w-full max-w-[410px] overflow-hidden bg-[#2B0A10] text-[#F5F2EC] [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_22px),calc(100%_-_22px)_100%,0_100%)]">
           <header className="flex flex-col gap-5 px-5 pb-6 pt-6 sm:flex-row sm:items-start sm:justify-between sm:px-8 sm:pt-8">
             <div>
               <p className="m-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#C9A768]">
@@ -94,26 +99,37 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
               <h1 className="mb-0 mt-2 font-heading text-3xl font-semibold">
                 {ticket.event.title}
               </h1>
-              <p className="mb-0 mt-3 text-sm text-[#C9BBA6]">
-                {ticket.event.venueName} · {ticket.event.venueCity}
+              <p className="mb-0 mt-3 font-mono text-xs text-[#D9C7A0]">
+                {formatTicketEventDateTime(ticket.event.startsAt, ticket.event.venueTimeZone)}
               </p>
             </div>
-            <span
-              className={`w-fit rounded-[3px] px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.12em] ${ticketStatusClassName[ticket.status]}`}
-            >
-              {getTicketStatusLabel(ticket.status)}
-            </span>
+            <span className="font-heading text-2xl font-semibold text-[#D9C7A0]">9¾</span>
           </header>
 
-          <div className="grid gap-3 px-5 pb-6 sm:grid-cols-2 sm:px-8">
-            <p className="m-0 flex items-start gap-2 text-sm text-[#D9C7A0]">
-              <CalendarDays className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              {formatEventDetailDateTime(ticket.event.startsAt, ticket.event.venueTimeZone)}
+          <div className="px-5 pb-6 sm:px-8">
+            <p className="m-0 text-sm text-[#D9C7A0]">
+              {ticket.event.venueName} · {ticket.event.venueCity}
             </p>
-            <p className="m-0 flex items-start gap-2 text-sm text-[#D9C7A0]">
-              <MapPin className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              {getTicketLocationLabel(ticket.seatLabel)}
-            </p>
+            <div className="mt-5 flex gap-8">
+              <div>
+                <p className="m-0 text-[9px] font-medium uppercase tracking-[0.14em] text-[#A9855B]">
+                  Assento
+                </p>
+                <p className="mb-0 mt-1 font-mono text-sm text-[#F5F2EC]">
+                  {ticket.seatLabel ?? 'Entrada geral'}
+                </p>
+              </div>
+              <div>
+                <p className="m-0 text-[9px] font-medium uppercase tracking-[0.14em] text-[#A9855B]">
+                  Status
+                </p>
+                <span
+                  className={`mt-1 inline-block font-mono text-[10px] font-medium uppercase tracking-[0.12em] ${ticketStatusTextClassName[ticket.status]}`}
+                >
+                  {getTicketStatusLabel(ticket.status)}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 px-3" aria-hidden="true">
@@ -137,19 +153,23 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
               {ticket.manualCode}
             </p>
             <p className="mb-0 mt-2 text-xs text-[#A9855B]">Apresente este código na entrada</p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleShare()}
-              className="mt-6 rounded-[4px] border-[#6B5636] bg-transparent text-[#D9C7A0] hover:bg-[#3A1A20] hover:text-[#F5F2EC]"
-            >
-              <Share2 aria-hidden="true" />
-              Compartilhar
-            </Button>
-            {shareMessage && (
-              <p role="status" className="mb-0 mt-3 text-xs text-[#D9C7A0]">
-                {shareMessage}
-              </p>
+            {!shared && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleShare()}
+                  className="mt-6 rounded-[4px] border-[#6B5636] bg-transparent text-[#D9C7A0] hover:bg-[#3A1A20] hover:text-[#F5F2EC]"
+                >
+                  <Share2 aria-hidden="true" />
+                  Compartilhar
+                </Button>
+                {shareMessage && (
+                  <p role="status" className="mb-0 mt-3 text-xs text-[#D9C7A0]">
+                    {shareMessage}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </article>

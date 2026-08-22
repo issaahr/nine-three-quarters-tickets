@@ -49,23 +49,27 @@ export function AuthenticatedLayout() {
           />
 
           <div className="flex items-center gap-2 sm:gap-5">
-            <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">
-              {navigation.label}
-            </span>
+            {user.role !== UserRole.Customer && (
+              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">
+                {navigation.label}
+              </span>
+            )}
             <nav aria-label="Navegação principal">
-              <NavLink
-                to={navigation.homePath}
-                end
-                className={({ isActive }) =>
-                  `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
-                    isActive
-                      ? 'text-primary-foreground'
-                      : 'text-[#C9BBA6] hover:text-primary-foreground'
-                  }`
-                }
-              >
-                {navigation.homeLabel}
-              </NavLink>
+              {user.role === UserRole.Customer && (
+                <NavLink
+                  to={navigation.homePath}
+                  end
+                  className={({ isActive }) =>
+                    `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
+                      isActive
+                        ? 'text-primary-foreground'
+                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                    }`
+                  }
+                >
+                  {navigation.homeLabel}
+                </NavLink>
+              )}
               {user.role === UserRole.Customer && (
                 <NavLink
                   to="/customer/tickets"

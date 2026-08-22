@@ -23,6 +23,8 @@ describe('descoberta pública de Events', () => {
   let venue: Venue;
   let accentedVenue: Venue;
   const createdEventIds: string[] = [];
+  const suiteMarker = randomUUID();
+  const paginationMarker = randomUUID();
 
   beforeAll(async () => {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -74,8 +76,8 @@ describe('descoberta pública de Events', () => {
     const event = await eventsRepository.save({
       organizerId: organizer.id,
       venueId: venue.id,
-      title: 'Descoberta Áurea',
-      description: 'Conteúdo persistido localmente para descoberta.',
+      title: `Descoberta Áurea ${suiteMarker}`,
+      description: `Conteúdo persistido localmente para descoberta ${suiteMarker}.`,
       imageUrl: 'https://image.example/discovery.jpg',
       genres: ['Drama', 'Aventura'],
       category: EventCategory.Movie,
@@ -101,7 +103,7 @@ describe('descoberta pública de Events', () => {
 
     const response = await request(app.getHttpServer())
       .get('/events')
-      .query({ query: 'conteúdo persistido' })
+      .query({ query: suiteMarker })
       .expect(200);
 
     expect(response.body).toEqual({
@@ -142,6 +144,20 @@ describe('descoberta pública de Events', () => {
     expect(response.body.items.map(({ id }: { id: string }) => id)).toContain(event.id);
   });
 
+  it('inclui Event encerrado quando o calendário é selecionado explicitamente', async () => {
+    const pastEvent = await createEvent({
+      title: 'Histórico por data',
+      startsAt: new Date('2020-06-01T10:30:00.000Z'),
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/events')
+      .query({ dateFrom: '2020-06-02', dateTo: '2020-06-02' })
+      .expect(200);
+
+    expect(response.body.items.map(({ id }: { id: string }) => id)).toContain(pastEvent.id);
+  });
+
   it('encontra cidade independente de acentos', async () => {
     const event = await createEvent({
       title: 'Cidade Acentuada',
@@ -161,7 +177,7 @@ describe('descoberta pública de Events', () => {
       Array.from({ length: 13 }, (_, index) =>
         createEvent({
           title: `Lote Infinito ${String(index + 1).padStart(2, '0')}`,
-          description: 'Marcador exclusivo de paginação infinita.',
+          description: `Marcador exclusivo de paginação infinita ${paginationMarker}.`,
           startsAt: new Date(Date.UTC(2099, 6, index + 1, 20, 0)),
         }),
       ),
@@ -169,11 +185,11 @@ describe('descoberta pública de Events', () => {
 
     const firstPage = await request(app.getHttpServer())
       .get('/events')
-      .query({ query: 'marcador exclusivo', page: 1 })
+      .query({ query: paginationMarker, page: 1 })
       .expect(200);
     const secondPage = await request(app.getHttpServer())
       .get('/events')
-      .query({ query: 'marcador exclusivo', page: 2 })
+      .query({ query: paginationMarker, page: 2 })
       .expect(200);
 
     expect(firstPage.body.items).toHaveLength(12);

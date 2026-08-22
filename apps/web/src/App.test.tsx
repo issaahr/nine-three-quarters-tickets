@@ -327,16 +327,18 @@ describe('fluxo de autenticação', () => {
 
   it.each([
     [UserRole.Customer, 'Encontre sua próxima experiência', 'Eventos'],
-    [UserRole.Organizer, 'Meus eventos', 'Meus eventos'],
-    [UserRole.Gate, 'Nenhum Event disponível', 'Portaria'],
+    [UserRole.Organizer, 'Meus eventos', undefined],
+    [UserRole.Gate, 'Nenhum Event disponível', undefined],
   ])('apresenta início e navegação coerentes para %s', async (role, heading, navigationLabel) => {
     renderApp(getRoleNavigation(role).homePath, { id: `user-${role}`, role });
 
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
+    if (navigationLabel) {
+      expect(screen.getByRole('link', { name: navigationLabel })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+    }
 
     const otherNavigationLabels = ['Eventos', 'Meus eventos', 'Portaria'].filter(
       (label) => label !== navigationLabel,

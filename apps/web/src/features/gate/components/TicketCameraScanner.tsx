@@ -78,7 +78,7 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
   }, [disabled, isActive]);
 
   return (
-    <section className="rounded-[4px] border border-[#3A1A20] bg-[#0D0507] p-5">
+    <section className="relative flex flex-col rounded-[4px] border border-[#3A1A20] bg-[#0D0507] p-5">
       <h2 className="font-heading text-xl font-semibold">Leitor por câmera</h2>
       <p className="mt-2 text-sm text-[#B7AFA3]">Aponte a câmera para o QR Code do ingresso.</p>
       <video
@@ -86,14 +86,20 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
         muted
         playsInline
         className={
-          isActive ? 'mt-4 aspect-video w-full rounded-[4px] bg-black object-cover' : 'hidden'
+          isActive
+            ? 'mt-4 aspect-square w-full rounded-[4px] bg-black object-cover sm:aspect-video'
+            : 'hidden'
         }
       />
       <button
         type="button"
         disabled={disabled}
         onClick={() => void (isActive ? stopCamera() : startCamera())}
-        className="mt-4 rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50"
+        className={
+          isActive
+            ? 'mt-4 self-center rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
+            : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
+        }
       >
         {isActive ? 'Desativar câmera' : 'Ativar câmera'}
       </button>

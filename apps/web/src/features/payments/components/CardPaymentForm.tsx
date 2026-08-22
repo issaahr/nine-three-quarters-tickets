@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import axios from 'axios';
-import { CircleX, CreditCard, LoaderCircle } from 'lucide-react';
+import { CircleX, CreditCard, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { useState } from 'react';
 
@@ -68,6 +68,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
   const { submit, payment, error, isPaying } = useCardPayment({ reservationId, eventId });
   const { cancel, cancelError, isCancelling } = useReservationMutations(eventId);
   const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
+  const [isCvvVisible, setIsCvvVisible] = useState(false);
   const {
     register,
     handleSubmit,
@@ -249,15 +250,29 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
             >
               CVV
             </label>
-            <Input
-              id="card-cvv"
-              type="password"
-              inputMode="numeric"
-              autoComplete="cc-csc"
-              {...register('cvv')}
-              aria-invalid={Boolean(errors.cvv)}
-              className="h-11 rounded-[4px] border-[#D4CCBE] bg-white font-mono"
-            />
+            <div className="relative">
+              <Input
+                id="card-cvv"
+                type={isCvvVisible ? 'text' : 'password'}
+                inputMode="numeric"
+                autoComplete="cc-csc"
+                {...register('cvv')}
+                aria-invalid={Boolean(errors.cvv)}
+                className="h-11 rounded-[4px] border-[#D4CCBE] bg-white pr-10 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setIsCvvVisible((currentValue) => !currentValue)}
+                aria-label={isCvvVisible ? 'Ocultar CVV' : 'Mostrar CVV'}
+                className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                {isCvvVisible ? (
+                  <EyeOff className="size-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="size-4" aria-hidden="true" />
+                )}
+              </button>
+            </div>
             {errors.cvv?.message && (
               <p role="alert" className="mb-0 mt-1.5 text-xs text-destructive">
                 {errors.cvv.message}

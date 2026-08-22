@@ -161,7 +161,13 @@ describe('checkout de Reservation', () => {
     expect(
       await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('ingressos individuais foram emitidos');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Seus ingressos já estão disponíveis em Meus ingressos.',
+    );
+    expect(screen.getByRole('link', { name: 'Ver meus ingressos' })).toHaveAttribute(
+      'href',
+      '/customer/tickets',
+    );
     expect(idempotencyKeys).toHaveLength(1);
     expect(idempotencyKeys[0]).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,

@@ -381,7 +381,7 @@ describe('catálogo público de eventos', () => {
   });
 
   it.each([
-    [EventStatus.Published, true, 'Sessão encerrada', 'Esta sessão já aconteceu'],
+    [EventStatus.Published, true, 'Encerrado', 'Esta sessão já aconteceu'],
     [EventStatus.Cancelled, false, 'Sessão cancelada', 'Esta sessão foi cancelada'],
   ])(
     'impede início de compra na leitura %s com isPast=%s',
