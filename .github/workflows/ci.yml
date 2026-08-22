@@ -71,6 +71,7 @@ jobs:
       DEMO_USERS_PASSWORD: demo-password
       JWT_SECRET: ci-test-jwt-secret
       JWT_EXPIRES_IN_SECONDS: "3600"
+      RESERVATION_HOLD_DURATION_SECONDS: "600"
       CORS_ORIGINS: http://localhost:5173
       PUBLIC_SIGNUP_ENABLED: "false"
       TMDB_API_READ_ACCESS_TOKEN: ci-test-tmdb-token

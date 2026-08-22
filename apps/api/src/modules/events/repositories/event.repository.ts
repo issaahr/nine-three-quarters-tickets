@@ -63,7 +63,9 @@ export class EventRepository {
     }
 
     if (filters.city) {
-      queryBuilder.andWhere('LOWER("venue"."city") = LOWER(:city)', { city: filters.city });
+      queryBuilder.andWhere('unaccent(LOWER("venue"."city")) = unaccent(LOWER(:city))', {
+        city: filters.city,
+      });
     }
 
     if (filters.dateFrom) {

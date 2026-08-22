@@ -1,5 +1,5 @@
 import { api } from '../../lib/api';
-import { EventDetail, EventDiscoveryFilters, EventDiscoveryPage } from './types';
+import { EventDetail, EventDiscoveryFilters, EventDiscoveryPage, EventSeatMapItem } from './types';
 
 /**
  * Carrega uma página pública de ocorrências usando filtros já normalizados pela interface.
@@ -27,5 +27,13 @@ export async function fetchEventDiscovery(
  */
 export async function fetchEventDetail(eventId: string): Promise<EventDetail> {
   const response = await api.get<EventDetail>(`/events/${eventId}`);
+  return response.data;
+}
+
+/**
+ * Carrega o layout seated e a disponibilidade calculada pela API para uma ocorrência pública.
+ */
+export async function fetchEventSeatMap(eventId: string): Promise<EventSeatMapItem[]> {
+  const response = await api.get<EventSeatMapItem[]>(`/events/${eventId}/seats`);
   return response.data;
 }

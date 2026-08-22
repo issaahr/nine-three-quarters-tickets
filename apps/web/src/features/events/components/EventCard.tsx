@@ -38,8 +38,8 @@ export function EventCard({ event }: EventCardProps) {
             </div>
           )}
 
-          <div className="flex flex-1 flex-col p-4 sm:p-5">
-            <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="flex flex-1 flex-col p-3 sm:p-4">
+            <div className="mb-2 flex items-start justify-between gap-3">
               <span className="inline-flex rounded-[2px] bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[1.3px] text-primary">
                 {categoryLabels[event.category]}
               </span>
@@ -48,11 +48,11 @@ export function EventCard({ event }: EventCardProps) {
               </span>
             </div>
 
-            <h2 className="m-0 line-clamp-2 font-heading text-2xl font-semibold leading-tight text-foreground">
+            <h2 className="m-0 line-clamp-2 font-heading text-xl font-semibold leading-tight text-foreground">
               {event.title}
             </h2>
 
-            <div className="mt-4 space-y-2 text-[13px] text-muted-foreground">
+            <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
               <p className="m-0 flex items-center gap-2">
                 <CalendarDays className="size-4 shrink-0 text-primary" aria-hidden="true" />
                 <span className="font-mono">
@@ -68,7 +68,7 @@ export function EventCard({ event }: EventCardProps) {
             </div>
 
             {event.genres.length > 0 && (
-              <p className="mb-0 mt-auto pt-5 text-[10px] uppercase tracking-[1.1px] text-primary">
+              <p className="mb-0 mt-auto pt-4 text-[10px] uppercase tracking-[1.1px] text-primary">
                 {event.genres.slice(0, 3).join(' · ')}
               </p>
             )}

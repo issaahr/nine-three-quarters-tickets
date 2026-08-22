@@ -20,10 +20,12 @@ import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto'
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
+import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import {
   ApiCreateMovieEvent,
   ApiDiscoverEvents,
   ApiGetEventDetail,
+  ApiGetEventSeatMap,
   ApiPublishEvent,
 } from './events.swagger';
 import { EventsService } from './events.service';
@@ -43,6 +45,18 @@ export class EventsController {
   ): Promise<EventDiscoveryPageResponseDto> {
     const result = await this.eventsService.discover(query);
     return EventDiscoveryPageResponseDto.fromEvents(result.events, result.page, result.hasMore);
+  }
+
+  /**
+   * Retorna o mapa materializado de assentos e o estado temporal de cada posição.
+   */
+  @Get(':eventId/seats')
+  @ApiGetEventSeatMap()
+  public async findPublicSeatMap(
+    @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
+  ): Promise<EventSeatMapItemResponseDto[]> {
+    const seats = await this.eventsService.findPublicSeatMap(eventId);
+    return seats.map(EventSeatMapItemResponseDto.fromPublicSeat);
   }
 
   /**

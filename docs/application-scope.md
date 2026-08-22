@@ -68,6 +68,8 @@ Não faz parte da fundação da V1:
 - microservices;
 - package genérico de domínio compartilhado por antecipação.
 
+OBS: Regra parcialmente modificada conforme [ADR-0002](./adr/0002-dependencias-independentes-no-monorepo.md)
+
 ---
 
 ## 3. Estratégia arquitetural

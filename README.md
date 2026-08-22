@@ -36,6 +36,7 @@ Além do banco e dos usuários de demonstração, configure:
 - `NODE_ENV`: ambiente de execução (`development`, `test` ou `production`);
 - `JWT_SECRET`: segredo de assinatura do JWT, com pelo menos 32 bytes;
 - `JWT_EXPIRES_IN_SECONDS`: duração do token em segundos;
+- `RESERVATION_HOLD_DURATION_SECONDS`: duração de um hold de assentos em segundos;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
 - `PUBLIC_SIGNUP_ENABLED`: habilita (`true`) ou desabilita (`false`) o cadastro público;
 - `TMDB_API_READ_ACCESS_TOKEN`: token Bearer mantido exclusivamente no backend;
