@@ -34,6 +34,7 @@ describe('Tickets', () => {
   let ticketCredentialService: TicketCredentialService;
   let customerOne: User;
   let customerTwo: User;
+  let gate: User;
   let organizer: User;
   let venue: Venue;
   const createdEventIds: string[] = [];
@@ -59,6 +60,7 @@ describe('Tickets', () => {
     customerTwo = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'customer.two.demo@ntq.local' });
+    gate = await dataSource.getRepository(User).findOneByOrFail({ email: 'gate.demo@ntq.local' });
     organizer = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'organizer.demo@ntq.local' });
@@ -287,5 +289,101 @@ describe('Tickets', () => {
 
     await request(app.getHttpServer()).get(`/tickets/shared/${ticket.publicId}`).expect(404);
     await request(app.getHttpServer()).get(`/tickets/shared/${invalidCredential}`).expect(404);
+  });
+
+  it('retorna os resultados semânticos do check-in QR e registra o operador vencedor', async () => {
+    const validPurchase = await createConfirmedPurchase(customerOne, 1);
+    const validTicket = validPurchase.tickets[0];
+    const mismatchPurchase = await createConfirmedPurchase(customerOne, 1);
+    const mismatchTicket = mismatchPurchase.tickets[0];
+    const cancelledPurchase = await createConfirmedPurchase(customerOne, 1);
+    const cancelledTicket = cancelledPurchase.tickets[0];
+    const cookie = await authenticate(gate);
+
+    await ticketsRepository.update(cancelledTicket.id, { cancelledAt: new Date() });
+
+    const invalidResponse = await request(app.getHttpServer())
+      .post(`/gate/events/${validPurchase.reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: 'v1.invalid.signature' })
+      .expect(200);
+    const validResponse = await request(app.getHttpServer())
+      .post(`/gate/events/${validPurchase.reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: ticketCredentialService.createCredential(validTicket.publicId) })
+      .expect(200);
+    const usedResponse = await request(app.getHttpServer())
+      .post(`/gate/events/${validPurchase.reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: ticketCredentialService.createCredential(validTicket.publicId) })
+      .expect(200);
+    const mismatchResponse = await request(app.getHttpServer())
+      .post(`/gate/events/${validPurchase.reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: ticketCredentialService.createCredential(mismatchTicket.publicId) })
+      .expect(200);
+    const cancelledResponse = await request(app.getHttpServer())
+      .post(`/gate/events/${cancelledPurchase.reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: ticketCredentialService.createCredential(cancelledTicket.publicId) })
+      .expect(200);
+    const persistedTicket = await ticketsRepository.findOneByOrFail({ id: validTicket.id });
+
+    expect(invalidResponse.body).toEqual({ result: 'INVALID' });
+    expect(validResponse.body).toEqual({ result: 'VALID' });
+    expect(usedResponse.body).toEqual({ result: 'ALREADY_USED' });
+    expect(mismatchResponse.body).toEqual({ result: 'EVENT_MISMATCH' });
+    expect(cancelledResponse.body).toEqual({ result: 'CANCELLED' });
+    expect(persistedTicket.checkedInAt).toBeInstanceOf(Date);
+    expect(persistedTicket.checkedInByUserId).toBe(gate.id);
+  });
+
+  it('aceita código manual normalizado e restringe ambos os endpoints ao GATE', async () => {
+    const { reservation, tickets } = await createConfirmedPurchase(customerOne, 1);
+    const ticket = tickets[0];
+    const gateCookie = await authenticate(gate);
+    const customerCookie = await authenticate(customerOne);
+
+    const response = await request(app.getHttpServer())
+      .post(`/gate/events/${reservation.eventId}/check-in/manual-code`)
+      .set('Cookie', gateCookie)
+      .send({ manualCode: ticket.manualCode.toLowerCase().replace('-', ' ') })
+      .expect(200);
+
+    expect(response.body).toEqual({ result: 'VALID' });
+
+    await request(app.getHttpServer())
+      .post(`/gate/events/${reservation.eventId}/check-in/manual-code`)
+      .send({ manualCode: ticket.manualCode })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post(`/gate/events/${reservation.eventId}/check-in`)
+      .set('Cookie', customerCookie)
+      .send({ credential: ticketCredentialService.createCredential(ticket.publicId) })
+      .expect(403);
+  });
+
+  it('aceita exatamente um check-in em duas tentativas concorrentes', async () => {
+    const { reservation, tickets } = await createConfirmedPurchase(customerOne, 1);
+    const ticket = tickets[0];
+    const cookie = await authenticate(gate);
+    const requestBody = { credential: ticketCredentialService.createCredential(ticket.publicId) };
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/gate/events/${reservation.eventId}/check-in`)
+        .set('Cookie', cookie)
+        .send(requestBody),
+      request(app.getHttpServer())
+        .post(`/gate/events/${reservation.eventId}/check-in`)
+        .set('Cookie', cookie)
+        .send(requestBody),
+    ]);
+
+    expect([firstResponse.status, secondResponse.status]).toEqual([200, 200]);
+    expect([firstResponse.body.result, secondResponse.body.result].sort()).toEqual([
+      'ALREADY_USED',
+      'VALID',
+    ]);
   });
 });

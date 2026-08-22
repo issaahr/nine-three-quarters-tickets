@@ -71,6 +71,25 @@ export class TicketCredentialService {
     return timingSafeEqual(expectedSignature, receivedSignature) ? publicId : null;
   }
 
+  /**
+   * Normaliza o código humano para o formato canônico persistido no Ticket.
+   *
+   * @param manualCode - Código informado pelo operador, com caixa, espaços e hífen livres.
+   * @returns Código canônico ou null quando os caracteres ou o tamanho forem inválidos.
+   */
+  public normalizeManualCode(manualCode: string): string | null {
+    const characters = manualCode.replace(/[\s-]/g, '').toUpperCase();
+
+    if (
+      characters.length !== manualCodeLength ||
+      !Array.from(characters).every((character) => manualCodeAlphabet.includes(character))
+    ) {
+      return null;
+    }
+
+    return `${characters.slice(0, manualCodePartLength)}-${characters.slice(manualCodePartLength)}`;
+  }
+
   private createSignature(publicId: string): string {
     return createHmac('sha256', applicationConfig.tickets.hmacSecret)
       .update(`${credentialVersion}.${publicId}`)

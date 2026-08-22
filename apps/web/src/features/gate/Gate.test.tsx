@@ -63,6 +63,48 @@ describe('Contexto ativo da portaria', () => {
     ).toBeInTheDocument();
   });
 
+  it('alterna entre todos os Events e somente os Events do dia atual', async () => {
+    const now = new Date();
+    const tomorrow = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () =>
+        HttpResponse.json([
+          { ...gateEvents[0], title: 'Event de hoje', startsAt: now.toISOString() },
+          {
+            ...gateEvents[0],
+            id: 'event-2',
+            title: 'Event futuro',
+            startsAt: tomorrow.toISOString(),
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderGate();
+
+    expect(await screen.findByText('Event de hoje')).toBeInTheDocument();
+    expect(screen.getByText('Event futuro')).toBeInTheDocument();
+    const filterButton = screen.getByRole('button', { name: 'Ver eventos de hoje' });
+
+    await user.click(filterButton);
+
+    expect(screen.getByText('Event de hoje')).toBeInTheDocument();
+    expect(screen.queryByText('Event futuro')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mostrar todos' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar todos' }));
+
+    expect(screen.getByText('Event futuro')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver eventos de hoje' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
   it('exige uma nova seleção quando a rota não identifica um Event operável', async () => {
     server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
 

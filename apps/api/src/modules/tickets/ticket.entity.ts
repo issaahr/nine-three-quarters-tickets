@@ -2,6 +2,7 @@ import { Column, Entity, JoinColumn, ManyToOne, Relation, Unique } from 'typeorm
 
 import { BaseEntity } from '../../database/base.entity';
 import { ReservationItem } from '../reservations/reservationItem.entity';
+import { User } from '../users/user.entity';
 
 /**
  * Ingresso individual emitido para uma unidade confirmada de compra.
@@ -26,6 +27,9 @@ export class Ticket extends BaseEntity {
   @Column({ type: 'timestamptz', nullable: true })
   public checkedInAt!: Date | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  public checkedInByUserId!: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   public cancelledAt!: Date | null;
 
@@ -36,4 +40,11 @@ export class Ticket extends BaseEntity {
     foreignKeyConstraintName: 'ticketsReservationItemForeignKey',
   })
   public reservationItem!: Relation<ReservationItem>;
+
+  @ManyToOne(() => User, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn({
+    name: 'checkedInByUserId',
+    foreignKeyConstraintName: 'ticketsCheckedInByUserForeignKey',
+  })
+  public checkedInByUser!: Relation<User | null>;
 }

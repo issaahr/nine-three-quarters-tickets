@@ -25,4 +25,19 @@ describe('TicketCredentialService', () => {
       /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/,
     );
   });
+
+  it.each([
+    ['7k4p-m9q2', '7K4P-M9Q2'],
+    ['7K4P M9Q2', '7K4P-M9Q2'],
+    [' 7k4p - m9q2 ', '7K4P-M9Q2'],
+  ])('normaliza o código manual %s', (manualCode, expected) => {
+    expect(service.normalizeManualCode(manualCode)).toBe(expected);
+  });
+
+  it.each(['7K4P-M9Q', '7K4P-09Q2', '7K4P-M9Q!', ''])(
+    'rejeita código manual inválido: %s',
+    (manualCode) => {
+      expect(service.normalizeManualCode(manualCode)).toBeNull();
+    },
+  );
 });

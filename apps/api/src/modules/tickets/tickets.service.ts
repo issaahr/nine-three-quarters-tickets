@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 
+import { CheckInResult } from './checkInResult.enum';
 import { Ticket } from './ticket.entity';
 import { TicketCredentialService } from './ticketCredential.service';
 import { TicketCredentialGenerationError } from './errors/ticketCredentialGeneration.error';
@@ -92,6 +93,52 @@ export class TicketsService {
     return this.toDetails(ticket);
   }
 
+  /**
+   * Valida uma credencial QR e registra a entrada somente quando o Ticket ainda for elegível.
+   *
+   * @param activeEventId - Event selecionado como contexto ativo pela portaria.
+   * @param gateUserId - Operador GATE autenticado que realiza a validação.
+   * @param credential - Credencial QR apresentada pelo portador do Ticket.
+   * @returns Resultado semântico da tentativa de check-in.
+   */
+  public async checkInCredential(
+    activeEventId: string,
+    gateUserId: string,
+    credential: string,
+  ): Promise<CheckInResult> {
+    const publicId = this.ticketCredentialService.getVerifiedPublicId(credential);
+
+    if (!publicId) {
+      return CheckInResult.Invalid;
+    }
+
+    const ticket = await this.ticketRepository.findForCheckInByPublicId(publicId);
+    return this.checkInResolvedTicket(activeEventId, gateUserId, ticket);
+  }
+
+  /**
+   * Valida um código manual normalizado no mesmo fluxo atômico da credencial QR.
+   *
+   * @param activeEventId - Event selecionado como contexto ativo pela portaria.
+   * @param gateUserId - Operador GATE autenticado que realiza a validação.
+   * @param manualCode - Código manual informado pelo operador.
+   * @returns Resultado semântico da tentativa de check-in.
+   */
+  public async checkInManualCode(
+    activeEventId: string,
+    gateUserId: string,
+    manualCode: string,
+  ): Promise<CheckInResult> {
+    const normalizedManualCode = this.ticketCredentialService.normalizeManualCode(manualCode);
+
+    if (!normalizedManualCode) {
+      return CheckInResult.Invalid;
+    }
+
+    const ticket = await this.ticketRepository.findForCheckInByManualCode(normalizedManualCode);
+    return this.checkInResolvedTicket(activeEventId, gateUserId, ticket);
+  }
+
   private async issueForReservationItem(
     manager: EntityManager,
     reservationItemId: string,
@@ -121,6 +168,48 @@ export class TicketsService {
     }
 
     throw new TicketCredentialGenerationError();
+  }
+
+  /**
+   * Aplica a precedência dos resultados e usa escrita condicional como autoridade do uso único.
+   */
+  private async checkInResolvedTicket(
+    activeEventId: string,
+    gateUserId: string,
+    ticket: Ticket | null,
+  ): Promise<CheckInResult> {
+    if (!ticket) {
+      return CheckInResult.Invalid;
+    }
+
+    const initialResult = this.getCheckInResult(activeEventId, ticket);
+
+    if (initialResult !== CheckInResult.Valid) {
+      return initialResult;
+    }
+
+    if (await this.ticketRepository.markCheckedIn(ticket.id, gateUserId)) {
+      return CheckInResult.Valid;
+    }
+
+    const currentTicket = await this.ticketRepository.findForCheckInById(ticket.id);
+    return this.getCheckInResult(activeEventId, currentTicket);
+  }
+
+  private getCheckInResult(activeEventId: string, ticket: Ticket | null): CheckInResult {
+    if (!ticket) {
+      return CheckInResult.Invalid;
+    }
+
+    if (ticket.reservationItem.reservation.eventId !== activeEventId) {
+      return CheckInResult.EventMismatch;
+    }
+
+    if (ticket.cancelledAt) {
+      return CheckInResult.Cancelled;
+    }
+
+    return ticket.checkedInAt ? CheckInResult.AlreadyUsed : CheckInResult.Valid;
   }
 
   private toDetails(ticket: Ticket): TicketDetails {
