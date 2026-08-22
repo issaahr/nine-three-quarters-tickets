@@ -1,11 +1,40 @@
 import { Injectable } from '@nestjs/common';
 import { EntityManager, In, UpdateResult } from 'typeorm';
 
+import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
+import { SoldEventSeatRow } from '../payments.interfaces';
 import { PaymentStatus } from '../paymentStatus.enum';
 
 @Injectable()
 export class PaymentRepository {
+  /**
+   * Converte em venda somente os EventSeats cujo hold válido ainda pertence à Reservation.
+   *
+   * @param manager - EntityManager vinculado à transaction de confirmação do pagamento.
+   * @param reservationId - Reservation proprietária dos holds que serão convertidos em venda.
+   * @param now - Instante autoritativo usado para validar o hold e registrar soldAt.
+   * @returns Identificadores dos EventSeats efetivamente vendidos.
+   */
+  public async sellHeldEventSeats(
+    manager: EntityManager,
+    reservationId: string,
+    now: Date,
+  ): Promise<string[]> {
+    const result = await manager
+      .getRepository(EventSeat)
+      .createQueryBuilder()
+      .update(EventSeat)
+      .set({ soldAt: now, holdReservationId: null, holdExpiresAt: null })
+      .where('"holdReservationId" = :reservationId', { reservationId })
+      .andWhere('"holdExpiresAt" > :now', { now })
+      .andWhere('"soldAt" IS NULL')
+      .returning('"id"')
+      .execute();
+
+    return (result.raw as SoldEventSeatRow[]).map(({ id }) => id);
+  }
+
   /**
    * Finaliza tentativas PENDING cuja criação ultrapassou a janela técnica permitida.
    *

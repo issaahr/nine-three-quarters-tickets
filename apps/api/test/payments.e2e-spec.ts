@@ -23,6 +23,7 @@ import {
   PaymentGateway,
 } from '../src/modules/payments/paymentGateway.interfaces';
 import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
+import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { Ticket } from '../src/modules/tickets/ticket.entity';
@@ -55,6 +56,7 @@ describe('Payments', () => {
   let organizer: User;
   let venue: Venue;
   let paymentGateway: ControlledPaymentGateway;
+  let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
   beforeAll(async () => {
@@ -76,6 +78,8 @@ describe('Payments', () => {
     reservationsRepository = dataSource.getRepository(Reservation);
     ticketsRepository = dataSource.getRepository(Ticket);
     ticketCredentialService = app.get(TicketCredentialService);
+    seatRealtimeGateway = app.get(SeatRealtimeGateway);
+    jest.spyOn(seatRealtimeGateway, 'emitSold').mockImplementation();
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
     customer = await dataSource
       .getRepository(User)
@@ -258,6 +262,11 @@ describe('Payments', () => {
     );
     resolveGateway({ status: CardPaymentGatewayStatus.Approved });
     const firstResponse = await firstResponsePromise;
+    const completedRetryResponse = await createPaymentRequest(
+      reservation.id,
+      idempotencyKey,
+      cookie,
+    ).expect(201);
 
     expect(pendingPayment).toMatchObject({
       reservationId: reservation.id,
@@ -271,7 +280,12 @@ describe('Payments', () => {
       status: PaymentStatus.Pending,
     });
     expect(firstResponse.body.status).toBe(PaymentStatus.Approved);
+    expect(completedRetryResponse.body).toMatchObject({
+      id: firstResponse.body.id,
+      status: PaymentStatus.Approved,
+    });
     expect(paymentGateway.processCard).toHaveBeenCalledTimes(1);
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
   });
 
   it('rejeita key diferente enquanto existir Payment PENDING', async () => {
@@ -354,6 +368,7 @@ describe('Payments', () => {
     expect(response.body.status).toBe(PaymentStatus.Declined);
     expect(persistedReservation.confirmedAt).toBeNull();
     await expect(ticketsRepository.countBy({ reservationItemId: items[0].id })).resolves.toBe(0);
+    expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
   });
 
   it('confirma a Reservation, vende o assento e cria Ticket com o price snapshot', async () => {
@@ -375,6 +390,10 @@ describe('Payments', () => {
     expect(eventSeat.soldAt).not.toBeNull();
     expect(eventSeat.holdReservationId).toBeNull();
     await expect(ticketsRepository.countBy({ reservationItemId: items[0].id })).resolves.toBe(1);
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledWith({
+      eventId: reservation.eventId,
+      eventSeatIds: [eventSeat.id],
+    });
   });
 
   it('emite credenciais individuais para cada ReservationItem confirmado', async () => {
@@ -406,6 +425,15 @@ describe('Payments', () => {
       new Set(tickets.map((ticket) => ticketCredentialService.createCredential(ticket.publicId)))
         .size,
     ).toBe(2);
+    const eventSeatIds = items
+      .map((item) => item.eventSeatId)
+      .filter((eventSeatId): eventSeatId is string => eventSeatId !== null);
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledWith({
+      eventId: reservation.eventId,
+      eventSeatIds: expect.arrayContaining(eventSeatIds),
+    });
+    const [soldDelta] = jest.mocked(seatRealtimeGateway.emitSold).mock.calls[0];
+    expect(soldDelta.eventSeatIds).toHaveLength(2);
   });
 
   it('marca falha técnica e permite nova tentativa intencional', async () => {
@@ -424,5 +452,6 @@ describe('Payments', () => {
 
     expect(failedResponse.body.status).toBe(PaymentStatus.Failed);
     expect(approvedResponse.body.status).toBe(PaymentStatus.Approved);
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
   });
 });
