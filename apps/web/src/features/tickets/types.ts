@@ -32,6 +32,9 @@ export interface TicketPurchase {
   confirmedAt: string;
   event: TicketEvent;
   tickets: TicketItem[];
+  canCancel?: boolean;
+  eligibleUntil?: string | null;
+  paymentMethod?: 'CARD' | null;
 }
 
 export interface SharedTicket extends TicketItem {

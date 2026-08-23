@@ -38,3 +38,18 @@ export async function publishEvent(eventId: string): Promise<CreatedMovieEvent> 
   const response = await api.post<CreatedMovieEvent>(`/events/${eventId}/publish`);
   return response.data;
 }
+
+export async function updateEventPrice(
+  eventId: string,
+  priceCents: number,
+): Promise<OrganizerEvent> {
+  const response = await api.patch<OrganizerEvent>(`/organizer/me/events/${eventId}/price`, {
+    priceCents,
+  });
+  return response.data;
+}
+
+export async function cancelOrganizerEvent(eventId: string): Promise<OrganizerEvent> {
+  const response = await api.post<OrganizerEvent>(`/organizer/me/events/${eventId}/cancel`);
+  return response.data;
+}

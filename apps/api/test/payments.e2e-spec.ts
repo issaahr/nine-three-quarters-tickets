@@ -24,6 +24,7 @@ import {
 } from '../src/modules/payments/paymentGateway.interfaces';
 import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
 import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
+import { Refund } from '../src/modules/refunds/refund.entity';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { Ticket } from '../src/modules/tickets/ticket.entity';
@@ -49,10 +50,12 @@ describe('Payments', () => {
   let paymentsRepository: Repository<Payment>;
   let reservationItemsRepository: Repository<ReservationItem>;
   let reservationsRepository: Repository<Reservation>;
+  let refundsRepository: Repository<Refund>;
   let ticketsRepository: Repository<Ticket>;
   let ticketCredentialService: TicketCredentialService;
   let venueSeatsRepository: Repository<VenueSeat>;
   let customer: User;
+  let customerTwo: User;
   let organizer: User;
   let venue: Venue;
   let paymentGateway: ControlledPaymentGateway;
@@ -76,6 +79,7 @@ describe('Payments', () => {
     paymentsRepository = dataSource.getRepository(Payment);
     reservationItemsRepository = dataSource.getRepository(ReservationItem);
     reservationsRepository = dataSource.getRepository(Reservation);
+    refundsRepository = dataSource.getRepository(Refund);
     ticketsRepository = dataSource.getRepository(Ticket);
     ticketCredentialService = app.get(TicketCredentialService);
     seatRealtimeGateway = app.get(SeatRealtimeGateway);
@@ -84,6 +88,9 @@ describe('Payments', () => {
     customer = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'customer.one.demo@ntq.local' });
+    customerTwo = await dataSource
+      .getRepository(User)
+      .findOneByOrFail({ email: 'customer.two.demo@ntq.local' });
     organizer = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'organizer.demo@ntq.local' });
@@ -115,6 +122,14 @@ describe('Payments', () => {
         if (itemIds.length > 0) {
           await ticketsRepository.delete({ reservationItemId: In(itemIds) });
         }
+        const payments = await paymentsRepository.find({
+          select: { id: true },
+          where: { reservationId: In(reservationIds) },
+        });
+        const paymentIds = payments.map(({ id }) => id);
+        if (paymentIds.length > 0) {
+          await refundsRepository.delete({ paymentId: In(paymentIds) });
+        }
         await paymentsRepository.delete({ reservationId: In(reservationIds) });
         await reservationItemsRepository.delete({ reservationId: In(reservationIds) });
       }
@@ -125,9 +140,9 @@ describe('Payments', () => {
     await app.close();
   });
 
-  async function authenticate(): Promise<string> {
+  async function authenticate(user: User = customer): Promise<string> {
     const response = await request(app.getHttpServer()).post('/auth/login').send({
-      email: customer.email,
+      email: user.email,
       password: process.env.DEMO_USERS_PASSWORD,
     });
     const setCookie = response.headers['set-cookie'];
@@ -139,27 +154,33 @@ describe('Payments', () => {
   async function createActiveReservation(
     expiresAt = new Date('2099-09-01T23:30:00.000Z'),
     itemCount = 1,
+    parameters: { event?: Event; customer?: User; seatOffset?: number } = {},
   ): Promise<Reservation> {
-    const event = await eventsRepository.save({
-      organizerId: organizer.id,
-      venueId: venue.id,
-      title: 'Pagamento idempotente',
-      description: null,
-      imageUrl: null,
-      genres: ['Drama'],
-      category: EventCategory.Movie,
-      admissionMode: AdmissionMode.Seated,
-      status: EventStatus.Published,
-      startsAt: new Date('2099-10-01T23:30:00.000Z'),
-      priceCents: 2590,
-      capacity: null,
-      catalogSource: CatalogSource.Tmdb,
-      externalId: randomUUID(),
-    });
-    createdEventIds.push(event.id);
+    const event =
+      parameters.event ??
+      (await eventsRepository.save({
+        organizerId: organizer.id,
+        venueId: venue.id,
+        title: 'Pagamento idempotente',
+        description: null,
+        imageUrl: null,
+        genres: ['Drama'],
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        startsAt: new Date('2099-10-01T23:30:00.000Z'),
+        priceCents: 2590,
+        capacity: null,
+        catalogSource: CatalogSource.Tmdb,
+        externalId: randomUUID(),
+      }));
+    if (!parameters.event) {
+      createdEventIds.push(event.id);
+    }
     const venueSeats = await venueSeatsRepository.find({
       where: { venueId: venue.id },
       order: { row: 'ASC', number: 'ASC' },
+      skip: parameters.seatOffset ?? 0,
       take: itemCount,
     });
 
@@ -170,13 +191,17 @@ describe('Payments', () => {
     const reservation =
       expiresAt.getTime() > Date.now()
         ? await reservationsRepository.save({
-            customerId: customer.id,
+            customerId: parameters.customer?.id ?? customer.id,
             eventId: event.id,
             expiresAt,
             confirmedAt: null,
             cancelledAt: null,
           })
-        : await createExpiredReservation(customer.id, event.id, expiresAt);
+        : await createExpiredReservation(
+            parameters.customer?.id ?? customer.id,
+            event.id,
+            expiresAt,
+          );
     const eventSeats = await eventSeatsRepository.save(
       venueSeats.map((venueSeat) =>
         eventSeatsRepository.create({
@@ -231,6 +256,12 @@ describe('Payments', () => {
         expiry: '08/29',
         cvv: '123',
       });
+  }
+
+  async function createConfirmedReservation(cookie: string): Promise<Reservation> {
+    const reservation = await createActiveReservation();
+    await createPaymentRequest(reservation.id, randomUUID(), cookie).expect(201);
+    return reservationsRepository.findOneByOrFail({ id: reservation.id });
   }
 
   it('persiste PENDING antes do gateway e não o chama outra vez para a mesma key', async () => {
@@ -453,5 +484,144 @@ describe('Payments', () => {
     expect(failedResponse.body.status).toBe(PaymentStatus.Failed);
     expect(approvedResponse.body.status).toBe(PaymentStatus.Approved);
     expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
+  });
+
+  it('serializa cancelamentos concorrentes do CUSTOMER sem duplicar Refund', async () => {
+    const customerCookie = await authenticate();
+    const reservation = await createConfirmedReservation(customerCookie);
+
+    const responses = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/reservations/${reservation.id}/cancel`)
+        .set('Cookie', customerCookie),
+      request(app.getHttpServer())
+        .post(`/reservations/${reservation.id}/cancel`)
+        .set('Cookie', customerCookie),
+    ]);
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    const tickets = await ticketsRepository.findBy({
+      reservationItemId: In(items.map(({ id }) => id)),
+    });
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 409]);
+    await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(1);
+    expect(tickets).not.toHaveLength(0);
+    expect(tickets.every(({ cancelledAt }) => cancelledAt !== null)).toBe(true);
+  });
+
+  it('serializa cancelamento do CUSTOMER com cancelamento do Event sem deadlock', async () => {
+    const customerCookie = await authenticate();
+    const customerTwoCookie = await authenticate(customerTwo);
+    const organizerCookie = await authenticate(organizer);
+    const reservation = await createConfirmedReservation(customerCookie);
+    const event = await eventsRepository.findOneByOrFail({ id: reservation.eventId });
+    const secondReservation = await createActiveReservation(undefined, 1, {
+      event,
+      customer: customerTwo,
+      seatOffset: 1,
+    });
+    await createPaymentRequest(secondReservation.id, randomUUID(), customerTwoCookie).expect(201);
+
+    const [customerResponse, organizerResponse] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/reservations/${reservation.id}/cancel`)
+        .set('Cookie', customerCookie),
+      request(app.getHttpServer())
+        .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+        .set('Cookie', organizerCookie),
+    ]);
+    const persistedEvent = await eventsRepository.findOneByOrFail({ id: reservation.eventId });
+    const persistedReservation = await reservationsRepository.findOneByOrFail({
+      id: reservation.id,
+    });
+    const persistedSecondReservation = await reservationsRepository.findOneByOrFail({
+      id: secondReservation.id,
+    });
+    const items = await reservationItemsRepository.findBy({
+      reservationId: In([reservation.id, secondReservation.id]),
+    });
+    const tickets = await ticketsRepository.findBy({
+      reservationItemId: In(items.map(({ id }) => id)),
+    });
+    const payments = await paymentsRepository.findBy({
+      reservationId: In([reservation.id, secondReservation.id]),
+    });
+
+    expect(organizerResponse.status).toBe(200);
+    expect([200, 409]).toContain(customerResponse.status);
+    expect(customerResponse.status).not.toBe(500);
+    expect(persistedEvent.status).toBe(EventStatus.Cancelled);
+    expect(persistedReservation.cancelledAt).not.toBeNull();
+    expect(persistedSecondReservation.cancelledAt).not.toBeNull();
+    expect(payments).toHaveLength(2);
+    expect(payments.every(({ status }) => status === PaymentStatus.Approved)).toBe(true);
+    await expect(
+      refundsRepository.countBy({ paymentId: In(payments.map(({ id }) => id)) }),
+    ).resolves.toBe(2);
+    expect(tickets).toHaveLength(2);
+    expect(tickets.every(({ cancelledAt }) => cancelledAt !== null)).toBe(true);
+  });
+
+  it('serializa finalização de Payment com cancelamento do Event', async () => {
+    const customerCookie = await authenticate();
+    const organizerCookie = await authenticate(organizer);
+    const reservation = await createActiveReservation();
+    let resolveGateway!: (result: CardPaymentGatewayResult) => void;
+    let notifyGatewayStarted!: () => void;
+    const gatewayStarted = new Promise<void>((resolve) => {
+      notifyGatewayStarted = resolve;
+    });
+    const gatewayResult = new Promise<CardPaymentGatewayResult>((resolve) => {
+      resolveGateway = resolve;
+    });
+    paymentGateway.processCard.mockImplementationOnce(async () => {
+      notifyGatewayStarted();
+      return gatewayResult;
+    });
+
+    const paymentResponsePromise = createPaymentRequest(
+      reservation.id,
+      randomUUID(),
+      customerCookie,
+    ).then((response) => response);
+    await gatewayStarted;
+    const organizerResponsePromise = request(app.getHttpServer())
+      .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+      .set('Cookie', organizerCookie)
+      .then((response) => response);
+    resolveGateway({ status: CardPaymentGatewayStatus.Approved });
+    const [paymentResponse, organizerResponse] = await Promise.all([
+      paymentResponsePromise,
+      organizerResponsePromise,
+    ]);
+    const persistedEvent = await eventsRepository.findOneByOrFail({ id: reservation.eventId });
+    const persistedReservation = await reservationsRepository.findOneByOrFail({
+      id: reservation.id,
+    });
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+
+    expect(organizerResponse.status).toBe(200);
+    expect(paymentResponse.status).toBe(201);
+    expect([PaymentStatus.Approved, PaymentStatus.Failed]).toContain(paymentResponse.body.status);
+    expect(persistedEvent.status).toBe(EventStatus.Cancelled);
+    expect(persistedReservation.cancelledAt).not.toBeNull();
+    const tickets = await ticketsRepository.findBy({
+      reservationItemId: In(items.map(({ id }) => id)),
+    });
+    const refundCount = await refundsRepository.countBy({ paymentId: payment.id });
+
+    if (payment.status === PaymentStatus.Approved) {
+      expect(persistedReservation.confirmedAt).not.toBeNull();
+      expect(tickets).not.toHaveLength(0);
+      expect(tickets.every(({ cancelledAt }) => cancelledAt !== null)).toBe(true);
+      expect(refundCount).toBe(1);
+    } else {
+      expect(payment.status).toBe(PaymentStatus.Failed);
+      expect(persistedReservation.confirmedAt).toBeNull();
+      expect(tickets).toHaveLength(0);
+      expect(refundCount).toBe(0);
+    }
   });
 });

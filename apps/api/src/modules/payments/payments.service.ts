@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { Event } from '../events/event.entity';
+import { EventStatus } from '../events/eventStatus.enum';
 import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
@@ -195,8 +196,33 @@ export class PaymentsService {
           const reservationsRepository = manager.getRepository(Reservation);
           const reservationItemsRepository = manager.getRepository(ReservationItem);
           const eventsRepository = manager.getRepository(Event);
-          const payment = await paymentsRepository.findOne({
+          const paymentReference = await paymentsRepository.findOne({
+            select: { id: true, reservationId: true },
             where: { id: paymentId },
+          });
+
+          if (!paymentReference) {
+            return { payment: null!, eventId: null, soldEventSeatIds: [] };
+          }
+
+          const reservationReference = await reservationsRepository.findOne({
+            select: { id: true, eventId: true },
+            where: { id: paymentReference.reservationId },
+          });
+          const event = reservationReference
+            ? await eventsRepository.findOne({
+                where: { id: reservationReference.eventId },
+                lock: { mode: 'pessimistic_write' },
+              })
+            : null;
+          const reservation = reservationReference
+            ? await reservationsRepository.findOne({
+                where: { id: reservationReference.id },
+                lock: { mode: 'pessimistic_write' },
+              })
+            : null;
+          const payment = await paymentsRepository.findOne({
+            where: { id: paymentReference.id },
             lock: { mode: 'pessimistic_write' },
           });
 
@@ -215,20 +241,13 @@ export class PaymentsService {
             };
           }
 
-          const reservation = await reservationsRepository.findOne({
-            where: { id: payment.reservationId },
-            lock: { mode: 'pessimistic_write' },
-          });
-          const event = reservation
-            ? await eventsRepository.findOneBy({ id: reservation.eventId })
-            : null;
-
           if (
             !reservation ||
             reservation.confirmedAt ||
             reservation.cancelledAt ||
             reservation.expiresAt.getTime() <= now.getTime() ||
             !event ||
+            event.status !== EventStatus.Published ||
             event.startsAt.getTime() <= now.getTime()
           ) {
             payment.status = PaymentStatus.Failed;

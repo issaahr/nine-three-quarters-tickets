@@ -59,8 +59,8 @@ export function EventCard({ event }: EventCardProps) {
                   {formatEventDateTime(event.startsAt, event.venueTimeZone)}
                 </span>
               </p>
-              <p className="m-0 flex items-start gap-2">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <p className="m-0 flex items-center gap-2">
+                <MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" />
                 <span>
                   {event.venueName} · {event.venueCity}
                 </span>

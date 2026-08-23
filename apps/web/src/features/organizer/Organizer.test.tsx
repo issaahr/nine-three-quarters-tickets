@@ -228,9 +228,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     fireEvent.change(screen.getByLabelText('Horário local'), { target: { value: '20:30' } });
     await user.type(screen.getByLabelText('Preço por ingresso'), '20');
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Escolha uma data e um horário que ainda não passaram',
-    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('Data e/ou hora inválidas');
     expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled();
     expect(createHandler).not.toHaveBeenCalled();
   });

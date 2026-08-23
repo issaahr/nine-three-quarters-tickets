@@ -63,7 +63,24 @@ Após o login, o operador seleciona a ocorrência que está validando. Esse Even
 
 ---
 
-## 3. Catálogo externo
+## 3. Modelo de operação
+
+O 9¾ Tickets V1 representa a operação de eventos de um único organizador.
+
+O ORGANIZER é responsável pela operação da plataforma e pelos eventos publicados. A V1 não contempla um modelo de marketplace ou multi-organizador, no qual diferentes organizações utilizam a mesma plataforma de forma independente.
+
+Consequentemente:
+
+- não existe cadastro ou onboarding de múltiplos organizadores;
+- não existe isolamento de dados entre organizações;
+- não existe gerenciamento de membros ou equipes por organização;
+- não existe necessidade de um papel `OWNER` separado de `ORGANIZER`.
+
+O GATE representa um operador de portaria da operação do ORGANIZER. Ele não é vinculado permanentemente a um Event específico e pode validar ingressos dos Events da operação.
+
+---
+
+## 4. Catálogo externo
 
 A plataforma utiliza catálogos externos como fonte de conteúdo, não como fonte de inventário.
 
@@ -112,7 +129,7 @@ URLs de imagens podem continuar apontando para assets externos.
 
 ---
 
-## 4. Event
+## 5. Event
 
 Um `Event` representa **uma única ocorrência agendada**.
 
@@ -167,7 +184,7 @@ Uma evolução futura poderá criar um conceito de programação ou agrupamento 
 
 ---
 
-## 5. Modalidade de admissão
+## 6. Modalidade de admissão
 
 Categoria e modalidade de admissão são conceitos separados.
 
@@ -212,7 +229,7 @@ Uma evolução futura poderá introduzir setores abaixo de Event caso exista nec
 
 ---
 
-## 6. Venue e layout
+## 7. Venue e layout
 
 Eventos acontecem em um Venue local da plataforma.
 
@@ -254,7 +271,7 @@ O frontend renderiza o layout a partir desses dados e não possui fileiras hardc
 
 ---
 
-## 7. Data, horário e timezone
+## 8. Data, horário e timezone
 
 O Venue define seu timezone utilizando identificador IANA.
 
@@ -276,7 +293,7 @@ Regras temporais de reserva, pagamento, cancelamento e evento iniciado usam o te
 
 ---
 
-## 8. Status do Event
+## 9. Status do Event
 
 Um Event pode estar em:
 
@@ -310,32 +327,19 @@ Eventos passados:
 
 ---
 
-## 9. Publicação e edição de Event
+## 10. Publicação e edição de Event
 
-Antes de existir qualquer Reservation associada ao Event, o organizador pode alterar seus dados estruturais.
+Os dados estruturais do Event são imutáveis após sua criação. A V1 não reconstrói inventário nem altera Venue, data e horário, layout, modalidade de admissão ou capacidade de uma ocorrência publicada.
 
-Depois que o Event possuir sua primeira Reservation, mesmo que essa Reservation posteriormente expire ou seja cancelada, ficam bloqueadas alterações que mudem a identidade do inventário.
-
-Incluem-se:
-
-- data e horário;
-- Venue;
-- layout;
-- modalidade de admissão;
-- capacidade.
-
-Continuam permitidas alterações que não invalidem compras já realizadas, como:
-
-- descrição;
-- imagem;
-- outros metadados de apresentação;
-- preço para compras futuras.
+O organizador pode alterar somente o preço para compras futuras. Essa alteração não invalida nem altera compras já realizadas.
 
 O preço pago por uma Reservation anterior não muda quando o preço atual do Event é editado.
 
+O preço pode ser `0`, para suportar eventos gratuitos, e nunca pode ser negativo. Há apenas um limite máximo alto para recusar payloads claramente absurdos, sem restringir artificialmente o preço de eventos legítimos.
+
 ---
 
-## 10. Descoberta pública
+## 11. Descoberta pública
 
 A descoberta pública apresenta apenas Events locais que podem efetivamente ser comprados na plataforma.
 
@@ -367,7 +371,7 @@ A categoria pode ser utilizada para filtragem, mas a aplicação não é dividid
 
 ---
 
-## 11. Reservation
+## 12. Reservation
 
 Uma `Reservation` representa uma intenção temporária de compra que já possui inventário alocado.
 
@@ -408,7 +412,7 @@ O produto não depende de o usuário:
 
 ---
 
-## 12. ReservationItem
+## 13. ReservationItem
 
 Cada unidade comprada corresponde a um `ReservationItem`.
 
@@ -441,7 +445,7 @@ Consequentemente:
 
 ---
 
-## 13. Reserva de assentos
+## 14. Reserva de assentos
 
 Em Events SEATED, o cliente visualiza o estado atual do mapa e seleciona assentos.
 
@@ -467,7 +471,7 @@ Double selling não é comportamento aceitável.
 
 ---
 
-## 14. Reserva GENERAL_ADMISSION
+## 15. Reserva GENERAL_ADMISSION
 
 Em Events GENERAL_ADMISSION, o cliente informa a quantidade de ingressos.
 
@@ -479,7 +483,7 @@ Mesmo sob requisições concorrentes, o número total de unidades mantidas por R
 
 ---
 
-## 15. Reservation ativa e retomada da compra
+## 16. Reservation ativa e retomada da compra
 
 A experiência normal permite uma Reservation ativa por CUSTOMER/Event.
 
@@ -526,7 +530,7 @@ Local storage não é fonte de verdade para esse fluxo.
 
 ---
 
-## 16. Expiração durante checkout
+## 17. Expiração durante checkout
 
 O checkout apresenta uma contagem regressiva baseada em `expiresAt`.
 
@@ -543,7 +547,7 @@ A interface não precisa redirecionar automaticamente no instante zero.
 
 ---
 
-## 17. Pagamento
+## 18. Pagamento
 
 O pagamento da V1 é simulado.
 
@@ -600,7 +604,7 @@ Não existe integração financeira real.
 
 ---
 
-## 18. Ticket
+## 19. Ticket
 
 Cada Ticket representa um único direito de entrada.
 
@@ -629,7 +633,7 @@ Nunca existe um único QR representando várias pessoas.
 
 ---
 
-## 19. Meus Ingressos
+## 20. Meus Ingressos
 
 O CUSTOMER pode consultar seus Tickets.
 
@@ -653,7 +657,7 @@ O compartilhamento também ocorre por Ticket individual.
 
 ---
 
-## 20. QR Code e código manual
+## 21. QR Code e código manual
 
 Cada Ticket possui uma credencial não forjável representada por QR Code.
 
@@ -671,7 +675,7 @@ QR e código manual levam ao mesmo processo de validação.
 
 ---
 
-## 21. Compartilhamento
+## 22. Compartilhamento
 
 Um Ticket pode ser compartilhado por link.
 
@@ -696,7 +700,7 @@ o link continua refletindo seu estado atual.
 
 ---
 
-## 22. Portaria
+## 23. Portaria
 
 O GATE seleciona qual Event será operado.
 
@@ -761,7 +765,7 @@ Duas tentativas simultâneas de validar o mesmo Ticket devem resultar em apenas 
 
 ---
 
-## 23. Cancelamento pelo CUSTOMER
+## 24. Cancelamento pelo CUSTOMER
 
 A V1 utiliza uma política simplificada de cancelamento inspirada na janela de arrependimento de sete dias, sem afirmar cobertura completa de requisitos legais de produção.
 
@@ -785,12 +789,12 @@ Não é possível cancelar apenas um dos Tickets da compra.
 Quando cancelada:
 
 - todos os Tickets da Reservation são cancelados;
-- é realizado refund integral simulado;
+- é realizado refund integral simulado quando houve valor pago;
 - o estoque retorna à disponibilidade quando aplicável.
 
 ---
 
-## 24. Cancelamento pelo ORGANIZER
+## 25. Cancelamento pelo ORGANIZER
 
 O ORGANIZER pode cancelar um Event antes de seu início.
 
@@ -802,13 +806,15 @@ Quando isso ocorre:
 - compras confirmadas recebem refund integral simulado;
 - o inventário deixa de ser comercializado.
 
+Compras gratuitas não geram Refund, pois não existe valor a devolver.
+
 A janela normal de cancelamento do CUSTOMER não limita o refund causado pelo cancelamento do Event.
 
 Cancelamento de evento já iniciado, interrupção operacional e políticas especiais pós-início não fazem parte da V1.
 
 ---
 
-## 25. Refund
+## 26. Refund
 
 Refund representa o estorno de uma compra já aprovada.
 
@@ -823,7 +829,7 @@ Um Ticket cancelado continua existindo no histórico, mas não permite entrada.
 
 ---
 
-## 26. Realtime do mapa de assentos
+## 27. Realtime do mapa de assentos
 
 Em Events SEATED, mudanças relevantes de inventário devem ser refletidas entre clientes conectados.
 
@@ -841,7 +847,7 @@ Se a tela estiver momentaneamente desatualizada, uma tentativa sobre assento ind
 
 ---
 
-## 27. Seeds e demonstração
+## 28. Seeds e demonstração
 
 A entrega deve fornecer dados suficientes para demonstrar o sistema sem configuração manual extensa.
 
@@ -863,7 +869,7 @@ Credenciais de demonstração devem ser documentadas no README.
 
 ---
 
-## 28. Cadastro público
+## 29. Cadastro público
 
 A demonstração não depende de cadastro público, pois usuários seedados são fornecidos.
 
@@ -881,7 +887,7 @@ Não fazem parte da V1:
 
 ---
 
-## 29. Escopo planejado de entrega
+## 30. Escopo planejado de entrega
 
 Além do caminho principal exigido pelo desafio, fazem parte do plano de entrega da V1:
 
@@ -897,7 +903,7 @@ Esses itens fazem parte do plano de execução, mas o fluxo transacional princip
 
 ---
 
-## 30. Fora de escopo da V1
+## 31. Fora de escopo da V1
 
 Não fazem parte da V1:
 
@@ -932,7 +938,7 @@ Não fazem parte da V1:
 
 ---
 
-## 31. Princípios de escopo
+## 32. Princípios de escopo
 
 As decisões da V1 seguem quatro princípios:
 

@@ -43,6 +43,23 @@ beforeEach(() => {
 });
 
 describe('fluxo de autenticação', () => {
+  it('mantém a tela atual sob o modal e só abre o login após confirmação', async () => {
+    const user = userEvent.setup();
+    renderApp('/organizer', { id: 'organizer-1', role: UserRole.Organizer });
+
+    expect(await screen.findByRole('heading', { name: 'Meus eventos' })).toBeInTheDocument();
+    window.dispatchEvent(new Event('session-expired'));
+
+    expect(await screen.findByRole('dialog', { name: 'Sessão expirada' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Meus eventos' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Bem-vindo de volta' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fazer login' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Sessão expirada' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+  });
+
   it('restaura a sessão e direciona o cliente sem expor identificador ou email', async () => {
     server.use(
       http.get(`${apiUrl}/auth/session`, () =>

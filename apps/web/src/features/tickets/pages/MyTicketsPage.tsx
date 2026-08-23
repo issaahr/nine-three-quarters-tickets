@@ -1,11 +1,13 @@
 import axios from 'axios';
-import { CalendarDays, MapPin, Ticket } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 
+import { Button } from '../../../components/ui/button';
 import { formatEventDateTime } from '../../events/eventPresentation';
-import { useTickets } from '../hooks';
+import { useCancelTicketPurchase, useTickets } from '../hooks';
 import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentation';
-import { TicketStatus } from '../types';
+import { TicketPurchase, TicketStatus } from '../types';
 
 const ticketStatusClassName: Record<TicketStatus, string> = {
   [TicketStatus.Valid]: 'text-[#8FBF9F]',
@@ -15,6 +17,9 @@ const ticketStatusClassName: Record<TicketStatus, string> = {
 
 export function MyTicketsPage() {
   const ticketsQuery = useTickets();
+  const cancelMutation = useCancelTicketPurchase();
+  const [purchaseToCancel, setPurchaseToCancel] = useState<TicketPurchase | null>(null);
+  const [showRefundNotice, setShowRefundNotice] = useState(false);
 
   if (ticketsQuery.isPending) {
     return (
@@ -51,6 +56,13 @@ export function MyTicketsPage() {
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-12">
       <header className="max-w-2xl">
+        <Link
+          to="/events"
+          className="mb-6 inline-flex items-center gap-2 rounded-sm text-sm font-medium text-primary no-underline hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+        >
+          <ArrowLeft className="size-4" aria-hidden="true" />
+          Voltar para a listagem de eventos
+        </Link>
         <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
           Histórico
         </p>
@@ -72,7 +84,7 @@ export function MyTicketsPage() {
         <div className="mt-8 space-y-8">
           {purchases.map((purchase) => (
             <section key={purchase.reservationId} className="bg-white p-5 sm:p-7">
-              <header className="border-b border-[#E1DACB] pb-5">
+              <header className="relative border-b border-[#E1DACB] pb-5">
                 <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
                   {purchase.tickets.length}{' '}
                   {purchase.tickets.length === 1
@@ -92,6 +104,15 @@ export function MyTicketsPage() {
                     {purchase.event.venueName} · {purchase.event.venueCity}
                   </p>
                 </div>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={!purchase.canCancel}
+                  onClick={() => setPurchaseToCancel(purchase)}
+                  className="absolute right-0 top-0 rounded-[4px]"
+                >
+                  Cancelar compra
+                </Button>
               </header>
 
               <ul className="mb-0 mt-5 space-y-3 p-0">
@@ -120,6 +141,77 @@ export function MyTicketsPage() {
               </ul>
             </section>
           ))}
+        </div>
+      )}
+      {purchaseToCancel && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-purchase-title"
+        >
+          <section className="w-full max-w-md bg-white p-6 shadow-xl sm:p-8">
+            <h2 id="cancel-purchase-title" className="m-0 font-heading text-3xl font-semibold">
+              Cancelar compra?
+            </h2>
+            <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
+              Todos os ingressos desta compra serão cancelados. O reembolso integral será feito pelo
+              mesmo método de pagamento utilizado.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={cancelMutation.isPending}
+                onClick={() => setPurchaseToCancel(null)}
+                className="rounded-[4px]"
+              >
+                Manter compra
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={cancelMutation.isPending}
+                onClick={() =>
+                  cancelMutation.mutate(purchaseToCancel.reservationId, {
+                    onSuccess: () => {
+                      setPurchaseToCancel(null);
+                      setShowRefundNotice(true);
+                    },
+                  })
+                }
+                className="rounded-[4px]"
+              >
+                {cancelMutation.isPending ? 'Cancelando...' : 'Confirmar cancelamento'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showRefundNotice && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="refund-notice-title"
+        >
+          <section className="w-full max-w-md bg-white p-6 text-center shadow-xl sm:p-8">
+            <h2 id="refund-notice-title" className="m-0 font-heading text-3xl font-semibold">
+              Cancelamento confirmado
+            </h2>
+            <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
+              O valor será reembolsado pelo método de pagamento original.
+            </p>
+            <div className="mt-6 flex justify-center">
+              <Button
+                type="button"
+                onClick={() => setShowRefundNotice(false)}
+                className="rounded-[4px]"
+              >
+                Fechar
+              </Button>
+            </div>
+          </section>
         </div>
       )}
     </main>

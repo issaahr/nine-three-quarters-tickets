@@ -4,6 +4,7 @@ import { AdmissionMode } from '../../events/admissionMode.enum';
 import { EventCategory } from '../../events/eventCategory.enum';
 import { TicketDetails, TicketEventDetails, TicketPurchase } from '../tickets.interfaces';
 import { TicketStatus } from '../ticketStatus.enum';
+import { PaymentMethod } from '../../payments/paymentMethod.enum';
 
 export class TicketEventResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -79,12 +80,24 @@ export class TicketPurchaseResponseDto {
   @ApiProperty({ type: TicketItemResponseDto, isArray: true })
   public tickets!: TicketItemResponseDto[];
 
+  @ApiProperty()
+  public canCancel!: boolean;
+
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })
+  public eligibleUntil!: Date | null;
+
+  @ApiPropertyOptional({ enum: PaymentMethod, nullable: true })
+  public paymentMethod!: PaymentMethod | null;
+
   public static fromPurchase(purchase: TicketPurchase): TicketPurchaseResponseDto {
     return {
       reservationId: purchase.reservationId,
       confirmedAt: purchase.confirmedAt,
       event: TicketEventResponseDto.fromEvent(purchase.event),
       tickets: purchase.tickets.map(TicketItemResponseDto.fromDetails),
+      canCancel: purchase.canCancel,
+      eligibleUntil: purchase.eligibleUntil,
+      paymentMethod: purchase.paymentMethod,
     };
   }
 }

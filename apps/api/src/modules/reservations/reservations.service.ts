@@ -1,12 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, IsNull, MoreThan } from 'typeorm';
+import { DataSource, EntityManager, In, IsNull, MoreThan } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
+import { Payment } from '../payments/payment.entity';
+import { PaymentStatus } from '../payments/paymentStatus.enum';
 import { EventNotFoundError } from '../events/errors/eventNotFound.error';
 import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
+import { Refund } from '../refunds/refund.entity';
+import { RefundStatus } from '../refunds/refundStatus.enum';
+import { Ticket } from '../tickets/ticket.entity';
 import { CreateReservationRequestDto } from './dto/createReservationRequest.dto';
 import { ActiveReservationExistsError } from './errors/activeReservationExists.error';
 import { EventAlreadyStartedError } from './errors/eventAlreadyStarted.error';
@@ -14,6 +19,7 @@ import { EventCannotBeReservedError } from './errors/eventCannotBeReserved.error
 import { SeatUnavailableError } from './errors/seatUnavailable.error';
 import { ReservationNotActiveError } from './errors/reservationNotActive.error';
 import { ReservationNotFoundError } from './errors/reservationNotFound.error';
+import { CancellationNotAllowedError } from './errors/cancellationNotAllowed.error';
 import {
   CancellationTransactionResult,
   DatabaseTimestampRow,
@@ -55,7 +61,10 @@ export class ReservationsService {
       const expiresAt = new Date(
         now.getTime() + applicationConfig.reservations.holdDurationSeconds * 1000,
       );
-      const event = await eventsRepository.findOneBy({ id: request.eventId });
+      const event = await eventsRepository.findOne({
+        where: { id: request.eventId },
+        lock: { mode: 'pessimistic_write' },
+      });
 
       if (!event) {
         throw new EventNotFoundError();
@@ -168,33 +177,108 @@ export class ReservationsService {
   public async cancel(customerId: string, reservationId: string): Promise<ReservationDetail> {
     const result = await this.dataSource.transaction<CancellationTransactionResult>(
       async (manager) => {
+        const eventsRepository = manager.getRepository(Event);
         const reservationsRepository = manager.getRepository(Reservation);
         const reservationItemsRepository = manager.getRepository(ReservationItem);
         const now = await this.getDatabaseTimestamp(manager);
+        const reservationReference = await reservationsRepository.findOne({
+          select: { id: true, eventId: true },
+          where: { id: reservationId, customerId },
+        });
+
+        if (!reservationReference) {
+          throw new ReservationNotFoundError();
+        }
+
+        const event = await eventsRepository.findOne({
+          where: { id: reservationReference.eventId },
+          lock: { mode: 'pessimistic_write' },
+        });
         const reservation = await reservationsRepository.findOne({
           where: { id: reservationId, customerId },
           lock: { mode: 'pessimistic_write' },
         });
 
-        if (!reservation) {
+        if (!event || !reservation) {
           throw new ReservationNotFoundError();
         }
 
-        if (
-          reservation.confirmedAt ||
-          reservation.cancelledAt ||
-          reservation.expiresAt.getTime() <= now.getTime()
-        ) {
+        if (reservation.cancelledAt) {
           throw new ReservationNotActiveError();
+        }
+
+        if (!reservation.confirmedAt) {
+          if (reservation.expiresAt.getTime() <= now.getTime()) {
+            throw new ReservationNotActiveError();
+          }
+
+          reservation.cancelledAt = now;
+          await reservationsRepository.save(reservation);
+          const releasedEventSeatIds = await this.reservationRepository.releaseHeldEventSeats(
+            manager,
+            reservationId,
+          );
+          const items = await reservationItemsRepository.findBy({ reservationId });
+
+          return {
+            detail: { reservation, items, status: ReservationStatus.Cancelled },
+            releasedEventSeatIds,
+          };
+        }
+
+        const payment = await manager.getRepository(Payment).findOne({
+          where: { reservationId, status: PaymentStatus.Approved },
+          lock: { mode: 'pessimistic_write' },
+        });
+        const items = await reservationItemsRepository.findBy({ reservationId });
+        const itemIds = items.map((item) => item.id);
+        const ticketsRepository = manager.getRepository(Ticket);
+        const tickets = await ticketsRepository.find({ where: { reservationItemId: In(itemIds) } });
+
+        if (
+          !event ||
+          !payment ||
+          event.startsAt.getTime() <= now.getTime() ||
+          payment.approvedAt!.getTime() + 7 * 24 * 60 * 60 * 1000 <= now.getTime() ||
+          tickets.some((ticket) => ticket.checkedInAt)
+        ) {
+          throw new CancellationNotAllowedError();
+        }
+
+        // Uma compra confirmada só pode ser cancelada antes do evento e dentro da janela de reembolso.
+        const cancelledTicketCount = await this.reservationRepository.cancelTickets(
+          manager,
+          itemIds,
+          now,
+        );
+
+        if (cancelledTicketCount !== tickets.length) {
+          throw new CancellationNotAllowedError();
+        }
+
+        const eventSeatIds = items.flatMap((item) => (item.eventSeatId ? [item.eventSeatId] : []));
+        const releasedEventSeatIds = await this.reservationRepository.releaseSoldEventSeats(
+          manager,
+          eventSeatIds,
+        );
+
+        if (releasedEventSeatIds.length !== eventSeatIds.length) {
+          throw new CancellationNotAllowedError();
         }
 
         reservation.cancelledAt = now;
         await reservationsRepository.save(reservation);
-        const releasedEventSeatIds = await this.reservationRepository.releaseHeldEventSeats(
-          manager,
-          reservationId,
-        );
-        const items = await reservationItemsRepository.findBy({ reservationId });
+        if (payment.amountCents > 0) {
+          await manager.getRepository(Refund).save(
+            manager.getRepository(Refund).create({
+              paymentId: payment.id,
+              amountCents: payment.amountCents,
+              status: RefundStatus.Completed,
+              completedAt: now,
+              failedAt: null,
+            }),
+          );
+        }
 
         return {
           detail: { reservation, items, status: ReservationStatus.Cancelled },

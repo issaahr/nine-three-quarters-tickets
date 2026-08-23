@@ -6,6 +6,8 @@ import {
   fetchOrganizerEvents,
   fetchVenues,
   publishEvent,
+  updateEventPrice,
+  cancelOrganizerEvent,
   searchCatalogMovies,
 } from './api';
 
@@ -48,6 +50,23 @@ export function usePublishEvent() {
 
   return useMutation({
     mutationFn: publishEvent,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: organizerEventsQueryKey }),
+  });
+}
+
+export function useUpdateEventPrice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, priceCents }: { eventId: string; priceCents: number }) =>
+      updateEventPrice(eventId, priceCents),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: organizerEventsQueryKey }),
+  });
+}
+
+export function useCancelOrganizerEvent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelOrganizerEvent,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: organizerEventsQueryKey }),
   });
 }

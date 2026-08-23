@@ -51,6 +51,8 @@ apps/api/src/
     ├── catalog/         # port de catálogo e adapter da TMDb
     ├── events/          # ocorrência, publicação e inventário seated materializado
     ├── payments/        # tentativa idempotente e gateway de cartão simulado
+    ├── realtime/        # deltas de disponibilidade emitidos após commits
+    ├── refunds/         # histórico de devoluções de pagamentos aprovados
     ├── reservations/    # holds temporários, itens, retomada e cancelamento
     ├── tickets/         # ingressos emitidos para ReservationItems confirmados
     ├── users/           # entidade User e enum de papéis
@@ -75,6 +77,27 @@ Não são adotados repository genérico, event bus interno, camada obrigatória 
 - Transações usam o `EntityManager` da própria transação.
 - Restrições concorrentes pertencem prioritariamente ao PostgreSQL.
 
+### Cancelamento e concorrência
+
+Cancelamento de compra pelo CUSTOMER, cancelamento de Event pelo ORGANIZER e finalização de Payment disputam as mesmas entidades. Esses fluxos adquirem locks na mesma ordem e revalidam o estado autoritativo dentro da transação:
+
+```text
+Cancelamento CUSTOMER ──┐
+Cancelamento ORGANIZER ─┼──▶ Event ──▶ Reservation(s por id) ──▶ Payment
+Finalização de Payment ─┘                                      │
+                                                               ▼
+                                                    Ticket / EventSeat / Refund
+                                                               │
+                                                             commit
+                                                               │
+                                                               ▼
+                                                        delta realtime
+```
+
+Quando existem várias Reservations no cancelamento de um Event, elas são bloqueadas por `id` em ordem crescente. A finalização de Payment pode fazer uma leitura inicial sem lock para descobrir as referências, mas somente decide depois de adquirir os locks e revalidar Event, Reservation e Payment.
+
+O cancelamento de uma compra confirmada marca Reservation e Tickets como cancelados, devolve o inventário e cria Refund integral somente quando houve valor pago. O Payment permanece `APPROVED` como registro histórico. O cancelamento pelo ORGANIZER executa essas transições para as Reservations do Event e marca o próprio Event como `CANCELLED` no mesmo commit. Atualizações em tempo real são emitidas apenas depois do commit e não participam da decisão transacional.
+
 ## Frontend
 
 ### Estrutura atual
@@ -86,10 +109,12 @@ apps/web/src/
 ├── features/
 │   ├── auth/            # contratos, API, hooks e páginas de autenticação
 │   ├── events/          # descoberta pública, filtros e apresentação de ocorrências
+│   ├── gate/            # seleção da ocorrência e validação operacional de ingressos
 │   ├── navigation/      # shells e navegação por papel
 │   ├── organizer/       # catálogo externo, criação, publicação e contratos do painel
 │   ├── payments/        # formulário de cartão e estado de pagamento do checkout
-│   └── reservations/    # cliente HTTP, estado remoto, checkout e countdown derivado
+│   ├── reservations/    # cliente HTTP, estado remoto, checkout e countdown derivado
+│   └── tickets/         # histórico de compras, ingressos e cancelamento elegível
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
 └── test/                # configuração e servidor MSW
 ```
