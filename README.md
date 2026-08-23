@@ -49,6 +49,7 @@ Além do banco e dos usuários de demonstração, configure:
 - `TMDB_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada externa;
 - `TMDB_POSTER_SIZE`: tamanho de poster exigido da configuração da TMDb, como `w500`;
 - `TICKETMASTER_API_KEY`: chave da Discovery API mantida exclusivamente no backend;
+- `TICKETMASTER_LOCALE`: locale regional das respostas da Ticketmaster, como `pt-BR`;
 - `TICKETMASTER_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada à Ticketmaster;
 - `VITE_API_URL`: endereço público pelo qual o navegador acessa a API;
 - `VITE_DEMO_USERS_PASSWORD`: senha pública preenchida pelos atalhos de demonstração.
