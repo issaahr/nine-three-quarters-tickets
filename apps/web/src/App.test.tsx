@@ -39,6 +39,7 @@ beforeEach(() => {
     http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
     http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
     http.get(`${apiUrl}/gate/events`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/tickets`, () => HttpResponse.json([])),
   );
 });
 
@@ -74,6 +75,14 @@ describe('fluxo de autenticação', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('user-1')).not.toBeInTheDocument();
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
+  });
+
+  it('oculta Eventos no header mobile do cliente autenticado', async () => {
+    renderApp('/customer/tickets', { id: 'customer-1', role: UserRole.Customer });
+
+    expect(await screen.findByRole('heading', { name: 'Meus ingressos' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Eventos' })).toHaveClass('hidden', 'sm:inline-block');
+    expect(screen.getByRole('link', { name: 'Meus ingressos' })).toBeInTheDocument();
   });
 
   it('mantém a home pública disponível quando a sessão não existe', async () => {
@@ -137,6 +146,27 @@ describe('fluxo de autenticação', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha inválidos.');
+  });
+
+  it('informa amigavelmente quando o login atinge o rate limit da API', async () => {
+    server.use(
+      http.post(`${apiUrl}/auth/login`, () =>
+        HttpResponse.json(
+          { code: 'RATE_LIMIT_EXCEEDED', message: 'detalhe interno' },
+          { status: 429 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderApp('/login');
+    await user.type(await screen.findByLabelText('E-mail'), 'customer@example.com');
+    await user.type(screen.getByLabelText('Senha'), 'valid-password');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+    );
   });
 
   it('autentica, preserva a sessão na navegação e não armazena o token', async () => {

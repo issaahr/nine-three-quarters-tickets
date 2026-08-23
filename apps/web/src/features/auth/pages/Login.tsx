@@ -8,6 +8,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { environment } from '../../../config/environment';
+import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
 import { getRoleNavigation } from '../../navigation/roleNavigation';
 import { AuthPageLayout } from '../components/AuthPageLayout';
 import { useAuth } from '../hooks';
@@ -38,6 +39,10 @@ function getLoginErrorMessage(error: unknown): string | null {
 
   if (axios.isAxiosError(error) && error.response?.status === 401) {
     return 'E-mail ou senha inválidos.';
+  }
+
+  if (isApiRateLimitError(error)) {
+    return rateLimitErrorMessage;
   }
 
   return 'Não foi possível entrar. Tente novamente em instantes.';

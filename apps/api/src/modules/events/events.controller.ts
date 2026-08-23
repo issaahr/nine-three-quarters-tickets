@@ -14,6 +14,8 @@ import { ApiTags } from '@nestjs/swagger';
 
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { RateLimitedRoles } from '../../rateLimit/rateLimit.decorator';
+import { RateLimitPolicy } from '../../rateLimit/rateLimitPolicy.enum';
 import { UserRole } from '../users/userRole.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
@@ -81,7 +83,7 @@ export class EventsController {
    * Cria um Event para o organizador autenticado e o converte para o contrato HTTP.
    */
   @Post('movies')
-  @Roles(UserRole.Organizer)
+  @RateLimitedRoles(RateLimitPolicy.Catalog, UserRole.Organizer)
   @ApiCreateMovieEvent()
   public async createMovie(
     @Req() request: AuthenticatedRequest,
@@ -93,7 +95,7 @@ export class EventsController {
 
   /** Cria um show GA a partir da atração, Venue, horário, preço e capacidade locais. */
   @Post('shows')
-  @Roles(UserRole.Organizer)
+  @RateLimitedRoles(RateLimitPolicy.Catalog, UserRole.Organizer)
   @ApiCreateShowEvent()
   public async createShow(
     @Req() request: AuthenticatedRequest,

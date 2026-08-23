@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
+import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
 import { formatGateEventDateTime } from '../../events/eventPresentation';
 import { CheckInResultPanel } from '../components/CheckInResultPanel';
 import { TicketCameraScanner } from '../components/TicketCameraScanner';
@@ -63,7 +64,12 @@ export function GateEventContextPage() {
       { eventId: activeEventId, manualCode },
       {
         onSuccess: ({ result: nextResult }) => setResult(nextResult),
-        onError: () => setSubmissionError('Não foi possível validar o ingresso. Tente novamente.'),
+        onError: (error) =>
+          setSubmissionError(
+            isApiRateLimitError(error)
+              ? rateLimitErrorMessage
+              : 'Não foi possível validar o ingresso. Tente novamente.',
+          ),
       },
     );
   }
@@ -78,7 +84,12 @@ export function GateEventContextPage() {
       { eventId: activeEventId, credential },
       {
         onSuccess: ({ result: nextResult }) => setResult(nextResult),
-        onError: () => setSubmissionError('Não foi possível validar o ingresso. Tente novamente.'),
+        onError: (error) =>
+          setSubmissionError(
+            isApiRateLimitError(error)
+              ? rateLimitErrorMessage
+              : 'Não foi possível validar o ingresso. Tente novamente.',
+          ),
       },
     );
   }

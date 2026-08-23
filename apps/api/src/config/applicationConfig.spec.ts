@@ -12,11 +12,19 @@ describe('loadApplicationConfig', () => {
     RESERVATION_HOLD_DURATION_SECONDS: '600',
     PAYMENT_CARD_PENDING_TIMEOUT_SECONDS: '60',
     PUBLIC_SIGNUP_ENABLED: 'true',
+    TRUST_PROXY_HOPS: '0',
+    RATE_LIMIT_AUTH_WINDOW_SECONDS: '60',
+    RATE_LIMIT_AUTH_MAX_REQUESTS: '5',
+    RATE_LIMIT_CATALOG_WINDOW_SECONDS: '60',
+    RATE_LIMIT_CATALOG_MAX_REQUESTS: '30',
+    RATE_LIMIT_CHECK_IN_WINDOW_SECONDS: '60',
+    RATE_LIMIT_CHECK_IN_MAX_REQUESTS: '10',
     TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
     TMDB_LANGUAGE: 'pt-BR',
     TMDB_REQUEST_TIMEOUT_MS: '5000',
     TMDB_POSTER_SIZE: 'w500',
     TICKETMASTER_API_KEY: 'test-ticketmaster-key',
+    TICKETMASTER_LOCALE: 'pt-BR',
     TICKETMASTER_REQUEST_TIMEOUT_MS: '5000',
   };
 
@@ -28,6 +36,14 @@ describe('loadApplicationConfig', () => {
       port: 3000,
       corsOrigins: ['http://localhost:5173'],
       publicSignupEnabled: true,
+      proxy: {
+        trustedHops: 0,
+      },
+      rateLimit: {
+        auth: { windowSeconds: 60, maxRequests: 5 },
+        catalog: { windowSeconds: 60, maxRequests: 30 },
+        manualCheckIn: { windowSeconds: 60, maxRequests: 10 },
+      },
       catalog: {
         tmdb: {
           language: 'pt-BR',
@@ -36,6 +52,7 @@ describe('loadApplicationConfig', () => {
         },
         ticketmaster: {
           apiKey: 'test-ticketmaster-key',
+          locale: 'pt-BR',
           requestTimeoutMs: 5000,
         },
       },
@@ -81,6 +98,15 @@ describe('loadApplicationConfig', () => {
     });
   });
 
+  it('aceita somente a quantidade explícita de proxies conhecidos', () => {
+    const config = loadApplicationConfig({
+      ...validEnvironment,
+      TRUST_PROXY_HOPS: '1',
+    });
+
+    expect(config.proxy.trustedHops).toBe(1);
+  });
+
   it.each([
     ['PORT', undefined],
     ['NODE_ENV', 'staging'],
@@ -95,11 +121,21 @@ describe('loadApplicationConfig', () => {
     ['PAYMENT_CARD_PENDING_TIMEOUT_SECONDS', undefined],
     ['PUBLIC_SIGNUP_ENABLED', 'enabled'],
     ['PUBLIC_SIGNUP_ENABLED', undefined],
+    ['TRUST_PROXY_HOPS', '-1'],
+    ['TRUST_PROXY_HOPS', undefined],
+    ['RATE_LIMIT_AUTH_WINDOW_SECONDS', '0'],
+    ['RATE_LIMIT_AUTH_MAX_REQUESTS', undefined],
+    ['RATE_LIMIT_CATALOG_WINDOW_SECONDS', '1.5'],
+    ['RATE_LIMIT_CATALOG_MAX_REQUESTS', '0'],
+    ['RATE_LIMIT_CHECK_IN_WINDOW_SECONDS', undefined],
+    ['RATE_LIMIT_CHECK_IN_MAX_REQUESTS', 'invalid'],
     ['TMDB_API_READ_ACCESS_TOKEN', undefined],
     ['TMDB_LANGUAGE', 'portuguese'],
     ['TMDB_REQUEST_TIMEOUT_MS', '0'],
     ['TMDB_POSTER_SIZE', 'large'],
     ['TICKETMASTER_API_KEY', undefined],
+    ['TICKETMASTER_LOCALE', 'portuguese'],
+    ['TICKETMASTER_LOCALE', undefined],
     ['TICKETMASTER_REQUEST_TIMEOUT_MS', '0'],
     ['TICKETMASTER_REQUEST_TIMEOUT_MS', undefined],
   ])('rejeita configuração inválida em %s', (name, value) => {

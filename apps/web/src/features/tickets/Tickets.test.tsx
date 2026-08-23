@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { App } from '../../App';
@@ -147,6 +148,56 @@ describe('Meus ingressos', () => {
     expect(
       await screen.findByRole('heading', { name: 'Não foi possível carregar seus ingressos' }),
     ).toBeInTheDocument();
+  });
+
+  it('informa a falha concorrente ao confirmar o cancelamento da compra', async () => {
+    server.use(
+      http.get(`${apiUrl}/tickets`, () =>
+        HttpResponse.json([
+          {
+            reservationId: 'reservation-cancel',
+            confirmedAt: '2030-08-01T12:00:00.000Z',
+            canCancel: true,
+            event: {
+              id: 'event-cancel',
+              title: 'Sessão cancelável',
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              startsAt: '2030-08-25T22:30:00.000Z',
+              venueName: 'Cine Imperial',
+              venueCity: 'Fortaleza',
+              venueTimeZone: 'America/Fortaleza',
+            },
+            tickets: [
+              {
+                publicId: 'ticket-cancel',
+                credential: 'v1.ticket-cancel.signature',
+                manualCode: 'ABCD-EFGH',
+                status: TicketStatus.Valid,
+                issuedAt: '2030-08-01T12:00:00.000Z',
+                seatLabel: 'B2',
+              },
+            ],
+          },
+        ]),
+      ),
+      http.post(`${apiUrl}/reservations/reservation-cancel/cancel`, () =>
+        HttpResponse.json({ code: 'CANCELLATION_NOT_ALLOWED' }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderTickets();
+    await user.click(await screen.findByRole('button', { name: 'Cancelar compra' }));
+    await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Não foi possível cancelar' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Não foi possível cancelar — atualize a página e tente novamente.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Cancelar compra?' })).not.toBeInTheDocument();
   });
 
   it('apresenta pelo link público um único Ticket com QR da credencial e estado atual', async () => {

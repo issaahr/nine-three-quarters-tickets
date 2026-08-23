@@ -43,7 +43,58 @@ jobs:
         working-directory: apps/api
         run: heroku container:push web --app "${{ secrets.HEROKU_APP_NAME }}"
 
-      - name: Release API image
+      - name: Record current API release
+        id: previous_release
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          version="$(heroku releases --app "${{ secrets.HEROKU_APP_NAME }}" --num 1 --json | jq -r '.[0].version')"
+
+          if [[ ! "$version" =~ ^[0-9]+$ ]]; then
+            echo "Não foi possível identificar a release atual para rollback." >&2
+            exit 1
+          fi
+
+          echo "version=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Release API image
+        env:
+          HEALTH_URL: ${{ secrets.HEROKU_HEALTH_URL }}
+        # As migrations executam durante a inicialização e precisam manter compatibilidade
+        # com a release anterior; este rollback não reverte schema nem dados.
         run: heroku container:release web --app "${{ secrets.HEROKU_APP_NAME }}"
+
+      - name: Validate API health
+        id: health
+        continue-on-error: true
+        env:
+          HEALTH_URL: ${{ secrets.HEROKU_HEALTH_URL }}
+          HEALTH_ATTEMPTS: 12
+          HEALTH_TIMEOUT_SECONDS: 10
+          HEALTH_RETRY_DELAY_SECONDS: 5
+        run: |
+          for attempt in $(seq 1 "$HEALTH_ATTEMPTS"); do
+            if response="$(curl --fail --silent --show-error --max-time "$HEALTH_TIMEOUT_SECONDS" "$HEALTH_URL")" \
+              && jq -e '.ok == true' >/dev/null <<< "$response"; then
+              exit 0
+            fi
+
+            if [[ "$attempt" -lt "$HEALTH_ATTEMPTS" ]]; then
+              sleep "$HEALTH_RETRY_DELAY_SECONDS"
+            fi
+          done
+
+          echo "A API não respondeu saudavelmente dentro do prazo configurado." >&2
+          exit 1
+
+      - name: Roll back unhealthy API release
+        if: ${{ steps.health.outcome == 'failure' }}
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: heroku rollback "${{ steps.previous_release.outputs.version }}" --app "${{ secrets.HEROKU_APP_NAME }}"
+
+      - name: Mark deployment as failed after rollback
+        if: ${{ steps.health.outcome == 'failure' }}
+        run: |
+          echo "O health check falhou; a release anterior foi restaurada." >&2
+          exit 1

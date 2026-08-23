@@ -52,45 +52,50 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
             Tela
           </p>
         </div>
-        <div
-          aria-label="Mapa de assentos"
-          className="mt-6 grid gap-1.5 sm:gap-2"
-          style={{
-            gridTemplateColumns: `repeat(${maximumX + 1}, minmax(2rem, 2.5rem))`,
-            gridTemplateRows: `repeat(${maximumY + 1}, minmax(2rem, 2.5rem))`,
-          }}
-        >
-          {seats.map((seat) => {
-            const selected = selectedSeatIdSet.has(seat.id);
-            const available = seat.status === EventSeatStatus.Available;
-            const disabled = selectionDisabled || !available;
-            const accessibilityStatus = selected
-              ? 'selecionado'
-              : available
-                ? 'disponível'
-                : 'indisponível';
+        <p className="mb-0 mt-5 text-center text-xs text-muted-foreground sm:hidden">
+          Deslize horizontalmente para visualizar todos os assentos.
+        </p>
+        <div className="mt-3 w-full overflow-x-auto pb-3 sm:mt-6 sm:overflow-visible sm:pb-0">
+          <div
+            aria-label="Mapa de assentos"
+            className="grid w-max gap-1.5 px-2 sm:mx-auto sm:gap-2 sm:px-0"
+            style={{
+              gridTemplateColumns: `repeat(${maximumX + 1}, minmax(2rem, 2.5rem))`,
+              gridTemplateRows: `repeat(${maximumY + 1}, minmax(2rem, 2.5rem))`,
+            }}
+          >
+            {seats.map((seat) => {
+              const selected = selectedSeatIdSet.has(seat.id);
+              const available = seat.status === EventSeatStatus.Available;
+              const disabled = selectionDisabled || !available;
+              const accessibilityStatus = selected
+                ? 'selecionado'
+                : available
+                  ? 'disponível'
+                  : 'indisponível';
 
-            return (
-              <button
-                key={seat.id}
-                type="button"
-                aria-label={`Assento ${seat.label}, ${accessibilityStatus}`}
-                aria-pressed={selected}
-                disabled={disabled}
-                onClick={() => onToggleSeat(seat.id)}
-                style={{ gridColumn: seat.x + 1, gridRow: seat.y + 1 }}
-                className={`min-h-8 rounded-[3px] border px-1 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-70 ${
-                  selected
-                    ? 'border-brass-dark bg-secondary text-secondary-foreground'
-                    : available
-                      ? 'border-[#C9BEAE] bg-white text-foreground hover:border-primary hover:bg-primary/10'
-                      : 'border-[#B7AFA3] bg-[#B7AFA3] text-[#5A5650]'
-                }`}
-              >
-                {seat.label}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={seat.id}
+                  type="button"
+                  aria-label={`Assento ${seat.label}, ${accessibilityStatus}`}
+                  aria-pressed={selected}
+                  disabled={disabled}
+                  onClick={() => onToggleSeat(seat.id)}
+                  style={{ gridColumn: seat.x + 1, gridRow: seat.y + 1 }}
+                  className={`min-h-8 rounded-[3px] border px-1 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-70 ${
+                    selected
+                      ? 'border-brass-dark bg-secondary text-secondary-foreground'
+                      : available
+                        ? 'border-[#C9BEAE] bg-white text-foreground hover:border-primary hover:bg-primary/10'
+                        : 'border-[#B7AFA3] bg-[#B7AFA3] text-[#5A5650]'
+                  }`}
+                >
+                  {seat.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>

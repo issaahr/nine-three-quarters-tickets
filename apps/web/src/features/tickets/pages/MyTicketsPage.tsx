@@ -20,6 +20,7 @@ export function MyTicketsPage() {
   const cancelMutation = useCancelTicketPurchase();
   const [purchaseToCancel, setPurchaseToCancel] = useState<TicketPurchase | null>(null);
   const [showRefundNotice, setShowRefundNotice] = useState(false);
+  const [showCancellationError, setShowCancellationError] = useState(false);
 
   if (ticketsQuery.isPending) {
     return (
@@ -178,6 +179,10 @@ export function MyTicketsPage() {
                       setPurchaseToCancel(null);
                       setShowRefundNotice(true);
                     },
+                    onError: () => {
+                      setPurchaseToCancel(null);
+                      setShowCancellationError(true);
+                    },
                   })
                 }
                 className="rounded-[4px]"
@@ -206,6 +211,35 @@ export function MyTicketsPage() {
               <Button
                 type="button"
                 onClick={() => setShowRefundNotice(false)}
+                className="rounded-[4px]"
+              >
+                Fechar
+              </Button>
+            </div>
+          </section>
+        </div>
+      )}
+      {showCancellationError && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-purchase-error-title"
+        >
+          <section className="w-full max-w-md bg-white p-6 text-center shadow-xl sm:p-8">
+            <h2
+              id="cancel-purchase-error-title"
+              className="m-0 font-heading text-3xl font-semibold"
+            >
+              Não foi possível cancelar
+            </h2>
+            <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
+              Não foi possível cancelar — atualize a página e tente novamente.
+            </p>
+            <div className="mt-6 flex justify-center">
+              <Button
+                type="button"
+                onClick={() => setShowCancellationError(false)}
                 className="rounded-[4px]"
               >
                 Fechar

@@ -169,6 +169,36 @@ function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolea
 }
 
 /**
+ * Valida limites operacionais que precisam ser positivos e explicitamente configurados.
+ */
+function getPositiveInteger(name: string, environmentVariables: NodeJS.ProcessEnv): number {
+  const value = Number(getRequiredEnvironmentVariable(name, environmentVariables));
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new ConfigurationError(`Variável de ambiente ${name} deve ser um inteiro positivo`);
+  }
+
+  return value;
+}
+
+/**
+ * Limita a confiança do Express à quantidade conhecida de proxies da topologia.
+ */
+function getTrustedProxyHops(environmentVariables: NodeJS.ProcessEnv): number {
+  const trustedHops = Number(
+    getRequiredEnvironmentVariable('TRUST_PROXY_HOPS', environmentVariables),
+  );
+
+  if (!Number.isInteger(trustedHops) || trustedHops < 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente TRUST_PROXY_HOPS deve ser um inteiro maior ou igual a zero',
+    );
+  }
+
+  return trustedHops;
+}
+
+/**
  * Mantém a credencial da TMDb obrigatória e exclusivamente no backend.
  */
 function getTmdbAccessToken(environmentVariables: NodeJS.ProcessEnv): string {
@@ -225,6 +255,17 @@ function getTicketmasterApiKey(environmentVariables: NodeJS.ProcessEnv): string 
   return getRequiredEnvironmentVariable('TICKETMASTER_API_KEY', environmentVariables);
 }
 
+/** Restringe o locale ao formato regional aceito pela Ticketmaster. */
+function getTicketmasterLocale(environmentVariables: NodeJS.ProcessEnv): string {
+  const locale = getRequiredEnvironmentVariable('TICKETMASTER_LOCALE', environmentVariables);
+
+  if (!/^[a-z]{2}-[A-Z]{2}$/.test(locale)) {
+    throw new ConfigurationError('Variável de ambiente TICKETMASTER_LOCALE inválida');
+  }
+
+  return locale;
+}
+
 /**
  * Impede que a consulta de atrações permaneça aguardando indefinidamente.
  */
@@ -254,6 +295,29 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     port: getPort(environmentVariables),
     corsOrigins: getCorsOrigins(environmentVariables),
     publicSignupEnabled: getPublicSignupEnabled(environmentVariables),
+    proxy: {
+      trustedHops: getTrustedProxyHops(environmentVariables),
+    },
+    rateLimit: {
+      auth: {
+        windowSeconds: getPositiveInteger('RATE_LIMIT_AUTH_WINDOW_SECONDS', environmentVariables),
+        maxRequests: getPositiveInteger('RATE_LIMIT_AUTH_MAX_REQUESTS', environmentVariables),
+      },
+      catalog: {
+        windowSeconds: getPositiveInteger(
+          'RATE_LIMIT_CATALOG_WINDOW_SECONDS',
+          environmentVariables,
+        ),
+        maxRequests: getPositiveInteger('RATE_LIMIT_CATALOG_MAX_REQUESTS', environmentVariables),
+      },
+      manualCheckIn: {
+        windowSeconds: getPositiveInteger(
+          'RATE_LIMIT_CHECK_IN_WINDOW_SECONDS',
+          environmentVariables,
+        ),
+        maxRequests: getPositiveInteger('RATE_LIMIT_CHECK_IN_MAX_REQUESTS', environmentVariables),
+      },
+    },
     reservations: {
       holdDurationSeconds: getReservationHoldDurationSeconds(environmentVariables),
     },
@@ -269,6 +333,7 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
       },
       ticketmaster: {
         apiKey: getTicketmasterApiKey(environmentVariables),
+        locale: getTicketmasterLocale(environmentVariables),
         requestTimeoutMs: getTicketmasterRequestTimeoutMs(environmentVariables),
       },
     },

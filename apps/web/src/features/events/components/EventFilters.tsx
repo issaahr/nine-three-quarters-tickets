@@ -10,9 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
-import { EventCategory, EventDiscoveryFilters } from '../types';
+import { EventDiscoveryFilters } from '../types';
 
-const allCategoriesValue = 'ALL';
+const allGenresValue = 'ALL';
 const fieldClassName =
   'h-10 rounded-[4px] border-[#B8AEA0] bg-white px-3 text-sm focus-visible:border-primary';
 const labelClassName =
@@ -20,28 +20,20 @@ const labelClassName =
 
 interface EventFiltersProps {
   filters: EventDiscoveryFilters;
-  suggestedCities: string[];
   suggestedGenres: string[];
   onApply: (filters: EventDiscoveryFilters) => void;
 }
 
 /** Mantém a edição dos filtros separada da consulta aplicada. */
-export function EventFilters({
-  filters,
-  suggestedCities,
-  suggestedGenres,
-  onApply,
-}: EventFiltersProps) {
+export function EventFilters({ filters, suggestedGenres, onApply }: EventFiltersProps) {
   const [query, setQuery] = useState(filters.query ?? '');
-  const [category, setCategory] = useState<EventCategory | typeof allCategoriesValue>(
-    filters.category ?? allCategoriesValue,
-  );
   const [genre, setGenre] = useState(filters.genre ?? '');
   const [city, setCity] = useState(filters.city ?? '');
   const [dateFrom, setDateFrom] = useState(filters.dateFrom ?? '');
   const [dateTo, setDateTo] = useState(filters.dateTo ?? '');
   const [periodError, setPeriodError] = useState<string>();
   const [isExpanded, setIsExpanded] = useState(false);
+  const selectedGenre = suggestedGenres.includes(genre) ? genre : '';
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
@@ -54,8 +46,8 @@ export function EventFilters({
     setPeriodError(undefined);
     onApply({
       query: query.trim().replace(/\s+/g, ' ') || undefined,
-      category: category === allCategoriesValue ? undefined : category,
-      genre: genre.trim().replace(/\s+/g, ' ') || undefined,
+      category: filters.category,
+      genre: selectedGenre.trim().replace(/\s+/g, ' ') || undefined,
       city: city.trim().replace(/\s+/g, ' ') || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
@@ -64,7 +56,6 @@ export function EventFilters({
 
   function handleClear(): void {
     setQuery('');
-    setCategory(allCategoriesValue);
     setGenre('');
     setCity('');
     setDateFrom('');
@@ -111,7 +102,7 @@ export function EventFilters({
         </div>
       ) : (
         <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.5fr)_repeat(3,minmax(130px,0.8fr))]">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,1.5fr)_repeat(2,minmax(130px,0.8fr))]">
             <div>
               <label htmlFor="event-query" className={labelClassName}>
                 Buscar
@@ -126,53 +117,29 @@ export function EventFilters({
               />
             </div>
             <div>
-              <label htmlFor="event-category" className={labelClassName}>
-                Categoria
+              <label htmlFor="event-genre" className={labelClassName}>
+                Gênero
               </label>
-              <Select<EventCategory | typeof allCategoriesValue>
-                value={category}
-                onValueChange={(value) =>
-                  setCategory(
-                    (value ?? allCategoriesValue) as EventCategory | typeof allCategoriesValue,
-                  )
-                }
+              <Select<string>
+                value={selectedGenre || allGenresValue}
+                onValueChange={(value) => setGenre(value === allGenresValue || !value ? '' : value)}
               >
-                <SelectTrigger id="event-category" className="h-10">
+                <SelectTrigger id="event-genre" className="h-10">
                   <SelectValue>
-                    {(value: EventCategory | typeof allCategoriesValue | null) =>
-                      value === EventCategory.Movie
-                        ? 'Filmes'
-                        : value === EventCategory.Show
-                          ? 'Shows'
-                          : 'Todas'
+                    {(value: string | null) =>
+                      value === allGenresValue || !value ? 'Todos' : value
                     }
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={allCategoriesValue}>Todas</SelectItem>
-                  <SelectItem value={EventCategory.Movie}>Filmes</SelectItem>
-                  <SelectItem value={EventCategory.Show}>Shows</SelectItem>
+                  <SelectItem value={allGenresValue}>Todos</SelectItem>
+                  {suggestedGenres.map((suggestion) => (
+                    <SelectItem key={suggestion} value={suggestion}>
+                      {suggestion}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-            </div>
-            <div>
-              <label htmlFor="event-genre" className={labelClassName}>
-                Gênero
-              </label>
-              <Input
-                id="event-genre"
-                list="event-genre-suggestions"
-                value={genre}
-                onChange={(event) => setGenre(event.target.value)}
-                maxLength={100}
-                placeholder="Todos"
-                className={fieldClassName}
-              />
-              <datalist id="event-genre-suggestions">
-                {suggestedGenres.map((suggestion) => (
-                  <option key={suggestion} value={suggestion} />
-                ))}
-              </datalist>
             </div>
             <div>
               <label htmlFor="event-city" className={labelClassName}>
@@ -180,18 +147,12 @@ export function EventFilters({
               </label>
               <Input
                 id="event-city"
-                list="event-city-suggestions"
                 value={city}
                 onChange={(event) => setCity(event.target.value)}
                 maxLength={100}
                 placeholder="Todas"
                 className={fieldClassName}
               />
-              <datalist id="event-city-suggestions">
-                {suggestedCities.map((suggestion) => (
-                  <option key={suggestion} value={suggestion} />
-                ))}
-              </datalist>
             </div>
           </div>
           <div className="mt-4 grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(150px,0.6fr)_minmax(150px,0.6fr)_auto]">

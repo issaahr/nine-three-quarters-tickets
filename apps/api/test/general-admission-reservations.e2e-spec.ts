@@ -205,6 +205,19 @@ describe('Reservations GENERAL_ADMISSION', () => {
     await expect(countItemsForEvent(event.id)).resolves.toBe(3);
   });
 
+  it('rejeita quantidade acima do teto defensivo', async () => {
+    const cookie = await authenticate(customerOne.email);
+
+    await request(app.getHttpServer())
+      .post('/reservations/general-admission')
+      .set('Cookie', cookie)
+      .send({ eventId: randomUUID(), quantity: 100_000 })
+      .expect(400)
+      .expect(({ body }) =>
+        expect(body.message).toContain('Quantidade excede o limite permitido por requisição'),
+      );
+  });
+
   it('expõe disponibilidade descontando holds ativos e compras confirmadas', async () => {
     const event = await createGeneralAdmissionEvent(10);
     await seedGeneralAdmissionReservation(event, 2, {

@@ -40,11 +40,16 @@ Além do banco e dos usuários de demonstração, configure:
 - `PAYMENT_CARD_PENDING_TIMEOUT_SECONDS`: limite em segundos para recuperar uma tentativa de cartão pendente após falha técnica;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
 - `PUBLIC_SIGNUP_ENABLED`: habilita (`true`) ou desabilita (`false`) o cadastro público;
+- `TRUST_PROXY_HOPS`: quantidade exata de proxies confiáveis antes da API (`0` em execução direta e `1` no Heroku);
+- `RATE_LIMIT_AUTH_WINDOW_SECONDS` e `RATE_LIMIT_AUTH_MAX_REQUESTS`: janela e limite compartilhados por IP para login e signup;
+- `RATE_LIMIT_CATALOG_WINDOW_SECONDS` e `RATE_LIMIT_CATALOG_MAX_REQUESTS`: janela e limite compartilhados por usuário para catálogo e criação de Events;
+- `RATE_LIMIT_CHECK_IN_WINDOW_SECONDS` e `RATE_LIMIT_CHECK_IN_MAX_REQUESTS`: janela e limite por operador e IP para check-in manual;
 - `TMDB_API_READ_ACCESS_TOKEN`: token Bearer mantido exclusivamente no backend;
 - `TMDB_LANGUAGE`: idioma regional das respostas da TMDb, como `pt-BR`;
 - `TMDB_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada externa;
 - `TMDB_POSTER_SIZE`: tamanho de poster exigido da configuração da TMDb, como `w500`;
 - `TICKETMASTER_API_KEY`: chave da Discovery API mantida exclusivamente no backend;
+- `TICKETMASTER_LOCALE`: locale regional das respostas da Ticketmaster, como `pt-BR`;
 - `TICKETMASTER_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada à Ticketmaster;
 - `VITE_API_URL`: endereço público pelo qual o navegador acessa a API;
 - `VITE_DEMO_USERS_PASSWORD`: senha pública preenchida pelos atalhos de demonstração.
@@ -114,6 +119,8 @@ docker compose exec api npm run migration:revert
 ```
 
 Crie uma nova migration para cada mudança de schema. Não utilize `synchronize` como substituto para migrations.
+
+O CD valida `GET /health` após publicar a API no Heroku e restaura a release anterior se a nova versão não ficar saudável. Como as migrations executam na inicialização e não sofrem rollback automático, toda migration publicada deve permanecer compatível com a release anterior até que seja seguro removê-la.
 
 ## Usuários de demonstração
 

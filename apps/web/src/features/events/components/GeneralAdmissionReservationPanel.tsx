@@ -36,7 +36,7 @@ export function GeneralAdmissionReservationPanel({
   const purchaseEnabled = canReserve && !isSoldOut;
 
   return (
-    <section className="mx-auto mt-8 max-w-4xl bg-card p-6 sm:p-8">
+    <section className="mx-auto mt-8 max-w-4xl border border-border bg-card p-6 shadow-sm sm:p-8">
       <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.4px] text-primary">
@@ -47,45 +47,52 @@ export function GeneralAdmissionReservationPanel({
             Pista
           </h2>
           <p className="mb-0 mt-2 text-sm text-muted-foreground">Entrada geral</p>
-          <p className="mb-0 mt-4 font-mono text-xl font-semibold">
-            {formatEventPrice(unitPriceCents)}
-          </p>
         </div>
 
         {purchaseEnabled && (
-          <div>
-            <p className="mb-2 mt-0 text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground">
-              Quantidade
-            </p>
-            <div
-              className="flex items-center border border-border"
-              aria-label="Quantidade de ingressos"
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={quantity <= 1}
-                onClick={() => onChangeQuantity(quantity - 1)}
-                aria-label="Diminuir quantidade"
-                className="rounded-none"
+          <div className="flex items-end gap-4 border border-border bg-background p-3 shadow-sm">
+            <div>
+              <p className="mb-2 mt-0 text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground">
+                Quantidade
+              </p>
+              <div
+                className="flex items-center border border-border"
+                aria-label="Quantidade de ingressos"
               >
-                <Minus className="size-4" aria-hidden="true" />
-              </Button>
-              <output aria-live="polite" className="min-w-12 text-center font-mono font-semibold">
-                {quantity}
-              </output>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={quantity >= availableQuantity}
-                onClick={() => onChangeQuantity(quantity + 1)}
-                aria-label="Aumentar quantidade"
-                className="rounded-none"
-              >
-                <Plus className="size-4" aria-hidden="true" />
-              </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={quantity <= 1}
+                  onClick={() => onChangeQuantity(quantity - 1)}
+                  aria-label="Diminuir quantidade"
+                  className="rounded-none"
+                >
+                  <Minus className="size-4" aria-hidden="true" />
+                </Button>
+                <output aria-live="polite" className="min-w-12 text-center font-mono font-semibold">
+                  {quantity}
+                </output>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={quantity >= availableQuantity}
+                  onClick={() => onChangeQuantity(quantity + 1)}
+                  aria-label="Aumentar quantidade"
+                  className="rounded-none"
+                >
+                  <Plus className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            </div>
+            <div className="border-l border-border pl-4">
+              <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground">
+                Preço unitário
+              </p>
+              <p className="mb-0 mt-2 font-mono text-lg font-semibold">
+                {formatEventPrice(unitPriceCents)}
+              </p>
             </div>
           </div>
         )}

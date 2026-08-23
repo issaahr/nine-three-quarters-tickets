@@ -202,6 +202,24 @@ describe('Contexto ativo da portaria', () => {
     expect(screen.queryByRole('heading', { name: 'Entrada liberada' })).not.toBeInTheDocument();
   });
 
+  it('informa quando a validação manual atinge o rate limit da API', async () => {
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, () =>
+        HttpResponse.json({ code: 'RATE_LIMIT_EXCEEDED' }, { status: 429 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+    await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
+    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+    );
+  });
+
   it('envia a credencial detectada pela câmera para a validação da portaria', async () => {
     let requestBody: unknown;
     scannerMock.decodeFromVideoDevice.mockImplementation(
