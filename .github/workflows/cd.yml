@@ -68,7 +68,7 @@ jobs:
         id: health
         continue-on-error: true
         env:
-          HEALTH_URL: ${{ secrets.HEROKU_HEALTH_URL }}
+          HEALTH_URL: https://${{ secrets.HEROKU_APP_NAME }}.herokuapp.com/health
           HEALTH_ATTEMPTS: 12
           HEALTH_TIMEOUT_SECONDS: 10
           HEALTH_RETRY_DELAY_SECONDS: 5
