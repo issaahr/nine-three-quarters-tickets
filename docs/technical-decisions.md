@@ -37,6 +37,8 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - A descoberta inicial usa filmes populares da TMDb; descoberta e pesquisa preservam paginação em um contrato normalizado próprio.
 - Gêneros e configuração de imagens são mantidos apenas em cache de processo e uma falha não permanece cacheada.
 - A criação de filme recebe somente identidade externa e dados locais; o snapshot é reconstruído pela API antes de persistir o Event.
+- `TicketmasterCatalogProvider` pesquisa Attractions pela Discovery API e normaliza conteúdo, imagens e níveis relevantes de classification para `CatalogItem`.
+- A integração da Ticketmaster não consulta nem importa eventos comerciais, horários, preços, capacidade ou disponibilidade externos.
 - Chamadas externas não ocorrem dentro de transações PostgreSQL.
 - Horários informados pelo organizador são interpretados no timezone IANA do Venue por `@js-temporal/polyfill`.
 - Horários locais inexistentes ou ambíguos em transições de offset são rejeitados em vez de ajustados silenciosamente.

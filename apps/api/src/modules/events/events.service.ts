@@ -2,8 +2,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
-import { catalogProviderToken } from '../catalog/catalog.constants';
-import { CatalogProvider } from '../catalog/catalogProvider';
+import { movieCatalogProviderToken } from '../catalog/catalog.constants';
+import { MovieCatalogProvider } from '../catalog/catalogProvider';
 import { CatalogSource } from '../catalog/catalogSource.enum';
 import { Venue } from '../venues/venue.entity';
 import { VenueSeat } from '../venues/venueSeat.entity';
@@ -41,8 +41,8 @@ export class EventsService {
     private readonly venuesRepository: Repository<Venue>,
     private readonly eventRepository: EventRepository,
     private readonly eventSeatRepository: EventSeatRepository,
-    @Inject(catalogProviderToken)
-    private readonly catalogProvider: CatalogProvider,
+    @Inject(movieCatalogProviderToken)
+    private readonly movieCatalogProvider: MovieCatalogProvider,
     private readonly dataSource: DataSource,
     private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
@@ -70,7 +70,7 @@ export class EventsService {
       throw new EventMustStartInFutureError();
     }
 
-    const catalogItem = await this.catalogProvider.findByExternalId(request.externalId);
+    const catalogItem = await this.movieCatalogProvider.findByExternalId(request.externalId);
 
     if (!catalogItem) {
       throw new CatalogItemNotFoundError();

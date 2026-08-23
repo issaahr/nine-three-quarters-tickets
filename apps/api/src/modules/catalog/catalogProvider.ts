@@ -21,14 +21,6 @@ export interface CatalogProvider {
   search(query: string, page: number): Promise<CatalogPage>;
 
   /**
-   * Lista filmes populares para preencher a descoberta inicial do organizador.
-   *
-   * @param page - Página externa solicitada, iniciada em um.
-   * @returns Página de itens normalizados e indicação de continuidade.
-   */
-  listPopular(page: number): Promise<CatalogPage>;
-
-  /**
    * Recupera novamente o conteúdo pela identidade externa para que a API não
    * confie em metadados de catálogo enviados pelo frontend ao criar um Event.
    *
@@ -36,4 +28,15 @@ export interface CatalogProvider {
    * @returns Item normalizado ou `null` quando a identidade não existe na fonte.
    */
   findByExternalId(externalId: string): Promise<CatalogItem | null>;
+}
+
+/** Catálogo de filmes com descoberta inicial além das operações comuns de conteúdo. */
+export interface MovieCatalogProvider extends CatalogProvider {
+  /**
+   * Lista filmes populares para preencher a descoberta inicial do organizador.
+   *
+   * @param page - Página externa solicitada, iniciada em um.
+   * @returns Página de itens normalizados e indicação de continuidade.
+   */
+  listPopular(page: number): Promise<CatalogPage>;
 }

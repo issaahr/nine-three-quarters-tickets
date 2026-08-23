@@ -60,3 +60,28 @@ export function ApiListPopularMovies() {
     }),
   );
 }
+
+/**
+ * Agrupa a documentação HTTP específica da pesquisa de atrações.
+ */
+export function ApiSearchAttractions() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Pesquisa atrações no catálogo da Ticketmaster' }),
+    ApiOkResponse({
+      type: CatalogPageResponseDto,
+      description: 'Atrações normalizadas sem preço, horário, capacidade ou inventário externo.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Consulta ausente ou inválida.',
+    }),
+    ApiBadGatewayResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster indisponível ou respondeu em formato incompatível.',
+    }),
+    ApiGatewayTimeoutResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster excedeu o tempo configurado para resposta.',
+    }),
+  );
+}

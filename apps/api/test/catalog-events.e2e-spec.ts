@@ -5,9 +5,12 @@ import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { Application } from '../src/application';
-import { catalogProviderToken } from '../src/modules/catalog/catalog.constants';
+import {
+  movieCatalogProviderToken,
+  showCatalogProviderToken,
+} from '../src/modules/catalog/catalog.constants';
 import { CatalogItem } from '../src/modules/catalog/catalogItem';
-import { CatalogProvider } from '../src/modules/catalog/catalogProvider';
+import { CatalogProvider, MovieCatalogProvider } from '../src/modules/catalog/catalogProvider';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
 import { Event } from '../src/modules/events/event.entity';
@@ -31,17 +34,35 @@ describe('catálogo e criação de Event de filme', () => {
     genres: ['Ficção científica', 'Aventura'],
   } satisfies CatalogItem;
 
-  const catalogProvider: CatalogProvider = {
+  const attraction = {
+    source: CatalogSource.Ticketmaster,
+    externalId: 'K8vZ917Gku7',
+    category: EventCategory.Show,
+    title: 'Florence + The Machine',
+    description: 'Atração normalizada retornada pelo provider.',
+    imageUrl: 'https://s1.ticketm.net/artist.jpg',
+    genres: ['Music', 'Rock'],
+  } satisfies CatalogItem;
+
+  const catalogProvider: MovieCatalogProvider = {
     source: CatalogSource.Tmdb,
     search: jest.fn(),
     listPopular: jest.fn(),
     findByExternalId: jest.fn(),
   };
 
+  const showCatalogProvider: CatalogProvider = {
+    source: CatalogSource.Ticketmaster,
+    search: jest.fn(),
+    findByExternalId: jest.fn(),
+  };
+
   beforeAll(async () => {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(catalogProviderToken)
+      .overrideProvider(movieCatalogProviderToken)
       .useValue(catalogProvider)
+      .overrideProvider(showCatalogProviderToken)
+      .useValue(showCatalogProvider)
       .compile();
 
     app = testingModule.createNestApplication();
@@ -65,6 +86,11 @@ describe('catálogo e criação de Event de filme', () => {
       .mockReset()
       .mockResolvedValue({ items: [movie], page: 1, hasMore: false });
     jest.mocked(catalogProvider.findByExternalId).mockReset().mockResolvedValue(movie);
+    jest
+      .mocked(showCatalogProvider.search)
+      .mockReset()
+      .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
+    jest.mocked(showCatalogProvider.findByExternalId).mockReset().mockResolvedValue(attraction);
   });
 
   afterAll(async () => {
@@ -128,6 +154,40 @@ describe('catálogo e criação de Event de filme', () => {
       ]),
     );
     expect(catalogProvider.search).not.toHaveBeenCalled();
+  });
+
+  it('permite somente ao ORGANIZER pesquisar Attractions normalizadas', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: '  Florence  ', page: 1 })
+      .set('Cookie', organizerCookie)
+      .expect(200)
+      .expect({ items: [attraction], page: 1, hasMore: false });
+
+    expect(showCatalogProvider.search).toHaveBeenCalledWith('Florence', 1);
+
+    const invalidResponse = await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: ' ', page: 51 })
+      .set('Cookie', organizerCookie)
+      .expect(400);
+
+    expect(invalidResponse.body.message).toEqual(
+      expect.arrayContaining([
+        'Busca deve possuir ao menos 2 caracteres',
+        'Página deve ser menor ou igual a 50',
+      ]),
+    );
+    expect(showCatalogProvider.search).toHaveBeenCalledTimes(1);
+
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: 'Florence' })
+      .set('Cookie', customerCookie)
+      .expect(403);
   });
 
   it('cria DRAFT com snapshot local e interpreta o horário pelo timezone do Venue', async () => {

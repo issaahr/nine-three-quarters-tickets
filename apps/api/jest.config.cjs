@@ -11,6 +11,8 @@ process.env.TMDB_API_READ_ACCESS_TOKEN = 'test-tmdb-token';
 process.env.TMDB_LANGUAGE = 'pt-BR';
 process.env.TMDB_REQUEST_TIMEOUT_MS = '5000';
 process.env.TMDB_POSTER_SIZE = 'w500';
+process.env.TICKETMASTER_API_KEY = 'test-ticketmaster-key';
+process.env.TICKETMASTER_REQUEST_TIMEOUT_MS = '5000';
 
 module.exports = {
   clearMocks: true,

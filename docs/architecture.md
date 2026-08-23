@@ -48,7 +48,7 @@ apps/api/src/
 ├── errors/              # contrato comum de erros controlados
 └── modules/
     ├── auth/            # login, sessão, cadastro, JWT e autorização
-    ├── catalog/         # port de catálogo e adapter da TMDb
+    ├── catalog/         # port de catálogo e adapters da TMDb e Ticketmaster
     ├── events/          # ocorrência, publicação e inventário seated materializado
     ├── payments/        # tentativa idempotente e gateway de cartão simulado
     ├── realtime/        # deltas de disponibilidade emitidos após commits
@@ -150,8 +150,8 @@ O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criaçã
 
 ## Fronteiras externas e futuras
 
-- A TMDb implementa a port `CatalogProvider`; sua resposta é normalizada antes de alcançar Events e nunca fornece inventário ou dados locais de venda.
-- Ticketmaster implementará a mesma fronteira quando o fluxo de shows entrar no escopo de implementação.
+- TMDb e Ticketmaster implementam a port `CatalogProvider`; suas respostas são normalizadas antes de alcançar Events e nunca fornecem inventário ou dados locais de venda.
+- A Ticketmaster consulta Attractions como conteúdo de shows, sem importar ocorrências, horários ou disponibilidade externos.
 - O gateway de pagamento é uma fronteira substituível; a V1 utiliza `FakePaymentGateway`.
 - Socket.IO atualizará percepção de disponibilidade, sem autoridade transacional.
 - Módulos futuros devem seguir as entidades e invariantes de `application-scope.md`, sem introduzir abstrações genéricas de inventário.

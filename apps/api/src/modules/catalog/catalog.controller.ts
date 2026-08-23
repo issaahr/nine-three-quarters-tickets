@@ -3,19 +3,22 @@ import { ApiTags } from '@nestjs/swagger';
 
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
-import { catalogProviderToken } from './catalog.constants';
-import { ApiListPopularMovies, ApiSearchMovies } from './catalog.swagger';
-import { CatalogProvider } from './catalogProvider';
+import { movieCatalogProviderToken, showCatalogProviderToken } from './catalog.constants';
+import { ApiListPopularMovies, ApiSearchAttractions, ApiSearchMovies } from './catalog.swagger';
+import { CatalogProvider, MovieCatalogProvider } from './catalogProvider';
 import { CatalogPageResponseDto } from './dto/catalogPageResponse.dto';
 import { ListPopularMoviesQueryDto } from './dto/listPopularMoviesQuery.dto';
+import { SearchAttractionsQueryDto } from './dto/searchAttractionsQuery.dto';
 import { SearchMoviesQueryDto } from './dto/searchMoviesQuery.dto';
 
 @ApiTags('Catalog')
 @Controller('catalog')
 export class CatalogController {
   public constructor(
-    @Inject(catalogProviderToken)
-    private readonly catalogProvider: CatalogProvider,
+    @Inject(movieCatalogProviderToken)
+    private readonly movieCatalogProvider: MovieCatalogProvider,
+    @Inject(showCatalogProviderToken)
+    private readonly showCatalogProvider: CatalogProvider,
   ) {}
 
   /**
@@ -25,7 +28,7 @@ export class CatalogController {
   @Roles(UserRole.Organizer)
   @ApiSearchMovies()
   public async searchMovies(@Query() query: SearchMoviesQueryDto): Promise<CatalogPageResponseDto> {
-    const page = await this.catalogProvider.search(query.query, query.page);
+    const page = await this.movieCatalogProvider.search(query.query, query.page);
     return CatalogPageResponseDto.fromCatalogPage(page);
   }
 
@@ -38,7 +41,20 @@ export class CatalogController {
   public async listPopularMovies(
     @Query() query: ListPopularMoviesQueryDto,
   ): Promise<CatalogPageResponseDto> {
-    const page = await this.catalogProvider.listPopular(query.page);
+    const page = await this.movieCatalogProvider.listPopular(query.page);
+    return CatalogPageResponseDto.fromCatalogPage(page);
+  }
+
+  /**
+   * Encaminha a pesquisa de atrações ao provider sem importar eventos ou inventário externos.
+   */
+  @Get('attractions')
+  @Roles(UserRole.Organizer)
+  @ApiSearchAttractions()
+  public async searchAttractions(
+    @Query() query: SearchAttractionsQueryDto,
+  ): Promise<CatalogPageResponseDto> {
+    const page = await this.showCatalogProvider.search(query.query, query.page);
     return CatalogPageResponseDto.fromCatalogPage(page);
   }
 }
