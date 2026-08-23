@@ -52,6 +52,9 @@ export class Event extends BaseEntity {
   })
   public status!: EventStatus;
 
+  @Column({ type: 'uuid', nullable: true })
+  public cancelledByUserId!: string | null;
+
   @Column({ type: 'timestamptz' })
   public startsAt!: Date;
 
@@ -74,6 +77,13 @@ export class Event extends BaseEntity {
   @ManyToOne(() => User, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'organizerId', foreignKeyConstraintName: 'eventsOrganizerForeignKey' })
   public organizer!: Relation<User>;
+
+  @ManyToOne(() => User, { onDelete: 'RESTRICT', nullable: true })
+  @JoinColumn({
+    name: 'cancelledByUserId',
+    foreignKeyConstraintName: 'eventsCancelledByUserForeignKey',
+  })
+  public cancelledByUser!: Relation<User | null>;
 
   @ManyToOne(() => Venue, { onDelete: 'RESTRICT' })
   @JoinColumn({ name: 'venueId', foreignKeyConstraintName: 'eventsVenueForeignKey' })

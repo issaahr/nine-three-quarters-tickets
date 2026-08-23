@@ -4,11 +4,12 @@ import { BaseEntity } from '../../database/base.entity';
 import { Event } from '../events/event.entity';
 import { User } from '../users/user.entity';
 
-/** Alocação temporária de inventário pertencente a um CUSTOMER. */
+/**
+ * Alocação temporária de inventário pertencente a um CUSTOMER.
+ */
 @Entity('reservations')
 @Index('reservationsCustomerEventExpiresAtIndex', ['customerId', 'eventId', 'expiresAt'])
 @Check('reservationsExpiresAfterCreation', '"expiresAt" > "createdAt"')
-@Check('reservationsLifecycleConsistent', '"confirmedAt" IS NULL OR "cancelledAt" IS NULL')
 export class Reservation extends BaseEntity {
   @Column({ type: 'uuid' })
   public customerId!: string;
