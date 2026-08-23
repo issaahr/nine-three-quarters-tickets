@@ -7,7 +7,8 @@ export const createMovieEventSchema = z.object({
   priceCents: z
     .number({ error: 'Informe um preço válido' })
     .int('Informe um preço válido')
-    .min(0, 'Preço não pode ser negativo'),
+    .min(0, 'Preço não pode ser negativo')
+    .max(100_000_000, 'Preço excede o limite permitido'),
 });
 
 export type CreateMovieEventFormValues = z.infer<typeof createMovieEventSchema>;

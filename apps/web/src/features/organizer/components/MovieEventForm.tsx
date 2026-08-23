@@ -72,7 +72,7 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
       if (errors.date?.type !== 'future') {
         setError('date', {
           type: 'future',
-          message: 'Escolha uma data e um horário que ainda não passaram',
+          message: 'Data e/ou hora inválidas',
         });
       }
       return;
@@ -99,7 +99,7 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
     if (startsAtLocal < currentMinimum.value) {
       setError('date', {
         type: 'future',
-        message: 'Escolha uma data e um horário que ainda não passaram',
+        message: 'Data e/ou hora inválidas',
       });
       return;
     }

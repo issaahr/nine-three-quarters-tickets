@@ -45,6 +45,7 @@ export interface OrganizerEvent {
   priceCents: number;
   isActive: boolean;
   soldTickets: number;
+  availableTickets: number | null;
   inventoryTotal: number | null;
   revenueCents: number;
 }
