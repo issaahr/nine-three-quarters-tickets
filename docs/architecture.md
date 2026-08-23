@@ -144,6 +144,8 @@ O catálogo em `/events` é público e restaura a sessão apenas para adaptar su
 
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 
+Na API, filmes são criados por `POST /events/movies` como `MOVIE + SEATED`, enquanto shows são criados por `POST /events/shows` como `SHOW + GENERAL_ADMISSION`. Nos dois fluxos o conteúdo é reconstruído pelo provider correspondente; Venue, horário e preço permanecem locais, e somente shows recebem capacidade agregada. A publicação de shows não materializa `EventSeat` nem introduz setores.
+
 A descoberta pública consulta `GET /events` sem acessar novamente o catálogo externo. A API retorna somente ocorrências `PUBLISHED` e futuras, usando o snapshot persistido no Event e o Venue associado para busca, filtros e apresentação canônica. A leitura direta por `GET /events/:eventId` também admite ocorrências passadas e `CANCELLED`, mantém DRAFT indistinguível de um recurso inexistente e deriva `isPast` no PostgreSQL.
 
 O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criação bem-sucedida de `Reservation` abre o checkout protegido. TanStack Query mantém Reservation ativa, detalhe e mapa no estado remoto; criação e cancelamento invalidam o mapa. O countdown é derivado de `expiresAt` para apresentação, enquanto a API e os timestamps do PostgreSQL permanecem autoritativos para validade e inventário.

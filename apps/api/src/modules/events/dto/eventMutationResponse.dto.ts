@@ -5,7 +5,7 @@ import { Event } from '../event.entity';
 import { EventCategory } from '../eventCategory.enum';
 import { EventStatus } from '../eventStatus.enum';
 
-export class CreateMovieEventResponseDto {
+export class EventMutationResponseDto {
   @ApiProperty({ format: 'uuid' })
   public id!: string;
 
@@ -39,10 +39,16 @@ export class CreateMovieEventResponseDto {
   @ApiProperty({ minimum: 0 })
   public priceCents!: number;
 
+  @ApiPropertyOptional({ minimum: 1 })
+  public capacity?: number;
+
   /**
-   * Mapeia somente os campos públicos necessários após a criação do Event.
+   * Mapeia somente os campos necessários após criar ou publicar qualquer modalidade de Event.
+   *
+   * @param event - Event persistido após a mutação.
+   * @returns Contrato HTTP comum a Events SEATED e GENERAL_ADMISSION.
    */
-  public static fromEvent(event: Event): CreateMovieEventResponseDto {
+  public static fromEvent(event: Event): EventMutationResponseDto {
     return {
       id: event.id,
       venueId: event.venueId,
@@ -55,6 +61,7 @@ export class CreateMovieEventResponseDto {
       status: event.status,
       startsAt: event.startsAt,
       priceCents: event.priceCents,
+      capacity: event.capacity ?? undefined,
     };
   }
 }

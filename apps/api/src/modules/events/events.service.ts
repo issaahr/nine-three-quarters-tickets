@@ -2,13 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
-import { movieCatalogProviderToken } from '../catalog/catalog.constants';
-import { MovieCatalogProvider } from '../catalog/catalogProvider';
+import { movieCatalogProviderToken, showCatalogProviderToken } from '../catalog/catalog.constants';
+import { CatalogProvider, MovieCatalogProvider } from '../catalog/catalogProvider';
 import { CatalogSource } from '../catalog/catalogSource.enum';
 import { Venue } from '../venues/venue.entity';
 import { VenueSeat } from '../venues/venueSeat.entity';
 import { AdmissionMode } from './admissionMode.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
+import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
 import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
@@ -43,6 +44,8 @@ export class EventsService {
     private readonly eventSeatRepository: EventSeatRepository,
     @Inject(movieCatalogProviderToken)
     private readonly movieCatalogProvider: MovieCatalogProvider,
+    @Inject(showCatalogProviderToken)
+    private readonly showCatalogProvider: CatalogProvider,
     private readonly dataSource: DataSource,
     private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
@@ -91,6 +94,52 @@ export class EventsService {
         priceCents: request.priceCents,
         capacity: null,
         catalogSource: CatalogSource.Tmdb,
+        externalId: catalogItem.externalId,
+      }),
+    );
+  }
+
+  /**
+   * Cria um DRAFT GENERAL_ADMISSION com capacidade local e snapshot confiável da atração.
+   *
+   * @param organizerId - Identidade do organizador obtida da sessão autenticada.
+   * @param request - Referências externas e atributos comerciais definidos localmente.
+   * @returns Event de show persistido sem materializar assentos ou consultar inventário externo.
+   */
+  public async createShow(organizerId: string, request: CreateShowEventRequestDto): Promise<Event> {
+    const venue = await this.venuesRepository.findOneBy({ id: request.venueId });
+
+    if (!venue) {
+      throw new VenueNotFoundError();
+    }
+
+    const startsAt = venueLocalDateTimeToDate(request.startsAtLocal, venue.timeZone);
+
+    if (startsAt.getTime() <= Date.now()) {
+      throw new EventMustStartInFutureError();
+    }
+
+    const catalogItem = await this.showCatalogProvider.findByExternalId(request.externalId);
+
+    if (!catalogItem) {
+      throw new CatalogItemNotFoundError();
+    }
+
+    return this.eventsRepository.save(
+      this.eventsRepository.create({
+        organizerId,
+        venueId: venue.id,
+        title: catalogItem.title,
+        description: catalogItem.description ?? null,
+        imageUrl: catalogItem.imageUrl ?? null,
+        genres: catalogItem.genres,
+        category: EventCategory.Show,
+        admissionMode: AdmissionMode.GeneralAdmission,
+        status: EventStatus.Draft,
+        startsAt,
+        priceCents: request.priceCents,
+        capacity: request.capacity,
+        catalogSource: CatalogSource.Ticketmaster,
         externalId: catalogItem.externalId,
       }),
     );
@@ -168,8 +217,8 @@ export class EventsService {
   }
 
   /**
-   * Publica atomicamente um Event SEATED e fotografa o layout atual do Venue.
-   * Repetir a operação sobre um Event já publicado não recria seu inventário.
+   * Publica atomicamente um Event, materializando o layout somente quando ele é SEATED.
+   * Repetir a operação sobre um Event já publicado não recria inventário.
    *
    * @param organizerId - Identidade obtida da sessão autenticada.
    * @param eventId - Event que deve pertencer ao organizador.
@@ -193,7 +242,7 @@ export class EventsService {
         return event;
       }
 
-      if (event.status !== EventStatus.Draft || event.admissionMode !== AdmissionMode.Seated) {
+      if (event.status !== EventStatus.Draft) {
         throw new EventCannotBePublishedError();
       }
 
@@ -201,24 +250,26 @@ export class EventsService {
         throw new EventMustStartInFutureError();
       }
 
-      const venueSeats = await venueSeatsRepository.find({
-        where: { venueId: event.venueId },
-        order: { y: 'ASC', x: 'ASC' },
-      });
+      if (event.admissionMode === AdmissionMode.Seated) {
+        const venueSeats = await venueSeatsRepository.find({
+          where: { venueId: event.venueId },
+          order: { y: 'ASC', x: 'ASC' },
+        });
 
-      if (venueSeats.length === 0) {
-        throw new VenueHasNoSeatsError();
+        if (venueSeats.length === 0) {
+          throw new VenueHasNoSeatsError();
+        }
+
+        await eventSeatsRepository.insert(
+          venueSeats.map((venueSeat) => ({
+            eventId: event.id,
+            venueSeatId: venueSeat.id,
+            holdReservationId: null,
+            holdExpiresAt: null,
+            soldAt: null,
+          })),
+        );
       }
-
-      await eventSeatsRepository.insert(
-        venueSeats.map((venueSeat) => ({
-          eventId: event.id,
-          venueSeatId: venueSeat.id,
-          holdReservationId: null,
-          holdExpiresAt: null,
-          soldAt: null,
-        })),
-      );
 
       event.status = EventStatus.Published;
       return eventsRepository.save(event);

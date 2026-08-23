@@ -12,9 +12,9 @@ import {
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
-import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
+import { EventMutationResponseDto } from './dto/eventMutationResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import { GateEventResponseDto } from './dto/gateEventResponse.dto';
 import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
@@ -83,7 +83,7 @@ export function ApiCreateMovieEvent() {
   return applyDecorators(
     ApiOperation({ summary: 'Cria um Event de filme em estado DRAFT' }),
     ApiCreatedResponse({
-      type: CreateMovieEventResponseDto,
+      type: EventMutationResponseDto,
       description: 'Event criado com snapshot confiável da TMDb e horário do Venue.',
     }),
     ApiBadRequestResponse({
@@ -105,15 +105,42 @@ export function ApiCreateMovieEvent() {
   );
 }
 
+/** Agrupa a documentação HTTP específica da criação de Events de show. */
+export function ApiCreateShowEvent() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Cria um Event de show GENERAL_ADMISSION em estado DRAFT' }),
+    ApiCreatedResponse({
+      type: EventMutationResponseDto,
+      description: 'Event criado com snapshot da Ticketmaster e inventário local agregado.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Payload, capacidade ou horário local inválido para o Venue.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Venue ou atração não encontrada.',
+    }),
+    ApiBadGatewayResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster indisponível ou respondeu em formato incompatível.',
+    }),
+    ApiGatewayTimeoutResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster excedeu o tempo configurado para resposta.',
+    }),
+  );
+}
+
 /**
  * Agrupa a documentação HTTP específica da publicação de um Event.
  */
 export function ApiPublishEvent() {
   return applyDecorators(
-    ApiOperation({ summary: 'Publica um Event e materializa seus assentos' }),
+    ApiOperation({ summary: 'Publica um Event e prepara seu inventário local' }),
     ApiOkResponse({
-      type: CreateMovieEventResponseDto,
-      description: 'Event publicado com um EventSeat para cada assento do Venue.',
+      type: EventMutationResponseDto,
+      description: 'Event publicado; assentos são materializados somente na modalidade SEATED.',
     }),
     ApiBadRequestResponse({
       type: ApplicationErrorResponseDto,

@@ -39,17 +39,19 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - A criação de filme recebe somente identidade externa e dados locais; o snapshot é reconstruído pela API antes de persistir o Event.
 - `TicketmasterCatalogProvider` pesquisa Attractions pela Discovery API e normaliza conteúdo, imagens e níveis relevantes de classification para `CatalogItem`.
 - A integração da Ticketmaster não consulta nem importa eventos comerciais, horários, preços, capacidade ou disponibilidade externos.
+- A criação de show reconstrói o snapshot da Attraction e persiste Venue, horário, preço e capacidade definidos localmente.
 - Chamadas externas não ocorrem dentro de transações PostgreSQL.
 - Horários informados pelo organizador são interpretados no timezone IANA do Venue por `@js-temporal/polyfill`.
 - Horários locais inexistentes ou ambíguos em transições de offset são rejeitados em vez de ajustados silenciosamente.
 - Testes e CI substituem a port de catálogo e não dependem da disponibilidade real da TMDb.
 
-## Publicação e inventário SEATED
+## Publicação e inventário
 
 - A publicação é uma transição explícita de `DRAFT` para `PUBLISHED`.
 - Para Events `SEATED`, publicação e materialização de `EventSeat` acontecem na mesma transação PostgreSQL.
 - O Event é bloqueado durante a transição; chamadas concorrentes para um Event já publicado são idempotentes e não recriam inventário.
 - Cada `VenueSeat` aplicável produz exatamente um `EventSeat`, protegido por `UNIQUE(eventId, venueSeatId)`.
+- Para Events `GENERAL_ADMISSION`, a publicação preserva a capacidade agregada do próprio Event e não cria `EventSeat` ou `EventSector`.
 - O status percebido do assento é derivado de `holdReservationId`, `holdExpiresAt` e `soldAt`; não existe enum persistido de disponibilidade.
 - A listagem privada usa `GET /organizer/me/events` e deriva o proprietário exclusivamente da sessão autenticada.
 - O frontend executa criação e publicação como ações separadas. Se somente a publicação falhar, o DRAFT permanece recuperável no painel.

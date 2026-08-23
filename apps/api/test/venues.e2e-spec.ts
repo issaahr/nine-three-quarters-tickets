@@ -103,6 +103,22 @@ describe('persistência de Venues', () => {
     );
   });
 
+  it('disponibiliza o Nexus Arena sem inventar assentos para entrada geral', async () => {
+    const venue = await venuesRepository.findOneOrFail({
+      where: { name: 'Nexus Arena' },
+      relations: { seats: true },
+    });
+
+    expect(venue).toMatchObject({
+      address: 'Rua dos Alfeneiros, 4',
+      city: 'Belém',
+      state: 'Pará',
+      country: 'Brasil',
+      timeZone: 'America/Belem',
+    });
+    expect(venue.seats).toHaveLength(0);
+  });
+
   it('expõe os Venues configurados somente ao papel ORGANIZER', async () => {
     const organizerCookie = await authenticate('organizer.demo@ntq.local');
     const response = await request(app.getHttpServer())
@@ -116,6 +132,11 @@ describe('persistência de Venues', () => {
           name: 'Cine Imperial · Sala A',
           city: 'São Paulo',
           timeZone: 'America/Sao_Paulo',
+        }),
+        expect.objectContaining({
+          name: 'Nexus Arena',
+          city: 'Belém',
+          timeZone: 'America/Belem',
         }),
       ]),
     );

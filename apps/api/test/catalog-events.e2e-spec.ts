@@ -18,10 +18,11 @@ import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { Venue } from '../src/modules/venues/venue.entity';
 
-describe('catálogo e criação de Event de filme', () => {
+describe('catálogo e criação de Event', () => {
   let app: INestApplication;
   let eventsRepository: Repository<Event>;
   let venue: Venue;
+  let generalAdmissionVenue: Venue;
   const createdEventIds: string[] = [];
 
   const movie = {
@@ -74,6 +75,9 @@ describe('catálogo e criação de Event de filme', () => {
     venue = await dataSource
       .getRepository(Venue)
       .findOneByOrFail({ name: 'Cine Imperial · Sala A' });
+    generalAdmissionVenue = await dataSource
+      .getRepository(Venue)
+      .findOneByOrFail({ name: 'Nexus Arena' });
   });
 
   beforeEach(() => {
@@ -225,6 +229,99 @@ describe('catálogo e criação de Event de filme', () => {
       capacity: null,
       startsAt: new Date('2030-09-01T23:30:00.000Z'),
     });
+  });
+
+  it('cria show GENERAL_ADMISSION com snapshot e capacidade definidos localmente', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+    const response = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 500,
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      venueId: generalAdmissionVenue.id,
+      title: attraction.title,
+      description: attraction.description,
+      imageUrl: attraction.imageUrl,
+      genres: attraction.genres,
+      category: EventCategory.Show,
+      admissionMode: AdmissionMode.GeneralAdmission,
+      status: EventStatus.Draft,
+      startsAt: '2030-10-11T00:00:00.000Z',
+      priceCents: 15000,
+      capacity: 500,
+    });
+    createdEventIds.push(response.body.id);
+
+    await expect(eventsRepository.findOneByOrFail({ id: response.body.id })).resolves.toMatchObject(
+      {
+        organizerId: expect.any(String),
+        catalogSource: CatalogSource.Ticketmaster,
+        externalId: attraction.externalId,
+        capacity: 500,
+      },
+    );
+    expect(showCatalogProvider.findByExternalId).toHaveBeenCalledWith(attraction.externalId);
+  });
+
+  it('valida o contrato local do show antes de consultar a Ticketmaster', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+    const response = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 0,
+        title: 'Título fabricado',
+        admissionMode: AdmissionMode.Seated,
+      })
+      .expect(400);
+
+    expect(response.body.message).toEqual(
+      expect.arrayContaining([
+        'Capacidade deve ser maior ou igual a 1',
+        'property title should not exist',
+        'property admissionMode should not exist',
+      ]),
+    );
+    expect(showCatalogProvider.findByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('não cria show quando a atração não existe e restringe o fluxo a ORGANIZER', async () => {
+    const payload = {
+      externalId: attraction.externalId,
+      venueId: generalAdmissionVenue.id,
+      startsAtLocal: '2030-10-10T21:00',
+      priceCents: 15000,
+      capacity: 500,
+    };
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', customerCookie)
+      .send(payload)
+      .expect(403);
+
+    jest.mocked(showCatalogProvider.findByExternalId).mockResolvedValueOnce(null);
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+    await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', organizerCookie)
+      .send({ ...payload, externalId: 'not-found' })
+      .expect(404);
+
+    await expect(eventsRepository.countBy({ externalId: 'not-found' })).resolves.toBe(0);
   });
 
   it('rejeita valores autoritativos enviados pelo frontend', async () => {
