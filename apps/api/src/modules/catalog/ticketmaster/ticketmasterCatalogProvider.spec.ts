@@ -194,17 +194,50 @@ describe('TicketmasterCatalogProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('distingue timeout, indisponibilidade e payload incompatível', async () => {
-    fetchMock.mockRejectedValueOnce(new DOMException('timeout', 'TimeoutError'));
-    await expect(new TicketmasterCatalogProvider().search('Show', 1)).rejects.toThrow(
-      CatalogTimeoutError,
+  it('normaliza timeout como erro estável de catálogo', async () => {
+    fetchMock.mockRejectedValueOnce(
+      new DOMException('Ticketmaster apikey=provider-secret', 'TimeoutError'),
     );
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({}, 503));
-    await expect(new TicketmasterCatalogProvider().search('Show', 1)).rejects.toThrow(
-      CatalogUnavailableError,
-    );
+    const error = await new TicketmasterCatalogProvider()
+      .search('Show', 1)
+      .catch((cause: unknown) => Promise.resolve(cause));
 
+    expect(error).toBeInstanceOf(CatalogTimeoutError);
+    expect((error as CatalogTimeoutError).getResponse()).toEqual({
+      statusCode: 504,
+      code: 'CATALOG_TIMEOUT',
+      message: 'Catálogo externo excedeu o tempo de resposta',
+    });
+  });
+
+  it.each([429, 500, 503])(
+    'normaliza status externo %s como catálogo indisponível',
+    async (status) => {
+      fetchMock.mockResolvedValueOnce(
+        new Response('provider-secret-body', {
+          status,
+          headers: {
+            'Retry-After': 'provider-secret-header',
+            'Content-Type': 'text/plain',
+          },
+        }),
+      );
+
+      const error = await new TicketmasterCatalogProvider()
+        .search('Show', 1)
+        .catch((cause: unknown) => Promise.resolve(cause));
+
+      expect(error).toBeInstanceOf(CatalogUnavailableError);
+      expect((error as CatalogUnavailableError).getResponse()).toEqual({
+        statusCode: 502,
+        code: 'CATALOG_UNAVAILABLE',
+        message: 'Catálogo externo indisponível',
+      });
+    },
+  );
+
+  it('rejeita payload incompatível como catálogo indisponível', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ page: 'invalid' }));
     await expect(new TicketmasterCatalogProvider().search('Show', 1)).rejects.toThrow(
       CatalogUnavailableError,
