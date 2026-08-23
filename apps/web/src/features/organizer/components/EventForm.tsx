@@ -13,29 +13,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
-import { useCreateMovieEvent, usePublishEvent, useVenues } from '../hooks';
-import { CreateMovieEventFormValues, createMovieEventSchema } from '../schemas';
+import { EventCategory } from '../../events/types';
+import { useCreateMovieEvent, useCreateShowEvent, usePublishEvent, useVenues } from '../hooks';
+import { CreateEventFormValues, getCreateEventSchema } from '../schemas';
 import { getVenueLocalDateTimeMinimum } from '../time/venueLocalDateTime';
 import { CatalogItem } from '../types';
 
 const fieldClassName =
-  'h-11 rounded-[4px] border-[#B8AEA0] bg-white px-3 text-sm focus-visible:border-primary';
+  'h-11 rounded-[4px] border-border bg-card px-3 text-sm focus-visible:border-primary';
 const labelClassName =
   'mb-2 block text-[11px] font-semibold uppercase tracking-[1.4px] text-muted-foreground';
 const errorClassName = 'mt-1.5 block text-xs text-destructive';
 
-interface MovieEventFormProps {
-  selectedMovie?: CatalogItem;
+interface EventFormProps {
+  category: EventCategory;
+  selectedItem?: CatalogItem;
 }
 
 /**
- * Valida os dados locais e coordena a criação e a publicação da sessão selecionada.
+ * Valida os dados locais e coordena a criação e a publicação do Event selecionado.
  */
-export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
+export function EventForm({ category, selectedItem }: EventFormProps) {
   const navigate = useNavigate();
   const [draftCreatedMessage, setDraftCreatedMessage] = useState<string>();
-  const venuesQuery = useVenues();
-  const createMutation = useCreateMovieEvent();
+  const venuesQuery = useVenues(category);
+  const createMovieMutation = useCreateMovieEvent();
+  const createShowMutation = useCreateShowEvent();
   const publishMutation = usePublishEvent();
   const {
     control,
@@ -44,10 +47,16 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
     clearErrors,
     register,
     formState: { errors, isValid },
-  } = useForm<CreateMovieEventFormValues>({
-    resolver: zodResolver(createMovieEventSchema),
+  } = useForm<CreateEventFormValues>({
+    resolver: zodResolver(getCreateEventSchema(category)),
     mode: 'onChange',
-    defaultValues: { venueId: '', date: '', time: '', priceCents: undefined },
+    defaultValues: {
+      venueId: '',
+      date: '',
+      time: '',
+      priceCents: undefined,
+      capacity: undefined,
+    },
   });
   const selectedVenueId = useWatch({ control, name: 'venueId' });
   const selectedDate = useWatch({ control, name: 'date' });
@@ -61,6 +70,7 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
     selectedDate && selectedTime ? `${selectedDate}T${selectedTime}` : undefined;
   const isFutureSelection =
     !!selectedDateTime && (!minimumDateTime || selectedDateTime >= minimumDateTime.value);
+  const createMutation = category === EventCategory.Show ? createShowMutation : createMovieMutation;
   const isSubmitting = createMutation.isPending || publishMutation.isPending;
 
   useEffect(() => {
@@ -88,8 +98,8 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
    *
    * @param values - Dados locais validados pelo formulário.
    */
-  async function onSubmit(values: CreateMovieEventFormValues): Promise<void> {
-    if (!selectedMovie || !selectedVenue) {
+  async function onSubmit(values: CreateEventFormValues): Promise<void> {
+    if (!selectedItem || !selectedVenue) {
       return;
     }
 
@@ -107,12 +117,21 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
     setDraftCreatedMessage(undefined);
 
     try {
-      const event = await createMutation.mutateAsync({
-        externalId: selectedMovie.externalId,
-        venueId: values.venueId,
-        startsAtLocal,
-        priceCents: values.priceCents,
-      });
+      const event =
+        category === EventCategory.Show
+          ? await createShowMutation.mutateAsync({
+              externalId: selectedItem.externalId,
+              venueId: values.venueId,
+              startsAtLocal,
+              priceCents: values.priceCents,
+              capacity: values.capacity!,
+            })
+          : await createMovieMutation.mutateAsync({
+              externalId: selectedItem.externalId,
+              venueId: values.venueId,
+              startsAtLocal,
+              priceCents: values.priceCents,
+            });
 
       try {
         await publishMutation.mutateAsync(event.id);
@@ -130,24 +149,27 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
   return (
     <section
       aria-labelledby="event-data-title"
-      className="self-start border border-[#DED6C7] bg-white p-5 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)] sm:p-6"
+      className="self-start border border-border bg-card p-5 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)] sm:p-6"
     >
       <h2 id="event-data-title" className="mt-0 font-heading text-2xl font-semibold">
         Dados do evento
       </h2>
 
-      {selectedMovie ? (
+      {selectedItem ? (
         <p className="mb-6 border-l-2 border-secondary py-1 pl-3 text-sm">
-          Filme selecionado: <strong>{selectedMovie.title}</strong>
+          {category === EventCategory.Show ? 'Atração' : 'Filme'} selecionado:{' '}
+          <strong>{selectedItem.title}</strong>
         </p>
       ) : (
-        <p className="mb-6 text-sm text-muted-foreground">Selecione um filme para continuar.</p>
+        <p className="mb-6 text-sm text-muted-foreground">
+          Selecione {category === EventCategory.Show ? 'uma atração' : 'um filme'} para continuar.
+        </p>
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         <div>
           <label htmlFor="venueId" className={labelClassName}>
-            Local e sala
+            {category === EventCategory.Show ? 'Local' : 'Local e sala'}
           </label>
           <Controller
             name="venueId"
@@ -199,6 +221,37 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
             </span>
           )}
         </div>
+
+        {category === EventCategory.Show && (
+          <div>
+            <label htmlFor="capacity" className={labelClassName}>
+              Capacidade de entrada geral
+            </label>
+            <Input
+              id="capacity"
+              type="number"
+              min={1}
+              max={2_147_483_647}
+              step={1}
+              inputMode="numeric"
+              required
+              aria-required="true"
+              aria-invalid={!!errors.capacity}
+              aria-describedby={errors.capacity ? 'capacity-error' : 'capacity-hint'}
+              className={fieldClassName}
+              {...register('capacity', { valueAsNumber: true })}
+            />
+            {errors.capacity?.message ? (
+              <span id="capacity-error" role="alert" className={errorClassName}>
+                {errors.capacity.message}
+              </span>
+            ) : (
+              <span id="capacity-hint" className="mt-1.5 block text-xs text-muted-foreground">
+                Total de ingressos sem assento marcado disponíveis para este show.
+              </span>
+            )}
+          </div>
+        )}
 
         <div>
           <label htmlFor="venueAddress" className={labelClassName}>
@@ -329,7 +382,7 @@ export function MovieEventForm({ selectedMovie }: MovieEventFormProps) {
         <Button
           type="submit"
           disabled={
-            !selectedMovie || !isValid || !isFutureSelection || isSubmitting || venuesQuery.isError
+            !selectedItem || !isValid || !isFutureSelection || isSubmitting || venuesQuery.isError
           }
           className="h-11 w-full rounded-[4px] text-sm font-semibold"
         >

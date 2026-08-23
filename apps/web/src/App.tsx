@@ -14,7 +14,7 @@ import { GateEventSelectionPage } from './features/gate/pages/GateEventSelection
 import { AuthenticatedLayout } from './features/navigation/components/AuthenticatedLayout';
 import { RoleHomeRedirect } from './features/navigation/components/RoleHomeRedirect';
 import { RoleRoute } from './features/navigation/components/RoleRoute';
-import { CreateMovieEvent } from './features/organizer/pages/CreateMovieEvent';
+import { CreateEvent } from './features/organizer/pages/CreateEvent';
 import { OrganizerHome } from './features/organizer/pages/OrganizerHome';
 import { OrganizerEventDetailPage } from './features/organizer/pages/OrganizerEventDetailPage';
 import { ReservationCheckoutPage } from './features/reservations/pages/ReservationCheckoutPage';
@@ -61,7 +61,7 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
             <Route element={<RoleRoute allowedRole={UserRole.Organizer} />}>
               <Route path="/organizer" element={<OrganizerHome />} />
               <Route path="/organizer/events/:eventId" element={<OrganizerEventDetailPage />} />
-              <Route path="/organizer/events/new" element={<CreateMovieEvent />} />
+              <Route path="/organizer/events/new" element={<CreateEvent />} />
             </Route>
 
             <Route element={<RoleRoute allowedRole={UserRole.Gate} />}>
