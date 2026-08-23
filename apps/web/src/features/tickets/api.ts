@@ -7,6 +7,10 @@ export async function fetchTickets(reservationId?: string): Promise<TicketPurcha
   return response.data;
 }
 
+export async function cancelTicketPurchase(reservationId: string): Promise<void> {
+  await api.post(`/reservations/${reservationId}/cancel`);
+}
+
 /** Consulta o estado atual de um Ticket por sua credencial bearer compartilhável. */
 export async function fetchSharedTicket(credential: string): Promise<SharedTicket> {
   const response = await api.get<SharedTicket>(`/tickets/shared/${encodeURIComponent(credential)}`);

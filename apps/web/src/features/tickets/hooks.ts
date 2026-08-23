@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { fetchSharedTicket, fetchTickets } from './api';
+import { cancelTicketPurchase, fetchSharedTicket, fetchTickets } from './api';
 
 /** Mantém a listagem de Tickets no cache por compra quando há um filtro explícito. */
 export function useTickets(reservationId?: string) {
@@ -8,6 +8,14 @@ export function useTickets(reservationId?: string) {
     queryKey: ['tickets', 'owned', reservationId],
     queryFn: () => fetchTickets(reservationId),
     retry: false,
+  });
+}
+
+export function useCancelTicketPurchase() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelTicketPurchase,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tickets', 'owned'] }),
   });
 }
 
