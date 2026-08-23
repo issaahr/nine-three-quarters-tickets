@@ -132,6 +132,7 @@ export class TicketmasterCatalogProvider implements ShowCatalogProvider {
     url.search = new URLSearchParams({
       ...parameters,
       apikey: applicationConfig.catalog.ticketmaster.apiKey,
+      locale: applicationConfig.catalog.ticketmaster.locale,
     }).toString();
 
     let response: Response;

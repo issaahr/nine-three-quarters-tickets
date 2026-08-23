@@ -53,6 +53,19 @@ const event: EventDiscoveryItem = {
   venueTimeZone: 'America/Fortaleza',
 };
 
+const showEvent: EventDiscoveryItem = {
+  id: 'event-2',
+  title: 'Noite de Rock',
+  genres: ['Rock'],
+  category: EventCategory.Show,
+  admissionMode: AdmissionMode.GeneralAdmission,
+  startsAt: '2030-09-12T00:00:00.000Z',
+  priceCents: 4000,
+  venueName: 'Nexus Arena',
+  venueCity: 'Belém',
+  venueTimeZone: 'America/Belem',
+};
+
 const eventDetail: EventDetail = {
   ...event,
   status: EventStatus.Published,
@@ -312,8 +325,51 @@ describe('catálogo público de eventos', () => {
     await user.click(screen.getByRole('button', { name: 'Filtros' }));
 
     expect(screen.getByLabelText('Cidade')).toBeInTheDocument();
+    expect(screen.getByLabelText('Cidade')).not.toHaveAttribute('list');
     await user.click(screen.getByRole('button', { name: 'Ocultar filtros' }));
     expect(screen.queryByLabelText('Cidade')).not.toBeInTheDocument();
+  });
+
+  it('mantém a categoria destacada, aplica-a imediatamente e ajusta o gênero incompatível', async () => {
+    const requestedUrls: URL[] = [];
+    server.use(
+      http.get(`${apiUrl}/events`, ({ request }) => {
+        requestedUrls.push(new URL(request.url));
+        return HttpResponse.json({ items: [event, showEvent], page: 1, hasMore: false });
+      }),
+    );
+    const user = userEvent.setup();
+    renderEvents();
+
+    await screen.findByRole('heading', { name: event.title });
+    expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Filmes' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Shows' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('combobox', { name: 'Categoria' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filmes' }));
+    await waitFor(() => expect(requestedUrls.at(-1)?.searchParams.get('category')).toBe('MOVIE'));
+    expect(screen.getByRole('button', { name: 'Filmes' })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByRole('button', { name: 'Filtros' }));
+    await user.click(screen.getByLabelText('Gênero'));
+    await user.click(await screen.findByRole('option', { name: 'Fantasia' }));
+    await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
+    await waitFor(() => expect(requestedUrls.at(-1)?.searchParams.get('genre')).toBe('Fantasia'));
+
+    await user.click(screen.getByRole('button', { name: 'Shows' }));
+    await waitFor(() => expect(requestedUrls.at(-1)?.searchParams.get('category')).toBe('SHOW'));
+    expect(requestedUrls.at(-1)?.searchParams.has('genre')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Shows' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Todos' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('Gênero')).toHaveTextContent('Todos');
+
+    await user.click(screen.getByLabelText('Gênero'));
+    expect(await screen.findByRole('option', { name: 'Rock' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Fantasia' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ocultar filtros' }));
+    expect(screen.getByRole('button', { name: 'Shows' })).toBeVisible();
   });
 
   it('diferencia uma busca sem correspondências do catálogo vazio', async () => {
@@ -325,7 +381,7 @@ describe('catálogo público de eventos', () => {
 
     await screen.findByRole('heading', { name: 'Nenhum evento disponível' });
     await user.click(screen.getByRole('button', { name: 'Filtros' }));
-    await user.type(screen.getByLabelText('Gênero'), 'Jazz');
+    await user.type(screen.getByLabelText('Cidade'), 'Fortaleza');
     await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
 
     expect(

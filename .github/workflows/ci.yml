@@ -89,6 +89,7 @@ jobs:
       TMDB_POSTER_SIZE: w500
       TICKETMASTER_API_KEY: ci-test-ticketmaster-key
       TICKETMASTER_REQUEST_TIMEOUT_MS: "5000"
+      TICKETMASTER_LOCALE: pt-BR
 
     services:
       postgres:

@@ -24,6 +24,7 @@ describe('loadApplicationConfig', () => {
     TMDB_REQUEST_TIMEOUT_MS: '5000',
     TMDB_POSTER_SIZE: 'w500',
     TICKETMASTER_API_KEY: 'test-ticketmaster-key',
+    TICKETMASTER_LOCALE: 'pt-BR',
     TICKETMASTER_REQUEST_TIMEOUT_MS: '5000',
   };
 
@@ -51,6 +52,7 @@ describe('loadApplicationConfig', () => {
         },
         ticketmaster: {
           apiKey: 'test-ticketmaster-key',
+          locale: 'pt-BR',
           requestTimeoutMs: 5000,
         },
       },
@@ -132,6 +134,8 @@ describe('loadApplicationConfig', () => {
     ['TMDB_REQUEST_TIMEOUT_MS', '0'],
     ['TMDB_POSTER_SIZE', 'large'],
     ['TICKETMASTER_API_KEY', undefined],
+    ['TICKETMASTER_LOCALE', 'portuguese'],
+    ['TICKETMASTER_LOCALE', undefined],
     ['TICKETMASTER_REQUEST_TIMEOUT_MS', '0'],
     ['TICKETMASTER_REQUEST_TIMEOUT_MS', undefined],
   ])('rejeita configuração inválida em %s', (name, value) => {

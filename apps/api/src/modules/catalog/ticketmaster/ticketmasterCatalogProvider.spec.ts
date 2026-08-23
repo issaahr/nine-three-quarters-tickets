@@ -98,6 +98,7 @@ describe('TicketmasterCatalogProvider', () => {
     expect(requestedUrl.searchParams.get('page')).toBe('1');
     expect(requestedUrl.searchParams.get('size')).toBe('20');
     expect(requestedUrl.searchParams.get('apikey')).toBe('test-ticketmaster-key');
+    expect(requestedUrl.searchParams.get('locale')).toBe('pt-BR');
     expect(options?.headers).toEqual({ Accept: 'application/json' });
   });
 

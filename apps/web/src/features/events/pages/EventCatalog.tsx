@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
 import { EventCard } from '../components/EventCard';
+import { allCategoriesValue, EventCategoryControl } from '../components/EventCategoryControl';
 import { EventFilters } from '../components/EventFilters';
 import { useEventDiscovery } from '../hooks';
-import { EventDiscoveryFilters, EventDiscoveryItem } from '../types';
+import { EventCategory, EventDiscoveryFilters, EventDiscoveryItem } from '../types';
 
 /** Exibe a descoberta pública e carrega novas páginas quando o fim da grade se aproxima. */
 export function EventCatalog() {
@@ -19,14 +20,32 @@ export function EventCatalog() {
     return [...byId.values()];
   }, [query.data]);
 
-  const suggestedCities = useMemo(
-    () => [...new Set(events.map((event) => event.venueCity))].sort(),
-    [events],
-  );
+  const category = filters.category ?? allCategoriesValue;
   const suggestedGenres = useMemo(
-    () => [...new Set(events.flatMap((event) => event.genres))].sort(),
-    [events],
+    () =>
+      [
+        ...new Set(
+          events
+            .filter((event) => category === allCategoriesValue || event.category === category)
+            .flatMap((event) => event.genres),
+        ),
+      ].sort(),
+    [category, events],
   );
+
+  function handleCategoryChange(nextCategory: EventCategory | typeof allCategoriesValue): void {
+    const compatibleGenres = new Set(
+      events
+        .filter((event) => nextCategory === allCategoriesValue || event.category === nextCategory)
+        .flatMap((event) => event.genres),
+    );
+
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      category: nextCategory === allCategoriesValue ? undefined : nextCategory,
+      genre: compatibleGenres.has(currentFilters.genre ?? '') ? currentFilters.genre : undefined,
+    }));
+  }
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -64,12 +83,11 @@ export function EventCatalog() {
         </p>
       </header>
 
-      <EventFilters
-        filters={filters}
-        suggestedCities={suggestedCities}
-        suggestedGenres={suggestedGenres}
-        onApply={setFilters}
-      />
+      <EventFilters filters={filters} suggestedGenres={suggestedGenres} onApply={setFilters} />
+
+      <div className="mt-5">
+        <EventCategoryControl category={category} onChange={handleCategoryChange} />
+      </div>
 
       <section className="mt-8" aria-label="Eventos encontrados" aria-busy={query.isFetching}>
         {query.isPending ? (

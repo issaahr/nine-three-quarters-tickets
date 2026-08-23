@@ -255,6 +255,17 @@ function getTicketmasterApiKey(environmentVariables: NodeJS.ProcessEnv): string 
   return getRequiredEnvironmentVariable('TICKETMASTER_API_KEY', environmentVariables);
 }
 
+/** Restringe o locale ao formato regional aceito pela Ticketmaster. */
+function getTicketmasterLocale(environmentVariables: NodeJS.ProcessEnv): string {
+  const locale = getRequiredEnvironmentVariable('TICKETMASTER_LOCALE', environmentVariables);
+
+  if (!/^[a-z]{2}-[A-Z]{2}$/.test(locale)) {
+    throw new ConfigurationError('Variável de ambiente TICKETMASTER_LOCALE inválida');
+  }
+
+  return locale;
+}
+
 /**
  * Impede que a consulta de atrações permaneça aguardando indefinidamente.
  */
@@ -322,6 +333,7 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
       },
       ticketmaster: {
         apiKey: getTicketmasterApiKey(environmentVariables),
+        locale: getTicketmasterLocale(environmentVariables),
         requestTimeoutMs: getTicketmasterRequestTimeoutMs(environmentVariables),
       },
     },
