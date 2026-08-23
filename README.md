@@ -119,6 +119,8 @@ docker compose exec api npm run migration:revert
 
 Crie uma nova migration para cada mudança de schema. Não utilize `synchronize` como substituto para migrations.
 
+O CD valida `GET /health` após publicar a API no Heroku e restaura a release anterior se a nova versão não ficar saudável. Como as migrations executam na inicialização e não sofrem rollback automático, toda migration publicada deve permanecer compatível com a release anterior até que seja seguro removê-la.
+
 ## Usuários de demonstração
 
 A migration de seed cria automaticamente quatro usuários quando é aplicada pela primeira vez:
