@@ -8,6 +8,20 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+const rateLimitErrorCode = 'RATE_LIMIT_EXCEEDED';
+
+/** Identifica somente o limite aplicado pela própria API, sem confundir falhas externas normalizadas. */
+export function isApiRateLimitError(error: unknown): boolean {
+  return (
+    axios.isAxiosError<{ code?: string }>(error) &&
+    error.response?.status === 429 &&
+    error.response.data?.code === rateLimitErrorCode
+  );
+}
+
+export const rateLimitErrorMessage =
+  'Muitas tentativas. Aguarde um momento antes de tentar novamente.';
+
 api.interceptors.response.use(
   (response) => response,
   (error: unknown) => {

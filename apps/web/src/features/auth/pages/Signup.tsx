@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
+import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
 import { AuthPageLayout } from '../components/AuthPageLayout';
 import { useAuth, useSignup } from '../hooks';
 import { SignupFormValues, signupSchema } from '../schemas';
@@ -23,6 +24,10 @@ function getSignupErrorMessage(error: unknown): string | null {
 
   if (axios.isAxiosError(error) && error.response?.status === 404) {
     return 'O cadastro público está indisponível.';
+  }
+
+  if (isApiRateLimitError(error)) {
+    return rateLimitErrorMessage;
   }
 
   return 'Não foi possível criar sua conta. Tente novamente em instantes.';

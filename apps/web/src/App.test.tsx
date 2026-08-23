@@ -139,6 +139,27 @@ describe('fluxo de autenticação', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha inválidos.');
   });
 
+  it('informa amigavelmente quando o login atinge o rate limit da API', async () => {
+    server.use(
+      http.post(`${apiUrl}/auth/login`, () =>
+        HttpResponse.json(
+          { code: 'RATE_LIMIT_EXCEEDED', message: 'detalhe interno' },
+          { status: 429 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderApp('/login');
+    await user.type(await screen.findByLabelText('E-mail'), 'customer@example.com');
+    await user.type(screen.getByLabelText('Senha'), 'valid-password');
+    await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+    );
+  });
+
   it('autentica, preserva a sessão na navegação e não armazena o token', async () => {
     const localStorageSpy = vi.spyOn(window.localStorage, 'setItem');
     const sessionStorageSpy = vi.spyOn(window.sessionStorage, 'setItem');

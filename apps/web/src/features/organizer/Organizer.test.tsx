@@ -131,6 +131,103 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByText('Publicado')).toBeInTheDocument();
   });
 
+  it('filtra localmente por título, tipo, status e período sem alterar os indicadores globais', async () => {
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json([
+          {
+            id: 'event-movie',
+            venueId: venue.id,
+            venueName: venue.name,
+            venueCity: venue.city,
+            venueTimeZone: venue.timeZone,
+            title: 'Duna: Parte Dois',
+            genres: movie.genres,
+            category: EventCategory.Movie,
+            admissionMode: AdmissionMode.Seated,
+            status: EventStatus.Published,
+            startsAt: '2030-09-01T23:30:00.000Z',
+            priceCents: 2500,
+            isActive: true,
+            soldTickets: 12,
+            availableTickets: 48,
+            inventoryTotal: 60,
+            revenueCents: 30000,
+          },
+          {
+            id: 'event-show',
+            venueId: generalAdmissionVenue.id,
+            venueName: generalAdmissionVenue.name,
+            venueCity: generalAdmissionVenue.city,
+            venueTimeZone: generalAdmissionVenue.timeZone,
+            title: 'Coldplay',
+            genres: attraction.genres,
+            category: EventCategory.Show,
+            admissionMode: AdmissionMode.GeneralAdmission,
+            status: EventStatus.Draft,
+            startsAt: '2030-10-02T01:00:00.000Z',
+            priceCents: 15000,
+            isActive: false,
+            soldTickets: 3,
+            availableTickets: 497,
+            inventoryTotal: 500,
+            revenueCents: 45000,
+          },
+          {
+            id: 'event-cancelled',
+            venueId: venue.id,
+            venueName: venue.name,
+            venueCity: venue.city,
+            venueTimeZone: venue.timeZone,
+            title: 'Sessão cancelada',
+            genres: movie.genres,
+            category: EventCategory.Movie,
+            admissionMode: AdmissionMode.Seated,
+            status: EventStatus.Cancelled,
+            startsAt: '2030-11-01T23:30:00.000Z',
+            priceCents: 3000,
+            isActive: false,
+            soldTickets: 1,
+            availableTickets: null,
+            inventoryTotal: null,
+            revenueCents: 0,
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer();
+    expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'cold');
+    expect(screen.getByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Pesquisar por título'));
+    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Movie);
+    await user.selectOptions(screen.getByLabelText('Filtrar por status'), EventStatus.Cancelled);
+    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por status'), 'ALL');
+    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '2030-11-01' } });
+    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Pesquisar por título'));
+    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '' } });
+    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Show);
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado');
+    expect(
+      await screen.findByRole('heading', { name: 'Nenhum evento encontrado' }),
+    ).toBeInTheDocument();
+  });
+
   it('cria e publica usando somente identidade externa e dados locais', async () => {
     let createBody: unknown;
     const publishHandler = vi.fn();
