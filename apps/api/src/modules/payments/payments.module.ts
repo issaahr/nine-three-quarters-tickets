@@ -7,6 +7,7 @@ import { Reservation } from '../reservations/reservation.entity';
 import { TicketsModule } from '../tickets/tickets.module';
 import { Event } from '../events/event.entity';
 import { EventSeat } from '../events/eventSeat.entity';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { FakePaymentGateway } from './fakePaymentGateway';
 import { Payment } from './payment.entity';
 import { paymentGatewayToken } from './payments.constants';
@@ -19,6 +20,7 @@ import { PaymentRepository } from './repositories/payment.repository';
     TypeOrmModule.forFeature([Payment, Reservation, ReservationItem, Event, EventSeat]),
     AuthModule,
     TicketsModule,
+    RealtimeModule,
   ],
   controllers: [PaymentsController],
   providers: [

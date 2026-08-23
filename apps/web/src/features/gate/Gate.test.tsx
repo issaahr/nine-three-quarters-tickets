@@ -231,7 +231,9 @@ describe('Contexto ativo da portaria', () => {
 
     renderGate('/gate/events/event-1');
 
-    await user.click(await screen.findByRole('button', { name: 'Ativar câmera' }));
+    const activateCameraButton = await screen.findByRole('button', { name: 'Ativar câmera' });
+    expect(activateCameraButton).toHaveClass('mt-4', 'self-center', 'sm:absolute');
+    await user.click(activateCameraButton);
 
     expect(await screen.findByRole('heading', { name: 'Entrada liberada' })).toBeInTheDocument();
     expect(requestBody).toEqual({ credential: 'v1.ticket.signature' });

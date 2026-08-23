@@ -182,6 +182,7 @@ describe('Meus ingressos', () => {
     expect(screen.getByText('C1')).toBeInTheDocument();
     expect(screen.getByText('Utilizado')).toBeInTheDocument();
     expect(screen.getByLabelText('Código QR do ingresso')).toBeInTheDocument();
+    expect(screen.getByText('9¾')).toHaveClass('absolute', 'right-5', 'top-6', 'sm:static');
     expect(screen.getByText('O seguinte ingresso foi compartilhado com você')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Compartilhar' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ver eventos' })).not.toBeInTheDocument();

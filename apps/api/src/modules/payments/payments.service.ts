@@ -3,7 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
 import { Event } from '../events/event.entity';
-import { EventSeat } from '../events/eventSeat.entity';
+import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
@@ -14,20 +14,16 @@ import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
 import { paymentGatewayToken } from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
+import {
+  DatabaseTimestampRow,
+  PaymentFinalizationResult,
+  PaymentInitiation,
+} from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
 import { PaymentRepository } from './repositories/payment.repository';
 import { TicketsService } from '../tickets/tickets.service';
-
-interface DatabaseTimestampRow {
-  now: Date;
-}
-
-interface PaymentInitiation {
-  payment: Payment;
-  shouldProcess: boolean;
-}
 
 @Injectable()
 export class PaymentsService {
@@ -38,6 +34,7 @@ export class PaymentsService {
     private readonly paymentRepository: PaymentRepository,
     @Inject(paymentGatewayToken) private readonly paymentGateway: PaymentGateway,
     private readonly ticketsService: TicketsService,
+    private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
 
   /**
@@ -181,6 +178,7 @@ export class PaymentsService {
 
   /**
    * Finaliza uma tentativa PENDING depois que o gateway respondeu fora de transaction.
+   * O delta realtime é emitido somente depois que a transaction confirma a venda integral.
    *
    * @param paymentId - Payment originalmente persistido como PENDING.
    * @param gatewayStatus - Resultado determinístico devolvido pelo gateway.
@@ -191,78 +189,99 @@ export class PaymentsService {
     gatewayStatus: CardPaymentGatewayStatus,
   ): Promise<Payment> {
     try {
-      return await this.dataSource.transaction(async (manager) => {
-        const paymentsRepository = manager.getRepository(Payment);
-        const reservationsRepository = manager.getRepository(Reservation);
-        const reservationItemsRepository = manager.getRepository(ReservationItem);
-        const eventSeatsRepository = manager.getRepository(EventSeat);
-        const eventsRepository = manager.getRepository(Event);
-        const payment = await paymentsRepository.findOne({
-          where: { id: paymentId },
-          lock: { mode: 'pessimistic_write' },
-        });
+      const result = await this.dataSource.transaction<PaymentFinalizationResult>(
+        async (manager) => {
+          const paymentsRepository = manager.getRepository(Payment);
+          const reservationsRepository = manager.getRepository(Reservation);
+          const reservationItemsRepository = manager.getRepository(ReservationItem);
+          const eventsRepository = manager.getRepository(Event);
+          const payment = await paymentsRepository.findOne({
+            where: { id: paymentId },
+            lock: { mode: 'pessimistic_write' },
+          });
 
-        if (!payment || payment.status !== PaymentStatus.Pending) {
-          return payment!;
-        }
+          if (!payment || payment.status !== PaymentStatus.Pending) {
+            return { payment: payment!, eventId: null, soldEventSeatIds: [] };
+          }
 
-        const now = await this.getDatabaseTimestamp(manager);
+          const now = await this.getDatabaseTimestamp(manager);
 
-        if (gatewayStatus === CardPaymentGatewayStatus.Declined) {
-          payment.status = PaymentStatus.Declined;
-          return paymentsRepository.save(payment);
-        }
+          if (gatewayStatus === CardPaymentGatewayStatus.Declined) {
+            payment.status = PaymentStatus.Declined;
+            return {
+              payment: await paymentsRepository.save(payment),
+              eventId: null,
+              soldEventSeatIds: [],
+            };
+          }
 
-        const reservation = await reservationsRepository.findOne({
-          where: { id: payment.reservationId },
-          lock: { mode: 'pessimistic_write' },
-        });
-        const event = reservation
-          ? await eventsRepository.findOneBy({ id: reservation.eventId })
-          : null;
+          const reservation = await reservationsRepository.findOne({
+            where: { id: payment.reservationId },
+            lock: { mode: 'pessimistic_write' },
+          });
+          const event = reservation
+            ? await eventsRepository.findOneBy({ id: reservation.eventId })
+            : null;
 
-        if (
-          !reservation ||
-          reservation.confirmedAt ||
-          reservation.cancelledAt ||
-          reservation.expiresAt.getTime() <= now.getTime() ||
-          !event ||
-          event.startsAt.getTime() <= now.getTime()
-        ) {
-          payment.status = PaymentStatus.Failed;
-          payment.failedAt = now;
-          this.logger.warn(
-            `Payment ${payment.id} aprovado pelo gateway não pôde confirmar a Reservation`,
+          if (
+            !reservation ||
+            reservation.confirmedAt ||
+            reservation.cancelledAt ||
+            reservation.expiresAt.getTime() <= now.getTime() ||
+            !event ||
+            event.startsAt.getTime() <= now.getTime()
+          ) {
+            payment.status = PaymentStatus.Failed;
+            payment.failedAt = now;
+            this.logger.warn(
+              `Payment ${payment.id} aprovado pelo gateway não pôde confirmar a Reservation`,
+            );
+            return {
+              payment: await paymentsRepository.save(payment),
+              eventId: null,
+              soldEventSeatIds: [],
+            };
+          }
+
+          const items = await reservationItemsRepository.findBy({
+            reservationId: reservation.id,
+          });
+          const soldEventSeatIds = await this.paymentRepository.sellHeldEventSeats(
+            manager,
+            reservation.id,
+            now,
           );
-          return paymentsRepository.save(payment);
-        }
 
-        const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
-        const soldSeats = await eventSeatsRepository
-          .createQueryBuilder()
-          .update(EventSeat)
-          .set({ soldAt: now, holdReservationId: null, holdExpiresAt: null })
-          .where('"holdReservationId" = :reservationId', { reservationId: reservation.id })
-          .andWhere('"holdExpiresAt" > :now', { now })
-          .andWhere('"soldAt" IS NULL')
-          .execute();
+          if (soldEventSeatIds.length !== items.length) {
+            throw new PaymentCompletionConflictError();
+          }
 
-        if (soldSeats.affected !== items.length) {
-          throw new PaymentCompletionConflictError();
-        }
+          reservation.confirmedAt = now;
+          payment.status = PaymentStatus.Approved;
+          payment.approvedAt = now;
+          await reservationsRepository.save(reservation);
+          await this.ticketsService.issueForReservationItems(
+            manager,
+            items.map((item) => item.id),
+            now,
+          );
 
-        reservation.confirmedAt = now;
-        payment.status = PaymentStatus.Approved;
-        payment.approvedAt = now;
-        await reservationsRepository.save(reservation);
-        await this.ticketsService.issueForReservationItems(
-          manager,
-          items.map((item) => item.id),
-          now,
-        );
+          return {
+            payment: await paymentsRepository.save(payment),
+            eventId: event.id,
+            soldEventSeatIds,
+          };
+        },
+      );
 
-        return paymentsRepository.save(payment);
-      });
+      if (result.eventId && result.soldEventSeatIds.length > 0) {
+        this.seatRealtimeGateway.emitSold({
+          eventId: result.eventId,
+          eventSeatIds: result.soldEventSeatIds,
+        });
+      }
+
+      return result.payment;
     } catch (error) {
       if (!(error instanceof PaymentCompletionConflictError)) {
         throw error;

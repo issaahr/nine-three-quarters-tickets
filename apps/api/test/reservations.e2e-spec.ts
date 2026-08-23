@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { AddressInfo } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { io, Socket } from 'socket.io-client';
 import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
@@ -13,6 +15,12 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
+import { RealtimeEvent } from '../src/modules/realtime/realtimeEvent.enum';
+import {
+  EventRoomJoined,
+  SeatRealtimeDelta,
+} from '../src/modules/realtime/seatRealtime.interfaces';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { User } from '../src/modules/users/user.entity';
@@ -27,6 +35,7 @@ describe('Reservations seated', () => {
   let reservationsRepository: Repository<Reservation>;
   let reservationItemsRepository: Repository<ReservationItem>;
   let venueSeatsRepository: Repository<VenueSeat>;
+  let seatRealtimeGateway: SeatRealtimeGateway;
   let customerOne: User;
   let customerTwo: User;
   let organizer: User;
@@ -38,7 +47,7 @@ describe('Reservations seated', () => {
 
     app = testingModule.createNestApplication();
     new Application().configure(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
 
     dataSource = app.get(DataSource);
     eventsRepository = dataSource.getRepository(Event);
@@ -46,6 +55,9 @@ describe('Reservations seated', () => {
     reservationsRepository = dataSource.getRepository(Reservation);
     reservationItemsRepository = dataSource.getRepository(ReservationItem);
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
+    seatRealtimeGateway = app.get(SeatRealtimeGateway);
+    jest.spyOn(seatRealtimeGateway, 'emitHeld');
+    jest.spyOn(seatRealtimeGateway, 'emitReleased');
     customerOne = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'customer.one.demo@ntq.local' });
@@ -215,6 +227,10 @@ describe('Reservations seated', () => {
         }),
       ]),
     );
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: [firstSeat.id, secondSeat.id],
+    });
   });
 
   it('permite que somente um CUSTOMER adquira o mesmo EventSeat sob requests concorrentes', async () => {
@@ -244,6 +260,11 @@ describe('Reservations seated', () => {
     );
     await expect(reservationsRepository.countBy({ eventId: event.id })).resolves.toBe(1);
     await expect(countReservationItemsForEvent(event.id)).resolves.toBe(1);
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledTimes(1);
+    expect(seatRealtimeGateway.emitHeld).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: [seat.id],
+    });
   });
 
   it('reverte Reservation, itens e holds quando qualquer assento solicitado está indisponível', async () => {
@@ -267,6 +288,7 @@ describe('Reservations seated', () => {
       holdReservationId: null,
       holdExpiresAt: null,
     });
+    expect(seatRealtimeGateway.emitHeld).not.toHaveBeenCalled();
   });
 
   it('reutiliza um EventSeat cujo hold expirou sem exigir scheduler', async () => {
@@ -426,6 +448,13 @@ describe('Reservations seated', () => {
         expect.objectContaining({ holdReservationId: null, holdExpiresAt: null }),
       ]),
     );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledWith({
+      eventId: event.id,
+      eventSeatIds: expect.arrayContaining([firstSeat.id, secondSeat.id]),
+    });
+    const [releasedDelta] = jest.mocked(seatRealtimeGateway.emitReleased).mock.calls[0];
+    expect(releasedDelta.eventSeatIds).toHaveLength(2);
     await request(app.getHttpServer())
       .post('/reservations')
       .set('Cookie', customerTwoCookie)
@@ -459,6 +488,7 @@ describe('Reservations seated', () => {
         }),
       ]),
     );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
     const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
     await request(app.getHttpServer())
       .post(`/reservations/${expiredReservation.id}/cancel`)
@@ -467,6 +497,7 @@ describe('Reservations seated', () => {
       .expect(({ body }) =>
         expect(body).toEqual(expect.objectContaining({ code: 'RESERVATION_NOT_ACTIVE' })),
       );
+    expect(seatRealtimeGateway.emitReleased).toHaveBeenCalledTimes(1);
   });
 
   it.each([
@@ -506,5 +537,53 @@ describe('Reservations seated', () => {
       .set('Cookie', customerCookie)
       .send({ eventId: randomUUID(), eventSeatIds: [duplicateSeatId, duplicateSeatId] })
       .expect(400);
+  });
+
+  it('projeta um hold HTTP para outro cliente conectado à room da ocorrência', async () => {
+    const event = await createEvent();
+    const [seat] = await createEventSeats(event, 1);
+    const cookie = await authenticate(customerOne.email);
+    const address = app.getHttpServer().address() as AddressInfo;
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+
+    const connectClient = (): Promise<Socket> => {
+      const client = io(serverUrl, {
+        forceNew: true,
+        reconnection: false,
+        transports: ['websocket'],
+      });
+
+      return new Promise((resolve, reject) => {
+        client.once('connect', () => resolve(client));
+        client.once('connect_error', reject);
+      });
+    };
+    const joinEvent = (client: Socket): Promise<EventRoomJoined> =>
+      new Promise((resolve) => client.emit(RealtimeEvent.EventJoin, event.id, resolve));
+    const [purchasingClient, observingClient] = await Promise.all([
+      connectClient(),
+      connectClient(),
+    ]);
+
+    try {
+      await Promise.all([joinEvent(purchasingClient), joinEvent(observingClient)]);
+      const observedDelta = new Promise<SeatRealtimeDelta>((resolve) => {
+        observingClient.once(RealtimeEvent.SeatHeld, resolve);
+      });
+
+      await request(app.getHttpServer())
+        .post('/reservations')
+        .set('Cookie', cookie)
+        .send({ eventId: event.id, eventSeatIds: [seat.id] })
+        .expect(201);
+
+      await expect(observedDelta).resolves.toEqual({
+        eventId: event.id,
+        eventSeatIds: [seat.id],
+      });
+    } finally {
+      purchasingClient.disconnect();
+      observingClient.disconnect();
+    }
   });
 });
