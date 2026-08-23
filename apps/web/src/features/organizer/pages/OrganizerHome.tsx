@@ -61,13 +61,13 @@ export function OrganizerHome() {
           className={cn(buttonVariants({ size: 'lg' }), 'h-10 rounded-[4px] px-4')}
         >
           <Plus aria-hidden="true" />
-          Criar sessão
+          Criar evento
         </Link>
       </header>
 
       {eventPublished && (
-        <p role="status" className="mb-6 border-l-2 border-[#3E6B4F] py-2 pl-4 text-sm">
-          Sessão criada e publicada com sucesso.
+        <p role="status" className="mb-6 border-l-2 border-status-valid py-2 pl-4 text-sm">
+          Evento criado e publicado com sucesso.
         </p>
       )}
 
@@ -86,9 +86,9 @@ export function OrganizerHome() {
           ].map(([label, value]) => (
             <article
               key={label}
-              className="bg-[#2B0A10] p-4 text-[#D9C7A0] [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]"
+              className="bg-secondary-foreground p-4 text-primary-foreground [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]"
             >
-              <p className="m-0 text-[10px] font-medium uppercase tracking-[1.2px] text-[#A9855B]">
+              <p className="m-0 text-[10px] font-medium uppercase tracking-[1.2px] text-brass-dark">
                 {label}
               </p>
               <p className="mb-0 mt-2 font-mono text-2xl font-semibold">{value}</p>
@@ -106,10 +106,10 @@ export function OrganizerHome() {
       )}
 
       {eventsQuery.data?.length === 0 && (
-        <section className="border border-[#DED6C7] bg-white px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
+        <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
           <h2 className="font-heading text-2xl font-semibold">Sua programação começa aqui</h2>
           <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-            Escolha um filme, defina o local e o horário e publique sua primeira sessão.
+            Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.
           </p>
         </section>
       )}

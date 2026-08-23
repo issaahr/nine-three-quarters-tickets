@@ -26,6 +26,7 @@ export interface Venue {
   state: string;
   country: string;
   timeZone: string;
+  admissionMode: AdmissionMode;
 }
 
 export interface OrganizerEvent {
@@ -57,7 +58,11 @@ export interface CreateMovieEventRequest {
   priceCents: number;
 }
 
-export interface CreatedMovieEvent {
+export interface CreateShowEventRequest extends CreateMovieEventRequest {
+  capacity: number;
+}
+
+export interface CreatedEvent {
   id: string;
   status: EventStatus;
 }

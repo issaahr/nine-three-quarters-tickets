@@ -59,6 +59,7 @@ describe('mapa público de assentos', () => {
       state: 'CE',
       country: 'Brasil',
       timeZone: 'America/Fortaleza',
+      admissionMode: AdmissionMode.Seated,
     });
     venueSeats = await venueSeatsRepository.save([
       { venueId: venue.id, label: 'B2', row: 'B', number: 2, x: 1, y: 1 },

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, In, Repository } from 'typeorm';
 
 import { Event } from '../event.entity';
+import { AdmissionMode } from '../admissionMode.enum';
 import { EventStatus } from '../eventStatus.enum';
 import { Reservation } from '../../reservations/reservation.entity';
 import { ReservationItem } from '../../reservations/reservationItem.entity';
@@ -381,20 +382,49 @@ export class EventRepository {
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
       .addSelect('"event"."startsAt" <= CURRENT_TIMESTAMP', 'eventIsPast')
+      .addSelect(
+        `CASE WHEN "event"."admissionMode" = :generalAdmissionMode THEN
+          GREATEST(
+            "event"."capacity" - (
+              SELECT COUNT("reservationItem"."id")
+              FROM "reservationItems" "reservationItem"
+              INNER JOIN "reservations" "reservation"
+                ON "reservation"."id" = "reservationItem"."reservationId"
+              WHERE "reservation"."eventId" = "event"."id"
+                AND "reservation"."cancelledAt" IS NULL
+                AND (
+                  "reservation"."confirmedAt" IS NOT NULL OR
+                  "reservation"."expiresAt" > CURRENT_TIMESTAMP
+                )
+            ),
+            0
+          )
+        ELSE NULL END`,
+        'eventAvailableQuantity',
+      )
       .where('"event"."id" = :eventId', { eventId })
       .andWhere('"event"."status" IN (:...publicStatuses)', {
         publicStatuses: [EventStatus.Published, EventStatus.Cancelled],
       })
+      .setParameter('generalAdmissionMode', AdmissionMode.GeneralAdmission)
       .getRawAndEntities();
 
     const event = result.entities[0];
 
-    return event
-      ? {
-          event,
-          isPast: result.raw[0]?.eventIsPast === true,
-        }
-      : null;
+    if (!event) {
+      return null;
+    }
+
+    const rawAvailableQuantity = result.raw[0]?.eventAvailableQuantity;
+
+    return {
+      event,
+      isPast: result.raw[0]?.eventIsPast === true,
+      availableQuantity:
+        rawAvailableQuantity === null || rawAvailableQuantity === undefined
+          ? null
+          : Number(rawAvailableQuantity),
+    };
   }
 
   /**

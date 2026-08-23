@@ -39,6 +39,30 @@ export function ApiCreateReservation() {
   );
 }
 
+/** Agrupa a documentação HTTP da aquisição agregada de capacidade GA. */
+export function ApiCreateGeneralAdmissionReservation() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Cria uma Reservation GENERAL_ADMISSION por quantidade' }),
+    ApiCreatedResponse({
+      type: CreateReservationResponseDto,
+      description: 'Reservation criada integralmente com um item por ingresso solicitado.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Event.id ou quantidade inválida.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event inexistente.',
+    }),
+    ApiConflictResponse({
+      type: ApplicationErrorResponseDto,
+      description:
+        'Capacidade insuficiente, Reservation ativa existente, Event não elegível ou ocorrência já iniciada.',
+    }),
+  );
+}
+
 /**
  * Agrupa a documentação da consulta da Reservation ativa do CUSTOMER em um Event.
  */
@@ -73,7 +97,7 @@ export function ApiGetReservation() {
  */
 export function ApiCancelReservation() {
   return applyDecorators(
-    ApiOperation({ summary: 'Cancela uma Reservation ativa e libera seus EventSeats' }),
+    ApiOperation({ summary: 'Cancela uma Reservation ativa e libera seu inventário' }),
     ApiOkResponse({ type: ReservationDetailResponseDto }),
     ApiNotFoundResponse({
       type: ApplicationErrorResponseDto,

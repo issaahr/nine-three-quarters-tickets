@@ -13,6 +13,7 @@ import { Refund } from '../refunds/refund.entity';
 import { RefundStatus } from '../refunds/refundStatus.enum';
 import { Ticket } from '../tickets/ticket.entity';
 import { CreateReservationRequestDto } from './dto/createReservationRequest.dto';
+import { CreateGeneralAdmissionReservationRequestDto } from './dto/createGeneralAdmissionReservationRequest.dto';
 import { ActiveReservationExistsError } from './errors/activeReservationExists.error';
 import { EventAlreadyStartedError } from './errors/eventAlreadyStarted.error';
 import { EventCannotBeReservedError } from './errors/eventCannotBeReserved.error';
@@ -136,6 +137,28 @@ export class ReservationsService {
   }
 
   /**
+   * Cria uma Reservation GA somente quando a quantidade integral cabe na capacidade agregada.
+   *
+   * O lock pessimista do Event serializa concorrentes antes da contagem autoritativa. Cada unidade
+   * solicitada produz um ReservationItem sem EventSeat e com o preço vigente fotografado.
+   *
+   * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
+   * @param request - Event e quantidade escolhidos localmente, ainda sem constituir hold.
+   * @returns Reservation e uma unidade persistida para cada ingresso adquirido.
+   */
+  public createGeneralAdmission(
+    customerId: string,
+    request: CreateGeneralAdmissionReservationRequestDto,
+  ): Promise<{ reservation: Reservation; items: ReservationItem[] }> {
+    return this.reservationRepository.createGeneralAdmission({
+      customerId,
+      eventId: request.eventId,
+      quantity: request.quantity,
+      holdDurationSeconds: applicationConfig.reservations.holdDurationSeconds,
+    });
+  }
+
+  /**
    * Retorna uma Reservation pertencente ao CUSTOMER, com seu estado temporal calculado no PostgreSQL.
    *
    * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
@@ -164,7 +187,7 @@ export class ReservationsService {
   }
 
   /**
-   * Cancela uma Reservation ainda ativa e libera exclusivamente os EventSeats que ela mantém em hold.
+   * Cancela uma Reservation ainda ativa e libera o inventário correspondente à sua modalidade.
    *
    * O bloqueio da Reservation serializa cancelamentos concorrentes e a condição no UPDATE impede que
    * um EventSeat reatribuído seja liberado por engano.

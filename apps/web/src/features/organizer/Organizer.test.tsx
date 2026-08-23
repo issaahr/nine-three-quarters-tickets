@@ -21,6 +21,17 @@ const venue = {
   state: 'CE',
   country: 'Brasil',
   timeZone: 'America/Fortaleza',
+  admissionMode: AdmissionMode.Seated,
+};
+const generalAdmissionVenue = {
+  id: '93400000-0000-4000-8000-000000000002',
+  name: 'Nexus Arena',
+  address: 'Rua dos Alfeneiros, 4',
+  city: 'Belém',
+  state: 'Pará',
+  country: 'Brasil',
+  timeZone: 'America/Belem',
+  admissionMode: AdmissionMode.GeneralAdmission,
 };
 const movie = {
   source: 'TMDB',
@@ -30,6 +41,15 @@ const movie = {
   description: 'Paul Atreides segue sua jornada.',
   imageUrl: 'https://image.tmdb.org/poster.jpg',
   genres: ['Ficção científica'],
+};
+const attraction = {
+  source: 'TICKETMASTER',
+  externalId: 'K8vZ917Gku7',
+  category: EventCategory.Show,
+  title: 'Coldplay',
+  description: 'Turnê mundial da banda.',
+  imageUrl: 'https://s1.ticketm.net/coldplay.jpg',
+  genres: ['Rock'],
 };
 
 function LocationStateProbe() {
@@ -102,6 +122,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     renderOrganizer();
 
     expect(await screen.findByRole('heading', { name: movie.title })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Criar evento' })).toBeInTheDocument();
     expect(screen.getByText('Cine Imperial · Sala A · Fortaleza')).toBeInTheDocument();
     expect(screen.getByText('R$ 25,00')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Publicar' }));
@@ -137,6 +158,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     const user = userEvent.setup();
 
     renderOrganizer('/organizer/events/new');
+    expect(await screen.findByText(movie.description)).toBeInTheDocument();
     await user.type(await screen.findByLabelText('Pesquisar filme'), 'Duna');
     await user.click(screen.getByRole('button', { name: 'Buscar' }));
     await user.click(await screen.findByRole('button', { name: /Duna: Parte Dois/ }));
@@ -153,7 +175,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     await user.type(screen.getByLabelText('Preço por ingresso'), '25.90');
     await user.click(screen.getByRole('button', { name: 'Publicar' }));
 
-    expect(await screen.findByText('Sessão criada e publicada com sucesso.')).toHaveAttribute(
+    expect(await screen.findByText('Evento criado e publicado com sucesso.')).toHaveAttribute(
       'role',
       'status',
     );
@@ -163,6 +185,86 @@ describe('gestão inicial de Events pelo organizador', () => {
       venueId: venue.id,
       startsAtLocal: '2030-09-01T20:30',
       priceCents: 2590,
+    });
+    expect(publishHandler).toHaveBeenCalledOnce();
+  });
+
+  it('cria e publica um show por um fluxo separado com capacidade local', async () => {
+    let createBody: unknown;
+    const attractionSearchHandler = vi.fn();
+    const venueAdmissionModeHandler = vi.fn();
+    const publishHandler = vi.fn();
+    server.use(
+      http.get(`${apiUrl}/venues`, ({ request }) => {
+        venueAdmissionModeHandler(new URL(request.url).searchParams.get('admissionMode'));
+        return HttpResponse.json([generalAdmissionVenue]);
+      }),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({ items: [movie], page: 1, hasMore: false }),
+      ),
+      http.get(`${apiUrl}/catalog/attractions`, ({ request }) => {
+        attractionSearchHandler(new URL(request.url).searchParams.get('query'));
+        return HttpResponse.json({ items: [attraction], page: 1, hasMore: false });
+      }),
+      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+        HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
+      ),
+      http.post(`${apiUrl}/events/shows`, async ({ request }) => {
+        createBody = await request.json();
+        return HttpResponse.json(
+          { id: 'show-created', status: EventStatus.Draft },
+          { status: 201 },
+        );
+      }),
+      http.post(`${apiUrl}/events/show-created/publish`, () => {
+        publishHandler();
+        return HttpResponse.json({ id: 'show-created', status: EventStatus.Published });
+      }),
+      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+    await screen.findByRole('heading', { name: 'Filmes em alta' });
+    await user.click(screen.getByRole('button', { name: /Show/ }));
+
+    expect(screen.getByRole('heading', { name: 'Shows relevantes no Brasil' })).toBeInTheDocument();
+    expect(screen.queryByText(movie.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(attraction.description)).not.toBeInTheDocument();
+    expect(attractionSearchHandler).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText('Pesquisar atração'), attraction.title);
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    await user.click(await screen.findByRole('button', { name: /Coldplay/ }));
+    await user.click(screen.getByLabelText('Local'));
+    await user.click(await screen.findByRole('option', { name: generalAdmissionVenue.name }));
+    fireEvent.change(screen.getByLabelText('Data'), {
+      target: { value: '2030-09-01' },
+    });
+    fireEvent.change(screen.getByLabelText('Horário local'), {
+      target: { value: '20:30' },
+    });
+    await user.type(screen.getByLabelText('Preço por ingresso'), '150');
+    await user.type(screen.getByLabelText('Capacidade de entrada geral'), '0');
+
+    expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText('Capacidade de entrada geral'));
+    await user.type(screen.getByLabelText('Capacidade de entrada geral'), '500');
+    await user.click(screen.getByRole('button', { name: 'Publicar' }));
+
+    expect(await screen.findByText('Evento criado e publicado com sucesso.')).toHaveAttribute(
+      'role',
+      'status',
+    );
+    expect(attractionSearchHandler).toHaveBeenCalledWith(attraction.title);
+    expect(venueAdmissionModeHandler).toHaveBeenCalledWith(AdmissionMode.GeneralAdmission);
+    expect(createBody).toEqual({
+      externalId: attraction.externalId,
+      venueId: generalAdmissionVenue.id,
+      startsAtLocal: '2030-09-01T20:30',
+      priceCents: 15000,
+      capacity: 500,
     });
     expect(publishHandler).toHaveBeenCalledOnce();
   });
@@ -276,5 +378,61 @@ describe('gestão inicial de Events pelo organizador', () => {
 
     expect(await screen.findByText('Filme 1', { exact: true })).toBeInTheDocument();
     expect(await screen.findByText('Filme 11', { exact: true })).toBeInTheDocument();
+  });
+
+  it('mantém paginação infinita ao pesquisar atrações para um show', async () => {
+    let observerCallback!: IntersectionObserverCallback;
+
+    class IntersectionObserverMock {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+
+      public observe(): void {
+        observerCallback(
+          [{ isIntersecting: true } as IntersectionObserverEntry],
+          this as unknown as IntersectionObserver,
+        );
+      }
+
+      public disconnect(): void {}
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+    server.use(
+      http.get(`${apiUrl}/venues`, () => HttpResponse.json([venue])),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({ items: [movie], page: 1, hasMore: false }),
+      ),
+      http.get(`${apiUrl}/catalog/attractions`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page'));
+
+        return page === 1
+          ? HttpResponse.json({ items: [attraction], page: 1, hasMore: true })
+          : HttpResponse.json({
+              items: [
+                {
+                  ...attraction,
+                  externalId: 'K8vZ917Second',
+                  title: 'System of a Down',
+                },
+              ],
+              page: 2,
+              hasMore: false,
+            });
+      }),
+      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+        HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+    await user.click(screen.getByRole('button', { name: /Show/ }));
+    await user.type(screen.getByLabelText('Pesquisar atração'), 'system');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+    expect(await screen.findByText(attraction.title, { exact: true })).toBeInTheDocument();
+    expect(await screen.findByText('System of a Down', { exact: true })).toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+import { AdmissionMode } from '../../events/admissionMode.enum';
 import { Venue } from '../venue.entity';
 
 export class VenueResponseDto {
@@ -24,6 +25,9 @@ export class VenueResponseDto {
   @ApiProperty({ example: 'America/Sao_Paulo' })
   public timeZone!: string;
 
+  @ApiProperty({ enum: AdmissionMode })
+  public admissionMode!: AdmissionMode;
+
   /**
    * Limita a resposta aos dados necessários para escolha e interpretação do horário.
    *
@@ -39,6 +43,7 @@ export class VenueResponseDto {
       state: venue.state,
       country: venue.country,
       timeZone: venue.timeZone,
+      admissionMode: venue.admissionMode,
     };
   }
 }

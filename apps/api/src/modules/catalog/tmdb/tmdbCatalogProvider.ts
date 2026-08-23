@@ -4,7 +4,7 @@ import { applicationConfig } from '../../../config/applicationConfig';
 import { EventCategory } from '../../events/eventCategory.enum';
 import { CatalogItem } from '../catalogItem';
 import { CatalogPage } from '../catalogPage';
-import { CatalogProvider } from '../catalogProvider';
+import { MovieCatalogProvider } from '../catalogProvider';
 import { CatalogSource } from '../catalogSource.enum';
 import { CatalogTimeoutError } from '../errors/catalogTimeout.error';
 import { CatalogUnavailableError } from '../errors/catalogUnavailable.error';
@@ -19,7 +19,7 @@ import {
 const tmdbApiBaseUrl = 'https://api.themoviedb.org/3/';
 
 @Injectable()
-export class TmdbCatalogProvider implements CatalogProvider {
+export class TmdbCatalogProvider implements MovieCatalogProvider {
   public readonly source = CatalogSource.Tmdb;
 
   private readonly logger = new Logger(TmdbCatalogProvider.name);

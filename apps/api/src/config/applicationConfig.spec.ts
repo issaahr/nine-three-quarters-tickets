@@ -16,6 +16,8 @@ describe('loadApplicationConfig', () => {
     TMDB_LANGUAGE: 'pt-BR',
     TMDB_REQUEST_TIMEOUT_MS: '5000',
     TMDB_POSTER_SIZE: 'w500',
+    TICKETMASTER_API_KEY: 'test-ticketmaster-key',
+    TICKETMASTER_REQUEST_TIMEOUT_MS: '5000',
   };
 
   it('normaliza valores e configura o cookie para ambiente local', () => {
@@ -31,6 +33,10 @@ describe('loadApplicationConfig', () => {
           language: 'pt-BR',
           requestTimeoutMs: 5000,
           posterSize: 'w500',
+        },
+        ticketmaster: {
+          apiKey: 'test-ticketmaster-key',
+          requestTimeoutMs: 5000,
         },
       },
       auth: {
@@ -93,6 +99,9 @@ describe('loadApplicationConfig', () => {
     ['TMDB_LANGUAGE', 'portuguese'],
     ['TMDB_REQUEST_TIMEOUT_MS', '0'],
     ['TMDB_POSTER_SIZE', 'large'],
+    ['TICKETMASTER_API_KEY', undefined],
+    ['TICKETMASTER_REQUEST_TIMEOUT_MS', '0'],
+    ['TICKETMASTER_REQUEST_TIMEOUT_MS', undefined],
   ])('rejeita configuração inválida em %s', (name, value) => {
     expect(() =>
       loadApplicationConfig({

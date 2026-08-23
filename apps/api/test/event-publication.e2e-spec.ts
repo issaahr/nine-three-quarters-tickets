@@ -28,6 +28,7 @@ describe('publicação de Event', () => {
   let venuesRepository: Repository<Venue>;
   let organizer: User;
   let seededVenue: Venue;
+  let generalAdmissionVenue: Venue;
   const createdEventIds: string[] = [];
   const createdVenueIds: string[] = [];
 
@@ -48,6 +49,7 @@ describe('publicação de Event', () => {
       .getRepository(User)
       .findOneByOrFail({ email: 'organizer.demo@ntq.local' });
     seededVenue = await venuesRepository.findOneByOrFail({ name: 'Cine Imperial · Sala A' });
+    generalAdmissionVenue = await venuesRepository.findOneByOrFail({ name: 'Nexus Arena' });
   });
 
   afterAll(async () => {
@@ -119,6 +121,33 @@ describe('publicação de Event', () => {
     return event;
   }
 
+  /**
+   * Persiste um show GA controlado para validar a publicação sem inventário seated.
+   *
+   * @returns Event GA em DRAFT registrado para limpeza.
+   */
+  async function createGeneralAdmissionEvent(): Promise<Event> {
+    const event = await eventsRepository.save({
+      organizerId: organizer.id,
+      venueId: generalAdmissionVenue.id,
+      title: 'Show para publicação',
+      description: null,
+      imageUrl: null,
+      genres: ['Rock'],
+      category: EventCategory.Show,
+      admissionMode: AdmissionMode.GeneralAdmission,
+      status: EventStatus.Draft,
+      startsAt: new Date('2035-10-01T00:00:00.000Z'),
+      priceCents: 15000,
+      capacity: 500,
+      catalogSource: CatalogSource.Ticketmaster,
+      externalId: randomUUID(),
+    });
+
+    createdEventIds.push(event.id);
+    return event;
+  }
+
   it('materializa o layout uma única vez sob duas publicações concorrentes do mesmo Event', async () => {
     const cookie = await authenticateOrganizer();
     const event = await createEvent(seededVenue.id);
@@ -154,6 +183,28 @@ describe('publicação de Event', () => {
     });
   });
 
+  it('publica show GA de forma idempotente sem materializar EventSeat', async () => {
+    const cookie = await authenticateOrganizer();
+    const event = await createGeneralAdmissionEvent();
+
+    const responses = await Promise.all([
+      request(app.getHttpServer()).post(`/events/${event.id}/publish`).set('Cookie', cookie),
+      request(app.getHttpServer()).post(`/events/${event.id}/publish`).set('Cookie', cookie),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200]);
+    expect(responses[0].body).toMatchObject({
+      status: EventStatus.Published,
+      admissionMode: AdmissionMode.GeneralAdmission,
+      capacity: 500,
+    });
+    await expect(eventSeatsRepository.countBy({ eventId: event.id })).resolves.toBe(0);
+    await expect(eventsRepository.findOneByOrFail({ id: event.id })).resolves.toMatchObject({
+      status: EventStatus.Published,
+      capacity: 500,
+    });
+  });
+
   it('oculta Event de outro organizador durante a publicação', async () => {
     const event = await createEvent(seededVenue.id);
     const cookie = await authenticateOtherOrganizer();
@@ -176,6 +227,7 @@ describe('publicação de Event', () => {
       state: 'São Paulo',
       country: 'Brasil',
       timeZone: 'America/Sao_Paulo',
+      admissionMode: AdmissionMode.Seated,
     });
     createdVenueIds.push(emptyVenue.id);
     const event = await createEvent(emptyVenue.id);

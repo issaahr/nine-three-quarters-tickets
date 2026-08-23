@@ -46,6 +46,7 @@ describe('descoberta pública de Events', () => {
       state: 'CE',
       country: 'Brasil',
       timeZone: 'Pacific/Kiritimati',
+      admissionMode: AdmissionMode.Seated,
     });
     accentedVenue = await venuesRepository.save({
       name: `Cinema São Paulo ${randomUUID()}`,
@@ -54,6 +55,7 @@ describe('descoberta pública de Events', () => {
       state: 'SP',
       country: 'Brasil',
       timeZone: 'America/Sao_Paulo',
+      admissionMode: AdmissionMode.Seated,
     });
   });
 

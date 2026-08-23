@@ -7,6 +7,7 @@ import { AppModule } from '../src/app.module';
 import { Application } from '../src/application';
 import { Venue } from '../src/modules/venues/venue.entity';
 import { VenueSeat } from '../src/modules/venues/venueSeat.entity';
+import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
 
 describe('persistência de Venues', () => {
   let app: INestApplication;
@@ -49,6 +50,7 @@ describe('persistência de Venues', () => {
       state: 'São Paulo',
       country: 'Brasil',
       timeZone: 'America/Sao_Paulo',
+      admissionMode: AdmissionMode.Seated,
     });
 
     venueIds.push(venue.id);
@@ -103,6 +105,23 @@ describe('persistência de Venues', () => {
     );
   });
 
+  it('disponibiliza o Nexus Arena sem inventar assentos para entrada geral', async () => {
+    const venue = await venuesRepository.findOneOrFail({
+      where: { name: 'Nexus Arena' },
+      relations: { seats: true },
+    });
+
+    expect(venue).toMatchObject({
+      address: 'Rua dos Alfeneiros, 4',
+      city: 'Belém',
+      state: 'Pará',
+      country: 'Brasil',
+      timeZone: 'America/Belem',
+      admissionMode: AdmissionMode.GeneralAdmission,
+    });
+    expect(venue.seats).toHaveLength(0);
+  });
+
   it('expõe os Venues configurados somente ao papel ORGANIZER', async () => {
     const organizerCookie = await authenticate('organizer.demo@ntq.local');
     const response = await request(app.getHttpServer())
@@ -116,12 +135,47 @@ describe('persistência de Venues', () => {
           name: 'Cine Imperial · Sala A',
           city: 'São Paulo',
           timeZone: 'America/Sao_Paulo',
+          admissionMode: AdmissionMode.Seated,
+        }),
+        expect.objectContaining({
+          name: 'Nexus Arena',
+          city: 'Belém',
+          timeZone: 'America/Belem',
+          admissionMode: AdmissionMode.GeneralAdmission,
         }),
       ]),
     );
 
     const customerCookie = await authenticate('customer.one.demo@ntq.local');
     await request(app.getHttpServer()).get('/venues').set('Cookie', customerCookie).expect(403);
+  });
+
+  it('filtra Venues pela modalidade de admissão explícita', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+
+    const seatedResponse = await request(app.getHttpServer())
+      .get('/venues')
+      .query({ admissionMode: AdmissionMode.Seated })
+      .set('Cookie', organizerCookie)
+      .expect(200);
+    expect(seatedResponse.body.map(({ name }: { name: string }) => name)).toContain(
+      'Cine Imperial · Sala A',
+    );
+    expect(seatedResponse.body.map(({ name }: { name: string }) => name)).not.toContain(
+      'Nexus Arena',
+    );
+
+    const generalAdmissionResponse = await request(app.getHttpServer())
+      .get('/venues')
+      .query({ admissionMode: AdmissionMode.GeneralAdmission })
+      .set('Cookie', organizerCookie)
+      .expect(200);
+    expect(generalAdmissionResponse.body.map(({ name }: { name: string }) => name)).toContain(
+      'Nexus Arena',
+    );
+    expect(generalAdmissionResponse.body.map(({ name }: { name: string }) => name)).not.toContain(
+      'Cine Imperial · Sala A',
+    );
   });
 
   it('persiste o layout físico associado ao Venue', async () => {

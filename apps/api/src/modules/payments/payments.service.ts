@@ -265,13 +265,14 @@ export class PaymentsService {
           const items = await reservationItemsRepository.findBy({
             reservationId: reservation.id,
           });
+          const seatedItemCount = items.filter((item) => item.eventSeatId !== null).length;
           const soldEventSeatIds = await this.paymentRepository.sellHeldEventSeats(
             manager,
             reservation.id,
             now,
           );
 
-          if (soldEventSeatIds.length !== items.length) {
+          if (soldEventSeatIds.length !== seatedItemCount) {
             throw new PaymentCompletionConflictError();
           }
 

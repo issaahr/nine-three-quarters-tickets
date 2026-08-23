@@ -48,7 +48,7 @@ apps/api/src/
 ├── errors/              # contrato comum de erros controlados
 └── modules/
     ├── auth/            # login, sessão, cadastro, JWT e autorização
-    ├── catalog/         # port de catálogo e adapter da TMDb
+    ├── catalog/         # port de catálogo e adapters da TMDb e Ticketmaster
     ├── events/          # ocorrência, publicação e inventário seated materializado
     ├── payments/        # tentativa idempotente e gateway de cartão simulado
     ├── realtime/        # deltas de disponibilidade emitidos após commits
@@ -144,14 +144,18 @@ O catálogo em `/events` é público e restaura a sessão apenas para adaptar su
 
 O painel do organizador consulta exclusivamente `GET /organizer/me/events`; a identidade do proprietário vem da sessão e nunca de parâmetros controlados pelo frontend. O formulário oferece descoberta e pesquisa paginadas no catálogo, cria um DRAFT com o snapshot reconstruído pela API e publica a ocorrência em uma ação separada, permitindo recuperar o rascunho quando somente a publicação falha.
 
+Na API, filmes são criados por `POST /events/movies` como `MOVIE + SEATED`, enquanto shows são criados por `POST /events/shows` como `SHOW + GENERAL_ADMISSION`. Nos dois fluxos o conteúdo é reconstruído pelo provider correspondente; Venue, horário e preço permanecem locais, e somente shows recebem capacidade agregada. A publicação de shows não materializa `EventSeat` nem introduz setores.
+
 A descoberta pública consulta `GET /events` sem acessar novamente o catálogo externo. A API retorna somente ocorrências `PUBLISHED` e futuras, usando o snapshot persistido no Event e o Venue associado para busca, filtros e apresentação canônica. A leitura direta por `GET /events/:eventId` também admite ocorrências passadas e `CANCELLED`, mantém DRAFT indistinguível de um recurso inexistente e deriva `isPast` no PostgreSQL.
 
 O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criação bem-sucedida de `Reservation` abre o checkout protegido. TanStack Query mantém Reservation ativa, detalhe e mapa no estado remoto; criação e cancelamento invalidam o mapa. O countdown é derivado de `expiresAt` para apresentação, enquanto a API e os timestamps do PostgreSQL permanecem autoritativos para validade e inventário.
 
+No fluxo `GENERAL_ADMISSION`, `POST /reservations/general-admission` recebe uma quantidade e bloqueia a linha do Event antes de contar holds válidos e compras confirmadas. A Reservation e seus itens sem `EventSeat` são persistidos integralmente no mesmo commit; a leitura pública do detalhe calcula a disponibilidade agregada usando os mesmos estados persistidos.
+
 ## Fronteiras externas e futuras
 
-- A TMDb implementa a port `CatalogProvider`; sua resposta é normalizada antes de alcançar Events e nunca fornece inventário ou dados locais de venda.
-- Ticketmaster implementará a mesma fronteira quando o fluxo de shows entrar no escopo de implementação.
+- TMDb e Ticketmaster implementam a port `CatalogProvider`; suas respostas são normalizadas antes de alcançar Events e nunca fornecem inventário ou dados locais de venda.
+- A Ticketmaster consulta Attractions como conteúdo de shows, sem importar ocorrências, horários ou disponibilidade externos.
 - O gateway de pagamento é uma fronteira substituível; a V1 utiliza `FakePaymentGateway`.
 - Socket.IO atualizará percepção de disponibilidade, sem autoridade transacional.
 - Módulos futuros devem seguir as entidades e invariantes de `application-scope.md`, sem introduzir abstrações genéricas de inventário.

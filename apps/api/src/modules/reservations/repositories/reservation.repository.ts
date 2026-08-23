@@ -1,14 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, IsNull, MoreThan, Repository } from 'typeorm';
 
+import { AdmissionMode } from '../../events/admissionMode.enum';
+import { Event } from '../../events/event.entity';
 import { EventSeat } from '../../events/eventSeat.entity';
+import { EventStatus } from '../../events/eventStatus.enum';
+import { EventNotFoundError } from '../../events/errors/eventNotFound.error';
+import { ActiveReservationExistsError } from '../errors/activeReservationExists.error';
+import { EventAlreadyStartedError } from '../errors/eventAlreadyStarted.error';
+import { EventCannotBeReservedError } from '../errors/eventCannotBeReserved.error';
+import { GeneralAdmissionCapacityUnavailableError } from '../errors/generalAdmissionCapacityUnavailable.error';
 import { ReservationItem } from '../reservationItem.entity';
 import { Reservation } from '../reservation.entity';
 import { ReservationStatus } from '../reservationStatus.enum';
 import { Ticket } from '../../tickets/ticket.entity';
 import {
   AcquireEventSeatsParameters,
+  CreateGeneralAdmissionReservationParameters,
+  DatabaseTimestampRow,
+  GeneralAdmissionReservationCreationResult,
   ReleasedEventSeatRow,
   ReservationDetail,
 } from './reservationRepository.interfaces';
@@ -25,6 +36,7 @@ export class ReservationRepository {
     private readonly reservationsRepository: Repository<Reservation>,
     @InjectRepository(ReservationItem)
     private readonly reservationItemsRepository: Repository<ReservationItem>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -55,6 +67,131 @@ export class ReservationRepository {
       .execute();
 
     return result.affected ?? 0;
+  }
+
+  /**
+   * Executa integralmente a aquisição GA na transação que serializa a capacidade do Event.
+   *
+   * @param parameters - Identidade, ocorrência, quantidade e duração autoritativa do hold.
+   * @returns Reservation e itens persistidos no mesmo commit da aquisição de capacidade.
+   */
+  public createGeneralAdmission(
+    parameters: CreateGeneralAdmissionReservationParameters,
+  ): Promise<GeneralAdmissionReservationCreationResult> {
+    return this.dataSource.transaction(async (manager) => {
+      const eventsRepository = manager.getRepository(Event);
+      const reservationsRepository = manager.getRepository(Reservation);
+      const reservationItemsRepository = manager.getRepository(ReservationItem);
+      const now = await this.getDatabaseTimestamp(manager);
+      const expiresAt = new Date(now.getTime() + parameters.holdDurationSeconds * 1000);
+      const event = await eventsRepository.findOne({
+        where: { id: parameters.eventId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!event) {
+        throw new EventNotFoundError();
+      }
+
+      if (
+        event.status !== EventStatus.Published ||
+        event.admissionMode !== AdmissionMode.GeneralAdmission ||
+        event.capacity === null
+      ) {
+        throw new EventCannotBeReservedError();
+      }
+
+      if (event.startsAt.getTime() <= now.getTime()) {
+        throw new EventAlreadyStartedError();
+      }
+
+      const activeReservation = await reservationsRepository.findOne({
+        select: { id: true },
+        where: {
+          customerId: parameters.customerId,
+          eventId: event.id,
+          confirmedAt: IsNull(),
+          cancelledAt: IsNull(),
+          expiresAt: MoreThan(now),
+        },
+      });
+
+      if (activeReservation) {
+        throw new ActiveReservationExistsError();
+      }
+
+      const occupiedQuantity = await this.countOccupiedGeneralAdmissionItems(
+        manager,
+        event.id,
+        now,
+      );
+
+      if (occupiedQuantity + parameters.quantity > event.capacity) {
+        throw new GeneralAdmissionCapacityUnavailableError();
+      }
+
+      const reservation = await reservationsRepository.save(
+        reservationsRepository.create({
+          customerId: parameters.customerId,
+          eventId: event.id,
+          expiresAt,
+          confirmedAt: null,
+          cancelledAt: null,
+        }),
+      );
+      const items = await reservationItemsRepository.save(
+        Array.from({ length: parameters.quantity }, () =>
+          reservationItemsRepository.create({
+            reservationId: reservation.id,
+            eventSeatId: null,
+            unitPriceCents: event.priceCents,
+          }),
+        ),
+      );
+
+      return { reservation, items };
+    });
+  }
+
+  /**
+   * Conta unidades GA que ainda ocupam capacidade dentro da transação que bloqueou o Event.
+   *
+   * Reservations confirmadas permanecem ocupando capacidade independentemente de `expiresAt`.
+   * Holds não confirmados contam somente enquanto ativos, e cancelamentos deixam de ocupar estoque.
+   *
+   * @param manager - EntityManager da transação que mantém o lock do Event.
+   * @param eventId - Event GENERAL_ADMISSION cuja ocupação será calculada.
+   * @param now - Instante autoritativo usado para desconsiderar holds expirados.
+   * @returns Quantidade de ReservationItems que atualmente consomem capacidade.
+   */
+  private countOccupiedGeneralAdmissionItems(
+    manager: EntityManager,
+    eventId: string,
+    now: Date,
+  ): Promise<number> {
+    return manager
+      .getRepository(ReservationItem)
+      .createQueryBuilder('reservationItem')
+      .innerJoin(
+        Reservation,
+        'reservation',
+        '"reservation"."id" = "reservationItem"."reservationId"',
+      )
+      .where('"reservation"."eventId" = :eventId', { eventId })
+      .andWhere('"reservation"."cancelledAt" IS NULL')
+      .andWhere('("reservation"."confirmedAt" IS NOT NULL OR "reservation"."expiresAt" > :now)', {
+        now,
+      })
+      .getCount();
+  }
+
+  /** Obtém o instante do PostgreSQL na mesma transação que protege a capacidade GA. */
+  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
+    const timestampRows = (await manager.query(
+      'SELECT CURRENT_TIMESTAMP AS "now"',
+    )) as DatabaseTimestampRow[];
+
+    return new Date(timestampRows[0].now);
   }
 
   /**

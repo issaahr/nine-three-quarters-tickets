@@ -37,17 +37,21 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - A descoberta inicial usa filmes populares da TMDb; descoberta e pesquisa preservam paginação em um contrato normalizado próprio.
 - Gêneros e configuração de imagens são mantidos apenas em cache de processo e uma falha não permanece cacheada.
 - A criação de filme recebe somente identidade externa e dados locais; o snapshot é reconstruído pela API antes de persistir o Event.
+- `TicketmasterCatalogProvider` pesquisa Attractions pela Discovery API e normaliza conteúdo, imagens e níveis relevantes de classification para `CatalogItem`.
+- A integração da Ticketmaster não consulta nem importa eventos comerciais, horários, preços, capacidade ou disponibilidade externos.
+- A criação de show reconstrói o snapshot da Attraction e persiste Venue, horário, preço e capacidade definidos localmente.
 - Chamadas externas não ocorrem dentro de transações PostgreSQL.
 - Horários informados pelo organizador são interpretados no timezone IANA do Venue por `@js-temporal/polyfill`.
 - Horários locais inexistentes ou ambíguos em transições de offset são rejeitados em vez de ajustados silenciosamente.
 - Testes e CI substituem a port de catálogo e não dependem da disponibilidade real da TMDb.
 
-## Publicação e inventário SEATED
+## Publicação e inventário
 
 - A publicação é uma transição explícita de `DRAFT` para `PUBLISHED`.
 - Para Events `SEATED`, publicação e materialização de `EventSeat` acontecem na mesma transação PostgreSQL.
 - O Event é bloqueado durante a transição; chamadas concorrentes para um Event já publicado são idempotentes e não recriam inventário.
 - Cada `VenueSeat` aplicável produz exatamente um `EventSeat`, protegido por `UNIQUE(eventId, venueSeatId)`.
+- Para Events `GENERAL_ADMISSION`, a publicação preserva a capacidade agregada do próprio Event e não cria `EventSeat` ou `EventSector`.
 - O status percebido do assento é derivado de `holdReservationId`, `holdExpiresAt` e `soldAt`; não existe enum persistido de disponibilidade.
 - A listagem privada usa `GET /organizer/me/events` e deriva o proprietário exclusivamente da sessão autenticada.
 - O frontend executa criação e publicação como ações separadas. Se somente a publicação falhar, o DRAFT permanece recuperável no painel.
@@ -71,11 +75,23 @@ Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.
 
 Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md).
 
+## Reservations GENERAL_ADMISSION
+
+- `POST /reservations/general-admission` recebe Event e quantidade; a seleção local ainda não constitui hold.
+- A transação bloqueia pessimisticamente o `Event` antes de calcular a ocupação agregada e criar qualquer unidade.
+- Ocupação GA soma `ReservationItem` de Reservations confirmadas não canceladas e de holds ACTIVE ainda não expirados.
+- Capacidade insuficiente reverte a operação integralmente; nenhum item parcial permanece persistido.
+- Cada unidade adquirida produz um `ReservationItem` com `eventSeatId` nulo e snapshot de `Event.priceCents`.
+- Expiração e cancelamento liberam capacidade por timestamps persistidos, sem unidades artificiais, scheduler ou `EventSector`.
+- A confirmação de Payment valida holds de assento somente para itens que possuem `eventSeatId`; todos os itens confirmados recebem Tickets individuais pelo fluxo comum.
+- Cancelamento, Refund e Gate operam sobre ReservationItems e Tickets genéricos, sem branches por categoria `SHOW`.
+
 ## Descoberta pública de Events
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
 - A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro; filtros de calendário explícitos também podem consultar Events passados da data selecionada.
 - `GET /events/:eventId` admite `PUBLISHED` passados e `CANCELLED`, responde como não encontrado para DRAFT e recebe `isPast` calculado pelo PostgreSQL.
+- O detalhe de um Event GA expõe sua capacidade e a disponibilidade agregada calculada no PostgreSQL.
 - A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
 - Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
 - Filtros de calendário comparam cada ocorrência segundo o timezone IANA de seu Venue.

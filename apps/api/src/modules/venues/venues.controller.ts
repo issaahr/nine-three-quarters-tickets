@@ -1,10 +1,11 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
+import { ListVenuesQueryDto } from './dto/listVenuesQuery.dto';
 import { VenueResponseDto } from './dto/venueResponse.dto';
 import { Venue } from './venue.entity';
 import { ApiListVenues } from './venues.swagger';
@@ -23,8 +24,11 @@ export class VenuesController {
   @Get()
   @Roles(UserRole.Organizer)
   @ApiListVenues()
-  public async list(): Promise<VenueResponseDto[]> {
-    const venues = await this.venuesRepository.find({ order: { name: 'ASC' } });
+  public async list(@Query() query: ListVenuesQueryDto): Promise<VenueResponseDto[]> {
+    const venues = await this.venuesRepository.find({
+      where: query.admissionMode ? { admissionMode: query.admissionMode } : undefined,
+      order: { name: 'ASC' },
+    });
     return venues.map(VenueResponseDto.fromVenue);
   }
 }

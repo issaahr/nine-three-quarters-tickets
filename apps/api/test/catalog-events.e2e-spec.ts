@@ -5,9 +5,12 @@ import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
 import { Application } from '../src/application';
-import { catalogProviderToken } from '../src/modules/catalog/catalog.constants';
+import {
+  movieCatalogProviderToken,
+  showCatalogProviderToken,
+} from '../src/modules/catalog/catalog.constants';
 import { CatalogItem } from '../src/modules/catalog/catalogItem';
-import { CatalogProvider } from '../src/modules/catalog/catalogProvider';
+import { MovieCatalogProvider, ShowCatalogProvider } from '../src/modules/catalog/catalogProvider';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
 import { Event } from '../src/modules/events/event.entity';
@@ -15,10 +18,11 @@ import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { Venue } from '../src/modules/venues/venue.entity';
 
-describe('catálogo e criação de Event de filme', () => {
+describe('catálogo e criação de Event', () => {
   let app: INestApplication;
   let eventsRepository: Repository<Event>;
   let venue: Venue;
+  let generalAdmissionVenue: Venue;
   const createdEventIds: string[] = [];
 
   const movie = {
@@ -31,17 +35,36 @@ describe('catálogo e criação de Event de filme', () => {
     genres: ['Ficção científica', 'Aventura'],
   } satisfies CatalogItem;
 
-  const catalogProvider: CatalogProvider = {
+  const attraction = {
+    source: CatalogSource.Ticketmaster,
+    externalId: 'K8vZ917Gku7',
+    category: EventCategory.Show,
+    title: 'Florence + The Machine',
+    description: 'Atração normalizada retornada pelo provider.',
+    imageUrl: 'https://s1.ticketm.net/artist.jpg',
+    genres: ['Music', 'Rock'],
+  } satisfies CatalogItem;
+
+  const catalogProvider: MovieCatalogProvider = {
     source: CatalogSource.Tmdb,
     search: jest.fn(),
     listPopular: jest.fn(),
     findByExternalId: jest.fn(),
   };
 
+  const showCatalogProvider: ShowCatalogProvider = {
+    source: CatalogSource.Ticketmaster,
+    search: jest.fn(),
+    listRelevantInBrazil: jest.fn(),
+    findByExternalId: jest.fn(),
+  };
+
   beforeAll(async () => {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(catalogProviderToken)
+      .overrideProvider(movieCatalogProviderToken)
       .useValue(catalogProvider)
+      .overrideProvider(showCatalogProviderToken)
+      .useValue(showCatalogProvider)
       .compile();
 
     app = testingModule.createNestApplication();
@@ -53,6 +76,9 @@ describe('catálogo e criação de Event de filme', () => {
     venue = await dataSource
       .getRepository(Venue)
       .findOneByOrFail({ name: 'Cine Imperial · Sala A' });
+    generalAdmissionVenue = await dataSource
+      .getRepository(Venue)
+      .findOneByOrFail({ name: 'Nexus Arena' });
   });
 
   beforeEach(() => {
@@ -65,6 +91,15 @@ describe('catálogo e criação de Event de filme', () => {
       .mockReset()
       .mockResolvedValue({ items: [movie], page: 1, hasMore: false });
     jest.mocked(catalogProvider.findByExternalId).mockReset().mockResolvedValue(movie);
+    jest
+      .mocked(showCatalogProvider.search)
+      .mockReset()
+      .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
+    jest
+      .mocked(showCatalogProvider.listRelevantInBrazil)
+      .mockReset()
+      .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
+    jest.mocked(showCatalogProvider.findByExternalId).mockReset().mockResolvedValue(attraction);
   });
 
   afterAll(async () => {
@@ -130,6 +165,59 @@ describe('catálogo e criação de Event de filme', () => {
     expect(catalogProvider.search).not.toHaveBeenCalled();
   });
 
+  it('permite somente ao ORGANIZER pesquisar Attractions normalizadas', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: '  Florence  ', page: 1 })
+      .set('Cookie', organizerCookie)
+      .expect(200)
+      .expect({ items: [attraction], page: 1, hasMore: false });
+
+    expect(showCatalogProvider.search).toHaveBeenCalledWith('Florence', 1);
+
+    const invalidResponse = await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: ' ', page: 51 })
+      .set('Cookie', organizerCookie)
+      .expect(400);
+
+    expect(invalidResponse.body.message).toEqual(
+      expect.arrayContaining([
+        'Busca deve possuir ao menos 2 caracteres',
+        'Página deve ser menor ou igual a 50',
+      ]),
+    );
+    expect(showCatalogProvider.search).toHaveBeenCalledTimes(1);
+
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/catalog/attractions')
+      .query({ query: 'Florence' })
+      .set('Cookie', customerCookie)
+      .expect(403);
+  });
+
+  it('lista atrações relevantes no Brasil para a descoberta inicial do ORGANIZER', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .get('/catalog/attractions/relevant')
+      .query({ page: 2 })
+      .set('Cookie', organizerCookie)
+      .expect(200)
+      .expect({ items: [attraction], page: 1, hasMore: false });
+
+    expect(showCatalogProvider.listRelevantInBrazil).toHaveBeenCalledWith(2);
+
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/catalog/attractions/relevant')
+      .set('Cookie', customerCookie)
+      .expect(403);
+  });
+
   it('cria DRAFT com snapshot local e interpreta o horário pelo timezone do Venue', async () => {
     const cookie = await authenticate('organizer.demo@ntq.local');
     const response = await request(app.getHttpServer())
@@ -165,6 +253,130 @@ describe('catálogo e criação de Event de filme', () => {
       capacity: null,
       startsAt: new Date('2030-09-01T23:30:00.000Z'),
     });
+  });
+
+  it('cria show GENERAL_ADMISSION com snapshot e capacidade definidos localmente', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+    const response = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 500,
+      })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      venueId: generalAdmissionVenue.id,
+      title: attraction.title,
+      description: attraction.description,
+      imageUrl: attraction.imageUrl,
+      genres: attraction.genres,
+      category: EventCategory.Show,
+      admissionMode: AdmissionMode.GeneralAdmission,
+      status: EventStatus.Draft,
+      startsAt: '2030-10-11T00:00:00.000Z',
+      priceCents: 15000,
+      capacity: 500,
+    });
+    createdEventIds.push(response.body.id);
+
+    await expect(eventsRepository.findOneByOrFail({ id: response.body.id })).resolves.toMatchObject(
+      {
+        organizerId: expect.any(String),
+        catalogSource: CatalogSource.Ticketmaster,
+        externalId: attraction.externalId,
+        capacity: 500,
+      },
+    );
+    expect(showCatalogProvider.findByExternalId).toHaveBeenCalledWith(attraction.externalId);
+  });
+
+  it('valida o contrato local do show antes de consultar a Ticketmaster', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+    const response = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 0,
+        title: 'Título fabricado',
+        admissionMode: AdmissionMode.Seated,
+      })
+      .expect(400);
+
+    expect(response.body.message).toEqual(
+      expect.arrayContaining([
+        'Capacidade deve ser maior ou igual a 1',
+        'property title should not exist',
+        'property admissionMode should not exist',
+      ]),
+    );
+    expect(showCatalogProvider.findByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('rejeita Venue incompatível com a modalidade derivada do tipo de Event', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+
+    const showResponse = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: venue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 500,
+      })
+      .expect(409);
+    expect(showResponse.body).toMatchObject({ code: 'VENUE_ADMISSION_MODE_MISMATCH' });
+    expect(showCatalogProvider.findByExternalId).not.toHaveBeenCalled();
+
+    const movieResponse = await request(app.getHttpServer())
+      .post('/events/movies')
+      .set('Cookie', cookie)
+      .send({
+        externalId: movie.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 2500,
+      })
+      .expect(409);
+    expect(movieResponse.body).toMatchObject({ code: 'VENUE_ADMISSION_MODE_MISMATCH' });
+    expect(catalogProvider.findByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('não cria show quando a atração não existe e restringe o fluxo a ORGANIZER', async () => {
+    const payload = {
+      externalId: attraction.externalId,
+      venueId: generalAdmissionVenue.id,
+      startsAtLocal: '2030-10-10T21:00',
+      priceCents: 15000,
+      capacity: 500,
+    };
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', customerCookie)
+      .send(payload)
+      .expect(403);
+
+    jest.mocked(showCatalogProvider.findByExternalId).mockResolvedValueOnce(null);
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+    await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', organizerCookie)
+      .send({ ...payload, externalId: 'not-found' })
+      .expect(404);
+
+    await expect(eventsRepository.countBy({ externalId: 'not-found' })).resolves.toBe(0);
   });
 
   it('rejeita valores autoritativos enviados pelo frontend', async () => {

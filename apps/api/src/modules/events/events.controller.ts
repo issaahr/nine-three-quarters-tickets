@@ -16,13 +16,15 @@ import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
-import { CreateMovieEventResponseDto } from './dto/createMovieEventResponse.dto';
+import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
+import { EventMutationResponseDto } from './dto/eventMutationResponse.dto';
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import {
   ApiCreateMovieEvent,
+  ApiCreateShowEvent,
   ApiDiscoverEvents,
   ApiGetEventDetail,
   ApiGetEventSeatMap,
@@ -68,7 +70,11 @@ export class EventsController {
     @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
   ): Promise<EventDetailResponseDto> {
     const result = await this.eventsService.findPublicDetail(eventId);
-    return EventDetailResponseDto.fromPublicEvent(result.event, result.isPast);
+    return EventDetailResponseDto.fromPublicEvent(
+      result.event,
+      result.isPast,
+      result.availableQuantity,
+    );
   }
 
   /**
@@ -80,9 +86,21 @@ export class EventsController {
   public async createMovie(
     @Req() request: AuthenticatedRequest,
     @Body() data: CreateMovieEventRequestDto,
-  ): Promise<CreateMovieEventResponseDto> {
+  ): Promise<EventMutationResponseDto> {
     const event = await this.eventsService.createMovie(request.user.id, data);
-    return CreateMovieEventResponseDto.fromEvent(event);
+    return EventMutationResponseDto.fromEvent(event);
+  }
+
+  /** Cria um show GA a partir da atração, Venue, horário, preço e capacidade locais. */
+  @Post('shows')
+  @Roles(UserRole.Organizer)
+  @ApiCreateShowEvent()
+  public async createShow(
+    @Req() request: AuthenticatedRequest,
+    @Body() data: CreateShowEventRequestDto,
+  ): Promise<EventMutationResponseDto> {
+    const event = await this.eventsService.createShow(request.user.id, data);
+    return EventMutationResponseDto.fromEvent(event);
   }
 
   /**
@@ -95,8 +113,8 @@ export class EventsController {
   public async publish(
     @Req() request: AuthenticatedRequest,
     @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
-  ): Promise<CreateMovieEventResponseDto> {
+  ): Promise<EventMutationResponseDto> {
     const event = await this.eventsService.publish(request.user.id, eventId);
-    return CreateMovieEventResponseDto.fromEvent(event);
+    return EventMutationResponseDto.fromEvent(event);
   }
 }

@@ -7,7 +7,7 @@ export enum ReservationStatus {
 
 export interface ReservationItem {
   id: string;
-  eventSeatId: string;
+  eventSeatId: string | null;
   unitPriceCents: number;
 }
 
@@ -24,6 +24,11 @@ export interface ReservationDetail {
 export interface CreateReservationRequest {
   eventId: string;
   eventSeatIds: string[];
+}
+
+export interface CreateGeneralAdmissionReservationRequest {
+  eventId: string;
+  quantity: number;
 }
 
 export interface CreatedReservation {

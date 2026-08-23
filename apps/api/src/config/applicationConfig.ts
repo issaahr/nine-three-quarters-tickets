@@ -219,6 +219,30 @@ function getTmdbPosterSize(environmentVariables: NodeJS.ProcessEnv): string {
 }
 
 /**
+ * Mantém a chave da Ticketmaster obrigatória e exclusivamente no backend.
+ */
+function getTicketmasterApiKey(environmentVariables: NodeJS.ProcessEnv): string {
+  return getRequiredEnvironmentVariable('TICKETMASTER_API_KEY', environmentVariables);
+}
+
+/**
+ * Impede que a consulta de atrações permaneça aguardando indefinidamente.
+ */
+function getTicketmasterRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv): number {
+  const timeout = Number(
+    getRequiredEnvironmentVariable('TICKETMASTER_REQUEST_TIMEOUT_MS', environmentVariables),
+  );
+
+  if (!Number.isInteger(timeout) || timeout <= 0) {
+    throw new ConfigurationError(
+      'Variável de ambiente TICKETMASTER_REQUEST_TIMEOUT_MS deve ser um inteiro positivo',
+    );
+  }
+
+  return timeout;
+}
+
+/**
  * Lê e valida conjuntamente toda configuração exigida pelo servidor HTTP.
  * Configurações exclusivas do banco permanecem separadas para uso pelo CLI de migrations.
  */
@@ -242,6 +266,10 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         language: getTmdbLanguage(environmentVariables),
         requestTimeoutMs: getTmdbRequestTimeoutMs(environmentVariables),
         posterSize: getTmdbPosterSize(environmentVariables),
+      },
+      ticketmaster: {
+        apiKey: getTicketmasterApiKey(environmentVariables),
+        requestTimeoutMs: getTicketmasterRequestTimeoutMs(environmentVariables),
       },
     },
     auth: {
