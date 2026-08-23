@@ -62,7 +62,11 @@ Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.
 - `CURRENT_TIMESTAMP` do PostgreSQL determina criação, validade e expiração; a duração do hold vem de `RESERVATION_HOLD_DURATION_SECONDS`.
 - A correção da expiração não depende de scheduler: um hold com `holdExpiresAt` vencido pode ser substituído por uma nova aquisição válida.
 - A reserva ativa por CUSTOMER/Event é uma política de fluxo. Não são usados advisory lock, lock artificial de User ou infraestrutura adicional para transformá-la em invariante crítica.
-- O cancelamento bloqueia a `Reservation`, valida seu estado com o horário do banco e libera somente os assentos cujo `holdReservationId` ainda corresponde a ela, no mesmo commit.
+- Cancelamento de Reservation, cancelamento de Event e finalização de Payment adquirem locks na ordem `Event → Reservation → Payment → Ticket/EventSeat/Refund`; referências podem ser lidas antes sem lock, mas toda decisão é revalidada depois dos locks.
+- Quando um Event possui múltiplas Reservations, elas são bloqueadas por `id` em ordem crescente para evitar inversões entre linhas.
+- O cancelamento valida o estado da `Reservation` com o horário do banco e libera somente os assentos cujo `holdReservationId` ainda corresponde a ela, no mesmo commit.
+- O cancelamento de compra confirmada preserva o Payment aprovado, marca Reservation e Tickets como cancelados, devolve o inventário e registra um Refund integral quando houve valor pago.
+- O cancelamento de Event bloqueia o Event e executa essas transições na mesma transação; o delta realtime só é emitido após o commit.
 - O checkout é uma rota autenticada de CUSTOMER. Seu countdown deriva de `expiresAt`, provoca nova consulta ao chegar a zero e nunca substitui a validação autoritativa da API.
 
 Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md).

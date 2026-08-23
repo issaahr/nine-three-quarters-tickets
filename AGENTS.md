@@ -11,6 +11,7 @@ Canonical project documentation:
 - `docs/architecture.md` — application structure and module boundaries.
 - `docs/technical-decisions.md` — accepted technical decisions.
 - `docs/adr/` — architectural decision records.
+- `docs/ui-desicions.md` - ui decisions.
 
 Read the relevant documentation before implementing an issue.
 

@@ -1505,7 +1505,7 @@ para os EventSeats correspondentes.
 
 ### GENERAL_ADMISSION
 
-Os itens cancelados deixam de compor capacidade confirmada disponível para venda.
+Os itens cancelados deixam de compor a capacidade ocupada e retornam à disponibilidade para venda.
 
 Tickets continuam persistidos historicamente com:
 
@@ -1524,8 +1524,8 @@ O fluxo deve:
 - marcar Event como CANCELLED;
 - impedir novas Reservations;
 - cancelar Reservations ACTIVE;
-- cancelar Tickets emitidos;
-- gerar full refund para compras confirmadas.
+- cancelar Reservations confirmadas e seus Tickets emitidos;
+- gerar full refund para compras confirmadas quando houver valor pago.
 
 Para a escala da demonstração, esse processamento pode ocorrer de forma síncrona em batch.
 
@@ -1543,28 +1543,15 @@ Essa limitação é documentada como consideração de escalabilidade, não como
 
 ---
 
-## 42. Edição após reservas
+## 42. Edição de Event
 
-Antes da primeira Reservation, alterações estruturais podem reconstruir o inventário.
+Os dados estruturais de um Event são imutáveis após sua criação. A V1 não altera nem reconstrói Venue, `startsAt`, layout, `admissionMode` ou capacidade de uma ocorrência.
 
-Depois que existir qualquer Reservation histórica associada ao Event, ficam bloqueados:
+O único dado comercial editável é `priceCents`. A alteração afeta apenas novas Reservations graças ao snapshot em `ReservationItem.unitPriceCents`.
 
-- startsAt;
-- Venue;
-- layout;
-- admissionMode;
-- capacity.
+`priceCents` aceita `0` para eventos gratuitos e rejeita valores negativos. Um máximo alto protege a API contra payloads absurdos, não contra preços legítimos.
 
-Isso vale mesmo se todas as Reservations tiverem expirado ou sido canceladas.
-
-Continuam editáveis:
-
-- preço;
-- descrição;
-- imagem;
-- metadados estéticos.
-
-Alterar preço afeta apenas novas Reservations graças ao snapshot em `ReservationItem.unitPriceCents`.
+No dashboard do organizador, “Ingressos vendidos” inclui Tickets válidos e cancelados. No card de cada Event, a capacidade é exibida como `disponíveis/total`: somente compras confirmadas ainda não canceladas ocupam inventário. “Eventos ativos” inclui todas as ocorrências publicadas cujo início ainda não chegou, inclusive gratuitas ou sem vendas. “Receita total” representa a receita efetiva: o valor das compras confirmadas menos os reembolsos concluídos.
 
 ---
 
