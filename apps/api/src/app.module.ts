@@ -9,8 +9,10 @@ import { RealtimeModule } from './modules/realtime/realtime.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { VenuesModule } from './modules/venues/venues.module';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
     AuthModule,
