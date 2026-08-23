@@ -59,7 +59,7 @@ jobs:
 
       - name: Release API image
         env:
-          HEALTH_URL: ${{ secrets.HEROKU_HEALTH_URL }}
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
         # As migrations executam durante a inicialização e precisam manter compatibilidade
         # com a release anterior; este rollback não reverte schema nem dados.
         run: heroku container:release web --app "${{ secrets.HEROKU_APP_NAME }}"
@@ -91,7 +91,9 @@ jobs:
         if: ${{ steps.health.outcome == 'failure' }}
         env:
           HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
-        run: heroku rollback "${{ steps.previous_release.outputs.version }}" --app "${{ secrets.HEROKU_APP_NAME }}"
+        run: |
+          heroku rollback "${{ steps.previous_release.outputs.version }}" \
+            --app "${{ secrets.HEROKU_APP_NAME }}"
 
       - name: Mark deployment as failed after rollback
         if: ${{ steps.health.outcome == 'failure' }}
