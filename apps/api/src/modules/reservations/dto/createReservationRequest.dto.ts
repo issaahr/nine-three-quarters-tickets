@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, ArrayUnique, IsArray, IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, ArrayUnique, IsArray, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateReservationRequestDto {
@@ -16,6 +16,9 @@ export class CreateReservationRequestDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
+  @ArrayMaxSize(1_000, {
+    message: 'Quantidade de assentos excede o limite permitido por requisição',
+  })
   @IsUUID('4', { each: true })
   public eventSeatIds!: string[];
 }

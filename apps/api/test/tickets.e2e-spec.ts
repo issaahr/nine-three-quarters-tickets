@@ -363,6 +363,28 @@ describe('Tickets', () => {
       .expect(403);
   });
 
+  it('rejeita manualCode acima de 200 caracteres', async () => {
+    const { reservation } = await createConfirmedPurchase(customerOne, 1);
+    const cookie = await authenticate(gate);
+
+    await request(app.getHttpServer())
+      .post(`/gate/events/${reservation.eventId}/check-in/manual-code`)
+      .set('Cookie', cookie)
+      .send({ manualCode: 'a'.repeat(201) })
+      .expect(400);
+  });
+
+  it('rejeita credential acima de 200 caracteres', async () => {
+    const { reservation } = await createConfirmedPurchase(customerOne, 1);
+    const cookie = await authenticate(gate);
+
+    await request(app.getHttpServer())
+      .post(`/gate/events/${reservation.eventId}/check-in`)
+      .set('Cookie', cookie)
+      .send({ credential: 'a'.repeat(201) })
+      .expect(400);
+  });
+
   it('aceita exatamente um check-in em duas tentativas concorrentes', async () => {
     const { reservation, tickets } = await createConfirmedPurchase(customerOne, 1);
     const ticket = tickets[0];

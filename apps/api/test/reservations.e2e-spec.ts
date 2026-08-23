@@ -539,6 +539,24 @@ describe('Reservations seated', () => {
       .expect(400);
   });
 
+  it('rejeita um payload de assentos acima do teto defensivo', async () => {
+    const cookie = await authenticate(customerOne.email);
+
+    await request(app.getHttpServer())
+      .post('/reservations')
+      .set('Cookie', cookie)
+      .send({
+        eventId: randomUUID(),
+        eventSeatIds: Array.from({ length: 1_001 }, () => randomUUID()),
+      })
+      .expect(400)
+      .expect(({ body }) =>
+        expect(body.message).toContain(
+          'Quantidade de assentos excede o limite permitido por requisição',
+        ),
+      );
+  });
+
   it('projeta um hold HTTP para outro cliente conectado à room da ocorrência', async () => {
     const event = await createEvent();
     const [seat] = await createEventSeats(event, 1);
