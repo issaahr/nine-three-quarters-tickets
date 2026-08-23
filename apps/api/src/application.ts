@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
 
@@ -10,6 +11,7 @@ export class Application {
   // Aplica os contratos globais compartilhados por todos os endpoints HTTP.
   public configure(app: INestApplication): void {
     app.use(cookieParser());
+    app.getHttpAdapter().getInstance().set('trust proxy', applicationConfig.proxy.trustedHops);
     app.useGlobalPipes(
       new ValidationPipe({
         forbidNonWhitelisted: true,
@@ -35,7 +37,7 @@ export class Application {
   }
 
   public async start(): Promise<void> {
-    const app = await NestFactory.create(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
     this.configure(app);
 
     await app.listen(applicationConfig.port);

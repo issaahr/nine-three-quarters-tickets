@@ -24,6 +24,8 @@ import { SignupRequestDto } from './dto/signupRequest.dto';
 import { SignupResponseDto } from './dto/signupResponse.dto';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
 import { PublicSignupGuard } from './guards/publicSignup.guard';
+import { RateLimit } from '../../rateLimit/rateLimit.decorator';
+import { RateLimitPolicy } from '../../rateLimit/rateLimitPolicy.enum';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -31,6 +33,7 @@ export class AuthController {
   public constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
+  @RateLimit(RateLimitPolicy.Auth)
   @UseGuards(PublicSignupGuard)
   @ApiSignup()
   public signup(@Body() data: SignupRequestDto): Promise<SignupResponseDto> {
@@ -38,6 +41,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @RateLimit(RateLimitPolicy.Auth)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @ApiLogin()

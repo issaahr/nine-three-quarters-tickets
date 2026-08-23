@@ -10,11 +10,13 @@ import { ReservationsModule } from './modules/reservations/reservations.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { VenuesModule } from './modules/venues/venues.module';
 import { HealthController } from './health.controller';
+import { RateLimitModule } from './rateLimit/rateLimit.module';
 
 @Module({
   controllers: [HealthController],
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
+    RateLimitModule,
     AuthModule,
     EventsModule,
     VenuesModule,

@@ -13,6 +13,8 @@ import { ApiTags } from '@nestjs/swagger';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
+import { RateLimitedRoles } from '../../rateLimit/rateLimit.decorator';
+import { RateLimitPolicy } from '../../rateLimit/rateLimitPolicy.enum';
 import { CheckInManualCodeRequestDto } from './dto/checkInManualCodeRequest.dto';
 import { CheckInResponseDto } from './dto/checkInResponse.dto';
 import { CheckInTicketRequestDto } from './dto/checkInTicketRequest.dto';
@@ -46,7 +48,7 @@ export class GateTicketsController {
   /** Valida um código manual no mesmo fluxo atômico usado pela leitura QR. */
   @Post('manual-code')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.Gate)
+  @RateLimitedRoles(RateLimitPolicy.ManualCheckIn, UserRole.Gate)
   @ApiCheckInManualCode()
   public async checkInManualCode(
     @Req() request: AuthenticatedRequest,

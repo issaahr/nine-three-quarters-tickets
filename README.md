@@ -40,6 +40,10 @@ Além do banco e dos usuários de demonstração, configure:
 - `PAYMENT_CARD_PENDING_TIMEOUT_SECONDS`: limite em segundos para recuperar uma tentativa de cartão pendente após falha técnica;
 - `CORS_ORIGINS`: origens permitidas, separadas por vírgula.
 - `PUBLIC_SIGNUP_ENABLED`: habilita (`true`) ou desabilita (`false`) o cadastro público;
+- `TRUST_PROXY_HOPS`: quantidade exata de proxies confiáveis antes da API (`0` em execução direta e `1` no Heroku);
+- `RATE_LIMIT_AUTH_WINDOW_SECONDS` e `RATE_LIMIT_AUTH_MAX_REQUESTS`: janela e limite compartilhados por IP para login e signup;
+- `RATE_LIMIT_CATALOG_WINDOW_SECONDS` e `RATE_LIMIT_CATALOG_MAX_REQUESTS`: janela e limite compartilhados por usuário para catálogo e criação de Events;
+- `RATE_LIMIT_CHECK_IN_WINDOW_SECONDS` e `RATE_LIMIT_CHECK_IN_MAX_REQUESTS`: janela e limite por operador e IP para check-in manual;
 - `TMDB_API_READ_ACCESS_TOKEN`: token Bearer mantido exclusivamente no backend;
 - `TMDB_LANGUAGE`: idioma regional das respostas da TMDb, como `pt-BR`;
 - `TMDB_REQUEST_TIMEOUT_MS`: limite em milissegundos para cada chamada externa;
