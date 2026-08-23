@@ -19,11 +19,13 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
 import { CreateReservationRequestDto } from './dto/createReservationRequest.dto';
 import { CreateReservationResponseDto } from './dto/createReservationResponse.dto';
+import { CreateGeneralAdmissionReservationRequestDto } from './dto/createGeneralAdmissionReservationRequest.dto';
 import { GetActiveReservationQueryDto } from './dto/getActiveReservationQuery.dto';
 import { ReservationDetailResponseDto } from './dto/reservationDetailResponse.dto';
 import {
   ApiCancelReservation,
   ApiCreateReservation,
+  ApiCreateGeneralAdmissionReservation,
   ApiGetActiveReservation,
   ApiGetReservation,
 } from './reservations.swagger';
@@ -43,6 +45,21 @@ export class ReservationsController {
     @Body() data: CreateReservationRequestDto,
   ): Promise<CreateReservationResponseDto> {
     const { reservation, items } = await this.reservationsService.create(request.user.id, data);
+    return CreateReservationResponseDto.fromReservation(reservation, items);
+  }
+
+  /** Cria um hold agregado GA para a quantidade integral solicitada pelo CUSTOMER. */
+  @Post('general-admission')
+  @Roles(UserRole.Customer)
+  @ApiCreateGeneralAdmissionReservation()
+  public async createGeneralAdmission(
+    @Req() request: AuthenticatedRequest,
+    @Body() data: CreateGeneralAdmissionReservationRequestDto,
+  ): Promise<CreateReservationResponseDto> {
+    const { reservation, items } = await this.reservationsService.createGeneralAdmission(
+      request.user.id,
+      data,
+    );
     return CreateReservationResponseDto.fromReservation(reservation, items);
   }
 
@@ -82,7 +99,7 @@ export class ReservationsController {
   }
 
   /**
-   * Cancela uma Reservation ativa e libera seus EventSeats no mesmo commit.
+   * Cancela uma Reservation ativa e libera seu inventário no mesmo commit.
    */
   @Post(':reservationId/cancel')
   @HttpCode(HttpStatus.OK)

@@ -20,6 +20,20 @@ export interface AcquireEventSeatsParameters {
   now: Date;
 }
 
+/** Dados necessários para criar uma Reservation GA sem depender do contrato HTTP. */
+export interface CreateGeneralAdmissionReservationParameters {
+  customerId: string;
+  eventId: string;
+  quantity: number;
+  holdDurationSeconds: number;
+}
+
+/** Reservation e unidades GA persistidas integralmente no mesmo commit. */
+export interface GeneralAdmissionReservationCreationResult {
+  reservation: Reservation;
+  items: ReservationItem[];
+}
+
 /** Projeção mínima retornada pelo PostgreSQL para cada EventSeat liberado. */
 export interface ReleasedEventSeatRow {
   id: string;

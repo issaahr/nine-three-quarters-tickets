@@ -20,6 +20,7 @@ export interface EventDiscoveryPage {
 export interface PublicEventDetail {
   event: Event;
   isPast: boolean;
+  availableQuantity: number | null;
 }
 
 export interface OrganizerEventWithStats {

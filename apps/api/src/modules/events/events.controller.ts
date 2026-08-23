@@ -70,7 +70,11 @@ export class EventsController {
     @Param('eventId', new ParseUUIDPipe({ version: '4' })) eventId: string,
   ): Promise<EventDetailResponseDto> {
     const result = await this.eventsService.findPublicDetail(eventId);
-    return EventDetailResponseDto.fromPublicEvent(result.event, result.isPast);
+    return EventDetailResponseDto.fromPublicEvent(
+      result.event,
+      result.isPast,
+      result.availableQuantity,
+    );
   }
 
   /**

@@ -75,11 +75,21 @@ Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.
 
 Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md).
 
+## Reservations GENERAL_ADMISSION
+
+- `POST /reservations/general-admission` recebe Event e quantidade; a seleção local ainda não constitui hold.
+- A transação bloqueia pessimisticamente o `Event` antes de calcular a ocupação agregada e criar qualquer unidade.
+- Ocupação GA soma `ReservationItem` de Reservations confirmadas não canceladas e de holds ACTIVE ainda não expirados.
+- Capacidade insuficiente reverte a operação integralmente; nenhum item parcial permanece persistido.
+- Cada unidade adquirida produz um `ReservationItem` com `eventSeatId` nulo e snapshot de `Event.priceCents`.
+- Expiração e cancelamento liberam capacidade por timestamps persistidos, sem unidades artificiais, scheduler ou `EventSector`.
+
 ## Descoberta pública de Events
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
 - A descoberta padrão retorna apenas Events `PUBLISHED` com `startsAt` futuro; filtros de calendário explícitos também podem consultar Events passados da data selecionada.
 - `GET /events/:eventId` admite `PUBLISHED` passados e `CANCELLED`, responde como não encontrado para DRAFT e recebe `isPast` calculado pelo PostgreSQL.
+- O detalhe de um Event GA expõe sua capacidade e a disponibilidade agregada calculada no PostgreSQL.
 - A paginação usa página numérica, tamanho fixo e `hasMore`, contrato compatível com carregamento infinito sem executar `COUNT(*)` a cada requisição.
 - Busca e filtros são combináveis; texto é normalizado e curingas SQL informados pelo cliente são tratados literalmente.
 - Filtros de calendário comparam cada ocorrência segundo o timezone IANA de seu Venue.

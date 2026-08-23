@@ -150,6 +150,8 @@ A descoberta pública consulta `GET /events` sem acessar novamente o catálogo e
 
 O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criação bem-sucedida de `Reservation` abre o checkout protegido. TanStack Query mantém Reservation ativa, detalhe e mapa no estado remoto; criação e cancelamento invalidam o mapa. O countdown é derivado de `expiresAt` para apresentação, enquanto a API e os timestamps do PostgreSQL permanecem autoritativos para validade e inventário.
 
+No fluxo `GENERAL_ADMISSION`, `POST /reservations/general-admission` recebe uma quantidade e bloqueia a linha do Event antes de contar holds válidos e compras confirmadas. A Reservation e seus itens sem `EventSeat` são persistidos integralmente no mesmo commit; a leitura pública do detalhe calcula a disponibilidade agregada usando os mesmos estados persistidos.
+
 ## Fronteiras externas e futuras
 
 - TMDb e Ticketmaster implementam a port `CatalogProvider`; suas respostas são normalizadas antes de alcançar Events e nunca fornecem inventário ou dados locais de venda.
