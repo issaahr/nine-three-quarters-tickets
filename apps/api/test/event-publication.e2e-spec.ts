@@ -227,6 +227,7 @@ describe('publicação de Event', () => {
       state: 'São Paulo',
       country: 'Brasil',
       timeZone: 'America/Sao_Paulo',
+      admissionMode: AdmissionMode.Seated,
     });
     createdVenueIds.push(emptyVenue.id);
     const event = await createEvent(emptyVenue.id);

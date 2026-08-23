@@ -38,3 +38,16 @@ export interface TicketmasterAttractionSearchResponse {
   };
   page: TicketmasterPageMetadata;
 }
+
+export interface TicketmasterEvent {
+  _embedded?: {
+    attractions?: TicketmasterAttraction[];
+  };
+}
+
+export interface TicketmasterEventSearchResponse {
+  _embedded?: {
+    events: TicketmasterEvent[];
+  };
+  page: TicketmasterPageMetadata;
+}

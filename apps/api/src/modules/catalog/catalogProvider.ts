@@ -40,3 +40,14 @@ export interface MovieCatalogProvider extends CatalogProvider {
    */
   listPopular(page: number): Promise<CatalogPage>;
 }
+
+/** Catálogo de shows com descoberta regional derivada de ocorrências relevantes. */
+export interface ShowCatalogProvider extends CatalogProvider {
+  /**
+   * Lista atrações associadas aos eventos musicais mais relevantes disponíveis no Brasil.
+   *
+   * @param page - Página externa solicitada, iniciada em um.
+   * @returns Atrações principais deduplicadas dentro da página de eventos consultada.
+   */
+  listRelevantInBrazil(page: number): Promise<CatalogPage>;
+}

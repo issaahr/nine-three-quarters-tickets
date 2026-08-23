@@ -10,7 +10,7 @@ import {
   showCatalogProviderToken,
 } from '../src/modules/catalog/catalog.constants';
 import { CatalogItem } from '../src/modules/catalog/catalogItem';
-import { CatalogProvider, MovieCatalogProvider } from '../src/modules/catalog/catalogProvider';
+import { MovieCatalogProvider, ShowCatalogProvider } from '../src/modules/catalog/catalogProvider';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
 import { Event } from '../src/modules/events/event.entity';
@@ -52,9 +52,10 @@ describe('catálogo e criação de Event', () => {
     findByExternalId: jest.fn(),
   };
 
-  const showCatalogProvider: CatalogProvider = {
+  const showCatalogProvider: ShowCatalogProvider = {
     source: CatalogSource.Ticketmaster,
     search: jest.fn(),
+    listRelevantInBrazil: jest.fn(),
     findByExternalId: jest.fn(),
   };
 
@@ -92,6 +93,10 @@ describe('catálogo e criação de Event', () => {
     jest.mocked(catalogProvider.findByExternalId).mockReset().mockResolvedValue(movie);
     jest
       .mocked(showCatalogProvider.search)
+      .mockReset()
+      .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
+    jest
+      .mocked(showCatalogProvider.listRelevantInBrazil)
       .mockReset()
       .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
     jest.mocked(showCatalogProvider.findByExternalId).mockReset().mockResolvedValue(attraction);
@@ -190,6 +195,25 @@ describe('catálogo e criação de Event', () => {
     await request(app.getHttpServer())
       .get('/catalog/attractions')
       .query({ query: 'Florence' })
+      .set('Cookie', customerCookie)
+      .expect(403);
+  });
+
+  it('lista atrações relevantes no Brasil para a descoberta inicial do ORGANIZER', async () => {
+    const organizerCookie = await authenticate('organizer.demo@ntq.local');
+
+    await request(app.getHttpServer())
+      .get('/catalog/attractions/relevant')
+      .query({ page: 2 })
+      .set('Cookie', organizerCookie)
+      .expect(200)
+      .expect({ items: [attraction], page: 1, hasMore: false });
+
+    expect(showCatalogProvider.listRelevantInBrazil).toHaveBeenCalledWith(2);
+
+    const customerCookie = await authenticate('customer.one.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/catalog/attractions/relevant')
       .set('Cookie', customerCookie)
       .expect(403);
   });
@@ -295,6 +319,37 @@ describe('catálogo e criação de Event', () => {
       ]),
     );
     expect(showCatalogProvider.findByExternalId).not.toHaveBeenCalled();
+  });
+
+  it('rejeita Venue incompatível com a modalidade derivada do tipo de Event', async () => {
+    const cookie = await authenticate('organizer.demo@ntq.local');
+
+    const showResponse = await request(app.getHttpServer())
+      .post('/events/shows')
+      .set('Cookie', cookie)
+      .send({
+        externalId: attraction.externalId,
+        venueId: venue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 15000,
+        capacity: 500,
+      })
+      .expect(409);
+    expect(showResponse.body).toMatchObject({ code: 'VENUE_ADMISSION_MODE_MISMATCH' });
+    expect(showCatalogProvider.findByExternalId).not.toHaveBeenCalled();
+
+    const movieResponse = await request(app.getHttpServer())
+      .post('/events/movies')
+      .set('Cookie', cookie)
+      .send({
+        externalId: movie.externalId,
+        venueId: generalAdmissionVenue.id,
+        startsAtLocal: '2030-10-10T21:00',
+        priceCents: 2500,
+      })
+      .expect(409);
+    expect(movieResponse.body).toMatchObject({ code: 'VENUE_ADMISSION_MODE_MISMATCH' });
+    expect(catalogProvider.findByExternalId).not.toHaveBeenCalled();
   });
 
   it('não cria show quando a atração não existe e restringe o fluxo a ORGANIZER', async () => {

@@ -94,6 +94,10 @@ export function ApiCreateMovieEvent() {
       type: ApplicationErrorResponseDto,
       description: 'Venue ou filme não encontrado.',
     }),
+    ApiConflictResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Venue incompatível com inventário SEATED.',
+    }),
     ApiBadGatewayResponse({
       type: ApplicationErrorResponseDto,
       description: 'TMDb indisponível ou respondeu em formato incompatível.',
@@ -120,6 +124,10 @@ export function ApiCreateShowEvent() {
     ApiNotFoundResponse({
       type: ApplicationErrorResponseDto,
       description: 'Venue ou atração não encontrada.',
+    }),
+    ApiConflictResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Venue incompatível com entrada GENERAL_ADMISSION.',
     }),
     ApiBadGatewayResponse({
       type: ApplicationErrorResponseDto,

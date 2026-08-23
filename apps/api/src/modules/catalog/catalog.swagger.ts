@@ -85,3 +85,26 @@ export function ApiSearchAttractions() {
     }),
   );
 }
+
+/** Agrupa a documentação da descoberta regional inicial de atrações musicais. */
+export function ApiListRelevantAttractions() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Lista atrações de eventos musicais relevantes no Brasil' }),
+    ApiOkResponse({
+      type: CatalogPageResponseDto,
+      description: 'Atrações principais normalizadas a partir de eventos relevantes no Brasil.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Página ausente ou inválida.',
+    }),
+    ApiBadGatewayResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster indisponível ou respondeu em formato incompatível.',
+    }),
+    ApiGatewayTimeoutResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Ticketmaster excedeu o tempo configurado para resposta.',
+    }),
+  );
+}

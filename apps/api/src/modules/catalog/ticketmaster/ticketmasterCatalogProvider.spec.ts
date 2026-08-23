@@ -94,6 +94,7 @@ describe('TicketmasterCatalogProvider', () => {
     const requestedUrl = new URL(String(url));
     expect(requestedUrl.pathname).toBe('/discovery/v2/attractions.json');
     expect(requestedUrl.searchParams.get('keyword')).toBe('Florence & rock');
+    expect(requestedUrl.searchParams.get('classificationName')).toBe('music');
     expect(requestedUrl.searchParams.get('page')).toBe('1');
     expect(requestedUrl.searchParams.get('size')).toBe('20');
     expect(requestedUrl.searchParams.get('apikey')).toBe('test-ticketmaster-key');
@@ -110,6 +111,51 @@ describe('TicketmasterCatalogProvider', () => {
       page: 1,
       hasMore: false,
     });
+  });
+
+  it('deriva atrações únicas dos eventos musicais relevantes no Brasil', async () => {
+    const attraction = {
+      id: 'K8vZ917Gku7',
+      name: 'System of a Down',
+      images: [{ url: 'https://s1.ticketm.net/system.jpg', width: 1024, height: 576 }],
+      classifications: [{ segment: { name: 'Music' }, genre: { name: 'Metal' } }],
+    };
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        _embedded: {
+          events: [
+            { _embedded: { attractions: [attraction] } },
+            { _embedded: { attractions: [attraction] } },
+            { name: 'Evento sem atração' },
+          ],
+        },
+        page: { size: 10, totalElements: 25, totalPages: 3, number: 0 },
+      }),
+    );
+
+    await expect(new TicketmasterCatalogProvider().listRelevantInBrazil(1)).resolves.toEqual({
+      items: [
+        {
+          source: CatalogSource.Ticketmaster,
+          externalId: attraction.id,
+          category: EventCategory.Show,
+          title: attraction.name,
+          description: undefined,
+          imageUrl: 'https://s1.ticketm.net/system.jpg',
+          genres: ['Music', 'Metal'],
+        },
+      ],
+      page: 1,
+      hasMore: true,
+    });
+
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(requestedUrl.pathname).toBe('/discovery/v2/events.json');
+    expect(requestedUrl.searchParams.get('countryCode')).toBe('BR');
+    expect(requestedUrl.searchParams.get('classificationName')).toBe('music');
+    expect(requestedUrl.searchParams.get('sort')).toBe('relevance,desc');
+    expect(requestedUrl.searchParams.get('size')).toBe('10');
+    expect(requestedUrl.searchParams.get('page')).toBe('0');
   });
 
   it('recarrega uma Attraction por ID e usa additionalInfo como descrição disponível', async () => {

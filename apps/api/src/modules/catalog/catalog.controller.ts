@@ -4,10 +4,16 @@ import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
 import { movieCatalogProviderToken, showCatalogProviderToken } from './catalog.constants';
-import { ApiListPopularMovies, ApiSearchAttractions, ApiSearchMovies } from './catalog.swagger';
-import { CatalogProvider, MovieCatalogProvider } from './catalogProvider';
+import {
+  ApiListPopularMovies,
+  ApiListRelevantAttractions,
+  ApiSearchAttractions,
+  ApiSearchMovies,
+} from './catalog.swagger';
+import { MovieCatalogProvider, ShowCatalogProvider } from './catalogProvider';
 import { CatalogPageResponseDto } from './dto/catalogPageResponse.dto';
 import { ListPopularMoviesQueryDto } from './dto/listPopularMoviesQuery.dto';
+import { ListRelevantAttractionsQueryDto } from './dto/listRelevantAttractionsQuery.dto';
 import { SearchAttractionsQueryDto } from './dto/searchAttractionsQuery.dto';
 import { SearchMoviesQueryDto } from './dto/searchMoviesQuery.dto';
 
@@ -18,7 +24,7 @@ export class CatalogController {
     @Inject(movieCatalogProviderToken)
     private readonly movieCatalogProvider: MovieCatalogProvider,
     @Inject(showCatalogProviderToken)
-    private readonly showCatalogProvider: CatalogProvider,
+    private readonly showCatalogProvider: ShowCatalogProvider,
   ) {}
 
   /**
@@ -42,6 +48,17 @@ export class CatalogController {
     @Query() query: ListPopularMoviesQueryDto,
   ): Promise<CatalogPageResponseDto> {
     const page = await this.movieCatalogProvider.listPopular(query.page);
+    return CatalogPageResponseDto.fromCatalogPage(page);
+  }
+
+  /** Fornece a descoberta inicial sem confundir ocorrências externas com inventário local. */
+  @Get('attractions/relevant')
+  @Roles(UserRole.Organizer)
+  @ApiListRelevantAttractions()
+  public async listRelevantAttractions(
+    @Query() query: ListRelevantAttractionsQueryDto,
+  ): Promise<CatalogPageResponseDto> {
+    const page = await this.showCatalogProvider.listRelevantInBrazil(query.page);
     return CatalogPageResponseDto.fromCatalogPage(page);
   }
 

@@ -1,6 +1,7 @@
 import { Column, Entity, OneToMany, Relation } from 'typeorm';
 
 import { BaseEntity } from '../../database/base.entity';
+import { AdmissionMode } from '../events/admissionMode.enum';
 import { VenueSeat } from './venueSeat.entity';
 
 /** Local físico pré-configurado que pode receber uma ocorrência. */
@@ -23,6 +24,9 @@ export class Venue extends BaseEntity {
 
   @Column({ type: 'text' })
   public timeZone!: string;
+
+  @Column({ type: 'enum', enum: AdmissionMode, enumName: 'admissionModeEnum' })
+  public admissionMode!: AdmissionMode;
 
   // Relations
   @OneToMany(() => VenueSeat, (seat) => seat.venue)

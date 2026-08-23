@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
 import { movieCatalogProviderToken, showCatalogProviderToken } from '../catalog/catalog.constants';
-import { CatalogProvider, MovieCatalogProvider } from '../catalog/catalogProvider';
+import { MovieCatalogProvider, ShowCatalogProvider } from '../catalog/catalogProvider';
 import { CatalogSource } from '../catalog/catalogSource.enum';
 import { Venue } from '../venues/venue.entity';
 import { VenueSeat } from '../venues/venueSeat.entity';
@@ -22,6 +22,7 @@ import { EventMustStartInFutureError } from './errors/eventMustStartInFuture.err
 import { EventNotFoundError } from './errors/eventNotFound.error';
 import { InvalidEventDiscoveryPeriodError } from './errors/invalidEventDiscoveryPeriod.error';
 import { VenueHasNoSeatsError } from './errors/venueHasNoSeats.error';
+import { VenueAdmissionModeMismatchError } from './errors/venueAdmissionModeMismatch.error';
 import { VenueNotFoundError } from './errors/venueNotFound.error';
 import { EventRepository } from './repositories/event.repository';
 import { EventSeatRepository } from './repositories/eventSeat.repository';
@@ -45,7 +46,7 @@ export class EventsService {
     @Inject(movieCatalogProviderToken)
     private readonly movieCatalogProvider: MovieCatalogProvider,
     @Inject(showCatalogProviderToken)
-    private readonly showCatalogProvider: CatalogProvider,
+    private readonly showCatalogProvider: ShowCatalogProvider,
     private readonly dataSource: DataSource,
     private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
@@ -65,6 +66,10 @@ export class EventsService {
 
     if (!venue) {
       throw new VenueNotFoundError();
+    }
+
+    if (venue.admissionMode !== AdmissionMode.Seated) {
+      throw new VenueAdmissionModeMismatchError();
     }
 
     const startsAt = venueLocalDateTimeToDate(request.startsAtLocal, venue.timeZone);
@@ -111,6 +116,10 @@ export class EventsService {
 
     if (!venue) {
       throw new VenueNotFoundError();
+    }
+
+    if (venue.admissionMode !== AdmissionMode.GeneralAdmission) {
+      throw new VenueAdmissionModeMismatchError();
     }
 
     const startsAt = venueLocalDateTimeToDate(request.startsAtLocal, venue.timeZone);
