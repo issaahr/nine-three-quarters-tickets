@@ -5,7 +5,7 @@ import { PaymentMethod } from '../payments/paymentMethod.enum';
 
 /**
  * Dados locais da ocorrência necessários para apresentar um Ticket.
-*/
+ */
 export interface TicketEventDetails {
   id: string;
   title: string;
