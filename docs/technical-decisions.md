@@ -83,6 +83,8 @@ Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md)
 - Capacidade insuficiente reverte a operação integralmente; nenhum item parcial permanece persistido.
 - Cada unidade adquirida produz um `ReservationItem` com `eventSeatId` nulo e snapshot de `Event.priceCents`.
 - Expiração e cancelamento liberam capacidade por timestamps persistidos, sem unidades artificiais, scheduler ou `EventSector`.
+- A confirmação de Payment valida holds de assento somente para itens que possuem `eventSeatId`; todos os itens confirmados recebem Tickets individuais pelo fluxo comum.
+- Cancelamento, Refund e Gate operam sobre ReservationItems e Tickets genéricos, sem branches por categoria `SHOW`.
 
 ## Descoberta pública de Events
 
