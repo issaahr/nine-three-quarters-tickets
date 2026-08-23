@@ -1,10 +1,22 @@
 import { api } from '../../lib/api';
-import { CreatedReservation, CreateReservationRequest, ReservationDetail } from './types';
+import {
+  CreatedReservation,
+  CreateGeneralAdmissionReservationRequest,
+  CreateReservationRequest,
+  ReservationDetail,
+} from './types';
 
 export async function createReservation(
   request: CreateReservationRequest,
 ): Promise<CreatedReservation> {
   const response = await api.post<CreatedReservation>('/reservations', request);
+  return response.data;
+}
+
+export async function createGeneralAdmissionReservation(
+  request: CreateGeneralAdmissionReservationRequest,
+): Promise<CreatedReservation> {
+  const response = await api.post<CreatedReservation>('/reservations/general-admission', request);
   return response.data;
 }
 

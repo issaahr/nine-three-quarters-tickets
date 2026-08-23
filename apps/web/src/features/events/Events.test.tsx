@@ -59,6 +59,24 @@ const eventDetail: EventDetail = {
   isPast: false,
 };
 
+const showEventDetail: EventDetail = {
+  id: 'show-event-1',
+  title: 'System of a Down',
+  imageUrl: 'https://image.test/system-of-a-down.jpg',
+  genres: ['Rock'],
+  category: EventCategory.Show,
+  admissionMode: AdmissionMode.GeneralAdmission,
+  startsAt: '2030-09-12T00:00:00.000Z',
+  priceCents: 4000,
+  venueName: 'Nexus Arena',
+  venueCity: 'Belém',
+  venueTimeZone: 'America/Belem',
+  status: EventStatus.Published,
+  isPast: false,
+  capacity: 500,
+  availableQuantity: 10,
+};
+
 const seatMap: EventSeatMapItem[] = [
   {
     id: 'event-seat-1',
@@ -146,6 +164,113 @@ describe('catálogo público de eventos', () => {
     expect(screen.getByText('R$ 25,90')).toBeInTheDocument();
     expect(screen.getByText('Cine Imperial · Fortaleza')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
+  });
+
+  it('apresenta quantidade e disponibilidade GA sem consultar mapa de assentos', async () => {
+    const seatMapHandler = vi.fn(() => HttpResponse.json([]));
+    server.use(
+      http.get(`${apiUrl}/events/${showEventDetail.id}`, () => HttpResponse.json(showEventDetail)),
+      http.get(`${apiUrl}/events/${showEventDetail.id}/seats`, () => seatMapHandler()),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${showEventDetail.id}`);
+
+    expect(await screen.findByRole('heading', { name: 'Pista' })).toBeInTheDocument();
+    expect(screen.getByText('Entrada geral')).toBeInTheDocument();
+    expect(screen.getByText('1 ingresso · Pista')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Aumentar quantidade' }));
+    expect(screen.getByText('2 ingressos · Pista')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Entre como cliente para reservar' })).toHaveAttribute(
+      'href',
+      '/login',
+    );
+    expect(seatMapHandler).not.toHaveBeenCalled();
+  });
+
+  it('cria Reservation GA com a quantidade integral e segue ao checkout sem assentos', async () => {
+    const reservationHandler = vi.fn();
+    const seatMapHandler = vi.fn(() => HttpResponse.json([]));
+    const createdReservation = {
+      id: 'reservation-ga-1',
+      eventId: showEventDetail.id,
+      expiresAt: '2030-09-12T00:10:00.000Z',
+      items: [
+        { id: 'item-ga-1', eventSeatId: null, unitPriceCents: 4000 },
+        { id: 'item-ga-2', eventSeatId: null, unitPriceCents: 4000 },
+      ],
+    };
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${showEventDetail.id}`, () => HttpResponse.json(showEventDetail)),
+      http.get(`${apiUrl}/events/${showEventDetail.id}/seats`, () => seatMapHandler()),
+      http.get(`${apiUrl}/reservations/active`, () => new HttpResponse(null, { status: 204 })),
+      http.get(`${apiUrl}/reservations/${createdReservation.id}`, () =>
+        HttpResponse.json({
+          ...createdReservation,
+          status: 'ACTIVE',
+          confirmedAt: null,
+          cancelledAt: null,
+        }),
+      ),
+      http.post(`${apiUrl}/reservations/general-admission`, async ({ request }) => {
+        reservationHandler(await request.json());
+        return HttpResponse.json(createdReservation, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${showEventDetail.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Aumentar quantidade' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar ingressos' }));
+
+    await waitFor(() =>
+      expect(reservationHandler).toHaveBeenCalledWith({
+        eventId: showEventDetail.id,
+        quantity: 2,
+      }),
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva está em andamento' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Entrada geral 1')).toBeInTheDocument();
+    expect(screen.getByText('Entrada geral 2')).toBeInTheDocument();
+    expect(seatMapHandler).not.toHaveBeenCalled();
+  });
+
+  it('reconcilia a disponibilidade GA após conflito autoritativo de capacidade', async () => {
+    const eventDetailHandler = vi
+      .fn()
+      .mockImplementationOnce(() => HttpResponse.json(showEventDetail))
+      .mockImplementation(() => HttpResponse.json({ ...showEventDetail, availableQuantity: 1 }));
+    server.use(
+      http.get(`${apiUrl}/auth/session`, () =>
+        HttpResponse.json({ id: 'customer-1', role: 'CUSTOMER' }),
+      ),
+      http.get(`${apiUrl}/events/${showEventDetail.id}`, () => eventDetailHandler()),
+      http.get(`${apiUrl}/reservations/active`, () => new HttpResponse(null, { status: 204 })),
+      http.post(`${apiUrl}/reservations/general-admission`, () =>
+        HttpResponse.json({ code: 'GENERAL_ADMISSION_CAPACITY_UNAVAILABLE' }, { status: 409 }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderEvents(`/events/${showEventDetail.id}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Aumentar quantidade' }));
+    await user.click(screen.getByRole('button', { name: 'Reservar ingressos' }));
+
+    expect(
+      await screen.findByText(
+        'A quantidade escolhida não está mais disponível. Revise a quantidade.',
+      ),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(eventDetailHandler.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(screen.getByRole('button', { name: 'Aumentar quantidade' })).toBeDisabled();
+    expect(screen.getByText('1 ingresso · Pista')).toBeInTheDocument();
   });
 
   it('envia somente os filtros aplicados explicitamente', async () => {

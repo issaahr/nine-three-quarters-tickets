@@ -51,6 +51,8 @@ export interface EventDiscoveryPage {
 export interface EventDetail extends EventDiscoveryItem {
   status: EventStatus;
   isPast: boolean;
+  capacity?: number;
+  availableQuantity?: number;
 }
 
 export interface EventSeatMapItem {

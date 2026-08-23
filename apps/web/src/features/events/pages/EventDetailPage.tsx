@@ -8,6 +8,7 @@ import { cn } from '../../../lib/utils';
 import { useAuth } from '../../auth/hooks';
 import { UserRole } from '../../auth/types';
 import { useActiveReservation, useReservationMutations } from '../../reservations/hooks';
+import { GeneralAdmissionReservationPanel } from '../components/GeneralAdmissionReservationPanel';
 import { SeatMap } from '../components/SeatMap';
 import { formatEventDetailDateTime, formatEventPrice } from '../eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../hooks';
@@ -31,6 +32,11 @@ interface LocalSeatSelection {
   seatIds: string[];
 }
 
+interface LocalGeneralAdmissionSelection {
+  eventId: string | undefined;
+  quantity: number;
+}
+
 /** Representa o snapshot local de uma única ocorrência e seus estados somente de leitura. */
 export function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -42,12 +48,15 @@ export function EventDetailPage() {
   useSeatRealtime(eventId, hasSeatMap);
   const isCustomer = user?.role === UserRole.Customer;
   const activeReservationQuery = useActiveReservation(eventId, isCustomer);
-  const { create, cancel, isCreating, isCancelling } = useReservationMutations(eventId);
+  const { createSeated, createGeneralAdmission, cancel, isCreating, isCancelling } =
+    useReservationMutations(eventId);
   const [localSelection, setLocalSelection] = useState<LocalSeatSelection>({
     eventId,
     reconciledSeatMap: seatMapQuery.data,
     seatIds: [],
   });
+  const [generalAdmissionSelection, setGeneralAdmissionSelection] =
+    useState<LocalGeneralAdmissionSelection>({ eventId, quantity: 1 });
   const [isActiveReservationDialogOpen, setIsActiveReservationDialogOpen] = useState(false);
   const [isCancelConfirmationOpen, setIsCancelConfirmationOpen] = useState(false);
   const [reservationFeedback, setReservationFeedback] = useState<string | null>(null);
@@ -120,6 +129,11 @@ export function EventDetailPage() {
   const isCancelled = event.status === EventStatus.Cancelled;
   const stateLabel = isCancelled ? 'Sessão cancelada' : event.isPast ? 'Encerrado' : undefined;
   const canSelectSeats = !isCancelled && !event.isPast;
+  const availableGeneralAdmissionQuantity = Math.max(0, event.availableQuantity ?? 0);
+  const selectedGeneralAdmissionQuantity =
+    generalAdmissionSelection.eventId === eventId
+      ? Math.min(generalAdmissionSelection.quantity, Math.max(availableGeneralAdmissionQuantity, 1))
+      : 1;
 
   function toggleSeat(seatId: string): void {
     setLocalSelection((currentSelection) => {
@@ -138,7 +152,7 @@ export function EventDetailPage() {
     });
   }
 
-  async function startReservation(): Promise<void> {
+  async function startSeatedReservation(): Promise<void> {
     if (!eventId || selectedSeatIds.length === 0) {
       return;
     }
@@ -152,7 +166,7 @@ export function EventDetailPage() {
     }
 
     try {
-      const reservation = await create({ eventId, eventSeatIds: selectedSeatIds });
+      const reservation = await createSeated({ eventId, eventSeatIds: selectedSeatIds });
       navigate(`/customer/reservations/${reservation.id}`);
     } catch (error) {
       const code = axios.isAxiosError<{ code?: string }>(error)
@@ -175,6 +189,48 @@ export function EventDetailPage() {
     }
   }
 
+  async function startGeneralAdmissionReservation(): Promise<void> {
+    if (!eventId || availableGeneralAdmissionQuantity === 0) {
+      return;
+    }
+
+    setReservationFeedback(null);
+    const activeReservationResult = await activeReservationQuery.refetch();
+
+    if (activeReservationResult.data) {
+      setIsActiveReservationDialogOpen(true);
+      return;
+    }
+
+    try {
+      const reservation = await createGeneralAdmission({
+        eventId,
+        quantity: selectedGeneralAdmissionQuantity,
+      });
+      navigate(`/customer/reservations/${reservation.id}`);
+    } catch (error) {
+      const code = axios.isAxiosError<{ code?: string }>(error)
+        ? error.response?.data.code
+        : undefined;
+
+      if (code === 'ACTIVE_RESERVATION_EXISTS') {
+        await activeReservationQuery.refetch();
+        setIsActiveReservationDialogOpen(true);
+        return;
+      }
+
+      if (code === 'GENERAL_ADMISSION_CAPACITY_UNAVAILABLE') {
+        setReservationFeedback(
+          'A quantidade escolhida não está mais disponível. Revise a quantidade.',
+        );
+        await query.refetch();
+        return;
+      }
+
+      setReservationFeedback('Não foi possível criar a reserva. Tente novamente.');
+    }
+  }
+
   async function confirmCancellation(): Promise<void> {
     const activeReservation = activeReservationQuery.data;
 
@@ -188,7 +244,11 @@ export function EventDetailPage() {
       setIsCancelConfirmationOpen(false);
       setIsActiveReservationDialogOpen(false);
       setLocalSelection({ eventId, reconciledSeatMap: seatMapQuery.data, seatIds: [] });
-      setReservationFeedback('Reserva cancelada. Os assentos foram liberados.');
+      setReservationFeedback(
+        event.admissionMode === AdmissionMode.Seated
+          ? 'Reserva cancelada. Os assentos foram liberados.'
+          : 'Reserva cancelada. Os ingressos voltaram a ficar disponíveis.',
+      );
     } catch {
       setReservationFeedback('Não foi possível cancelar a reserva. Tente novamente.');
     }
@@ -366,7 +426,7 @@ export function EventDetailPage() {
                       <Button
                         type="button"
                         disabled={selectedSeatIds.length === 0 || isCreating}
-                        onClick={() => void startReservation()}
+                        onClick={() => void startSeatedReservation()}
                         className="rounded-[4px] bg-[#681E2B] text-primary-foreground hover:bg-[#4E1420]"
                       >
                         {isCreating ? 'Reservando...' : 'Reservar assentos'}
@@ -385,6 +445,22 @@ export function EventDetailPage() {
             </>
           )}
         </section>
+      )}
+
+      {event.admissionMode === AdmissionMode.GeneralAdmission && (
+        <GeneralAdmissionReservationPanel
+          availableQuantity={availableGeneralAdmissionQuantity}
+          canReserve={canSelectSeats}
+          feedback={reservationFeedback}
+          hasActiveReservation={Boolean(activeReservation)}
+          isCreating={isCreating}
+          isCustomer={isCustomer}
+          quantity={selectedGeneralAdmissionQuantity}
+          unitPriceCents={event.priceCents}
+          onChangeQuantity={(quantity) => setGeneralAdmissionSelection({ eventId, quantity })}
+          onOpenActiveReservation={() => setIsActiveReservationDialogOpen(true)}
+          onReserve={() => void startGeneralAdmissionReservation()}
+        />
       )}
 
       {isActiveReservationDialogOpen && activeReservation && (
@@ -411,6 +487,7 @@ export function EventDetailPage() {
                     reconciledSeatMap: seatMapQuery.data,
                     seatIds: [],
                   });
+                  setGeneralAdmissionSelection({ eventId, quantity: 1 });
                   setIsActiveReservationDialogOpen(false);
                   navigate(`/customer/reservations/${activeReservation.id}`);
                 }}
@@ -443,7 +520,9 @@ export function EventDetailPage() {
               Cancelar reserva?
             </h2>
             <p className="mb-0 mt-4 text-sm leading-6 text-muted-foreground">
-              Seus assentos serão liberados imediatamente e poderão ser reservados por outra pessoa.
+              {event.admissionMode === AdmissionMode.Seated
+                ? 'Seus assentos serão liberados imediatamente e poderão ser reservados por outra pessoa.'
+                : 'Seus ingressos serão liberados imediatamente e poderão ser reservados por outra pessoa.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button

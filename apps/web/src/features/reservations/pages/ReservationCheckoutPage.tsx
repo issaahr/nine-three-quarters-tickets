@@ -7,6 +7,7 @@ import { buttonVariants } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
 import { formatEventDetailDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../../events/hooks';
+import { AdmissionMode } from '../../events/types';
 import { getReservationCountdown } from '../reservationCountdown';
 import { useReservation } from '../hooks';
 import { ReservationStatus } from '../types';
@@ -18,7 +19,10 @@ export function ReservationCheckoutPage() {
   const { refetch: refetchReservation } = reservationQuery;
   const eventId = reservationQuery.data?.eventId;
   const eventQuery = useEventDetail(eventId);
-  const seatMapQuery = useEventSeatMap(eventId, Boolean(eventId));
+  const seatMapQuery = useEventSeatMap(
+    eventId,
+    eventQuery.data?.admissionMode === AdmissionMode.Seated,
+  );
   const [currentTimestamp, setCurrentTimestamp] = useState(() => Date.now());
   const expirationRefetchRequested = useRef(false);
   const reservation = reservationQuery.data;
@@ -86,6 +90,7 @@ export function ReservationCheckoutPage() {
   }
 
   const event = eventQuery.data;
+  const isGeneralAdmission = event?.admissionMode === AdmissionMode.GeneralAdmission;
   const isExpired = reservation.status === ReservationStatus.Expired;
   const isCancelled = reservation.status === ReservationStatus.Cancelled;
   const isActive = reservation.status === ReservationStatus.Active;
@@ -132,15 +137,19 @@ export function ReservationCheckoutPage() {
             <div role="alert" className="mt-6 border-l-4 border-destructive bg-destructive/10 p-4">
               <p className="m-0 text-sm leading-6 text-destructive">
                 {isExpired
-                  ? 'O prazo terminou e estes assentos não estão mais reservados para você.'
-                  : 'Esta reserva não mantém mais os assentos selecionados.'}
+                  ? isGeneralAdmission
+                    ? 'O prazo terminou e estes ingressos não estão mais reservados para você.'
+                    : 'O prazo terminou e estes assentos não estão mais reservados para você.'
+                  : isGeneralAdmission
+                    ? 'Esta reserva não mantém mais os ingressos selecionados.'
+                    : 'Esta reserva não mantém mais os assentos selecionados.'}
               </p>
             </div>
           )}
 
           {isConfirmed && (
             <div role="status" className="mt-8 flex flex-col items-center text-center">
-              <span className="flex size-11 items-center justify-center rounded-full bg-[#3E6B4F] text-[#F5F2EC]">
+              <span className="flex size-11 items-center justify-center rounded-full bg-status-valid text-background">
                 <Check className="size-6" aria-hidden="true" />
               </span>
               <p className="mb-0 mt-5 font-heading text-xl font-semibold">Pagamento confirmado</p>
@@ -159,7 +168,9 @@ export function ReservationCheckoutPage() {
           {isActive && (
             <>
               <p className="mb-0 mt-8 text-sm leading-6 text-muted-foreground">
-                Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.
+                {isGeneralAdmission
+                  ? 'Revise os detalhes do pedido enquanto seus ingressos permanecem reservados para você.'
+                  : 'Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.'}
               </p>
               <CardPaymentForm
                 reservationId={reservation.id}
@@ -170,15 +181,15 @@ export function ReservationCheckoutPage() {
           )}
         </section>
 
-        <aside className="order-first h-fit bg-[#2B0A10] p-6 text-primary-foreground [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)] sm:p-8 lg:order-last lg:sticky lg:top-6">
-          <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-[#A9855B]">
+        <aside className="order-first h-fit bg-secondary-foreground p-6 text-primary-foreground [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)] sm:p-8 lg:order-last lg:sticky lg:top-6">
+          <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-brass-dark">
             Resumo do pedido
           </p>
-          <h2 className="mb-0 mt-2 font-heading text-2xl font-semibold text-[#F5F2EC]">
+          <h2 className="mb-0 mt-2 font-heading text-2xl font-semibold text-background">
             {event?.title ?? 'Evento reservado'}
           </h2>
           {event && (
-            <div className="mt-4 space-y-2 text-sm text-[#C9BBA6]">
+            <div className="mt-4 space-y-2 text-sm text-primary-foreground">
               <p className="m-0 flex items-start gap-2">
                 <Ticket className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 {formatEventDetailDateTime(event.startsAt, event.venueTimeZone)}
@@ -193,9 +204,14 @@ export function ReservationCheckoutPage() {
             {reservation.items.map((item, index) => (
               <li
                 key={item.id}
-                className="flex items-center justify-between gap-4 text-sm text-[#D9C7A0]"
+                className="flex items-center justify-between gap-4 text-sm text-primary-foreground"
               >
-                <span>{seatLabelsById.get(item.eventSeatId) ?? `Assento ${index + 1}`}</span>
+                <span>
+                  {isGeneralAdmission
+                    ? `Entrada geral ${index + 1}`
+                    : ((item.eventSeatId && seatLabelsById.get(item.eventSeatId)) ??
+                      `Assento ${index + 1}`)}
+                </span>
                 <span className="font-mono font-medium">
                   {formatEventPrice(item.unitPriceCents)}
                 </span>
@@ -204,12 +220,12 @@ export function ReservationCheckoutPage() {
           </ul>
           <div className="my-6 flex justify-center gap-1" aria-hidden="true">
             {Array.from({ length: 24 }, (_, index) => (
-              <span key={index} className="size-1 rounded-full bg-[#4A2028]" />
+              <span key={index} className="size-1 rounded-full bg-primary/40" />
             ))}
           </div>
           <div className="flex items-center justify-between gap-4">
-            <p className="m-0 text-sm font-medium text-[#F5F2EC]">Total</p>
-            <p className="m-0 font-mono text-2xl font-semibold text-[#D9C7A0]">
+            <p className="m-0 text-sm font-medium text-background">Total</p>
+            <p className="m-0 font-mono text-2xl font-semibold text-primary-foreground">
               {formatEventPrice(totalPriceCents)}
             </p>
           </div>
@@ -217,7 +233,7 @@ export function ReservationCheckoutPage() {
             to={eventId ? `/events/${eventId}` : '/events'}
             className={cn(
               buttonVariants({ variant: 'outline' }),
-              'mt-6 w-full rounded-[4px] border-[#6B5636] bg-transparent text-primary-foreground no-underline hover:bg-[#3A1A20] hover:text-primary-foreground',
+              'mt-6 w-full rounded-[4px] border-brass-dark bg-transparent text-primary-foreground no-underline hover:bg-primary/30 hover:text-primary-foreground',
             )}
           >
             {isExpired || isCancelled ? 'Voltar à seleção' : 'Voltar ao evento'}

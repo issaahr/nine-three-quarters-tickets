@@ -2,12 +2,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   cancelReservation,
+  createGeneralAdmissionReservation,
   createReservation,
   fetchActiveReservation,
   fetchReservation,
 } from './api';
 import {
   CreatedReservation,
+  CreateGeneralAdmissionReservationRequest,
   CreateReservationRequest,
   ReservationDetail,
   ReservationStatus,
@@ -34,25 +36,34 @@ export function useReservation(reservationId: string | undefined) {
   });
 }
 
-/** Coordena criação e cancelamento de holds e invalida o mapa após toda alteração de inventário. */
+/** Coordena criação e cancelamento de holds e atualiza as projeções locais de inventário. */
 export function useReservationMutations(eventId: string | undefined) {
   const queryClient = useQueryClient();
 
-  const invalidateSeatMap = async (): Promise<void> => {
-    await queryClient.invalidateQueries({ queryKey: ['events', 'seat-map', eventId] });
+  const invalidateInventory = async (): Promise<void> => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['events', 'seat-map', eventId] }),
+      queryClient.invalidateQueries({ queryKey: ['events', 'detail', eventId] }),
+    ]);
   };
-  const createMutation = useMutation({
+  const cacheActiveReservation = (reservation: CreatedReservation): void => {
+    const activeReservation: ReservationDetail = {
+      ...reservation,
+      status: ReservationStatus.Active,
+      confirmedAt: null,
+      cancelledAt: null,
+    };
+    queryClient.setQueryData(activeReservationQueryKey(eventId), activeReservation);
+  };
+  const createSeatedMutation = useMutation({
     mutationFn: createReservation,
-    onSuccess: (reservation: CreatedReservation) => {
-      const activeReservation: ReservationDetail = {
-        ...reservation,
-        status: ReservationStatus.Active,
-        confirmedAt: null,
-        cancelledAt: null,
-      };
-      queryClient.setQueryData(activeReservationQueryKey(eventId), activeReservation);
-    },
-    onSettled: invalidateSeatMap,
+    onSuccess: cacheActiveReservation,
+    onSettled: invalidateInventory,
+  });
+  const createGeneralAdmissionMutation = useMutation({
+    mutationFn: createGeneralAdmissionReservation,
+    onSuccess: cacheActiveReservation,
+    onSettled: invalidateInventory,
   });
   const cancelMutation = useMutation({
     mutationFn: cancelReservation,
@@ -60,15 +71,17 @@ export function useReservationMutations(eventId: string | undefined) {
       queryClient.setQueryData(activeReservationQueryKey(eventId), null);
       queryClient.setQueryData(['reservations', 'detail', reservation.id], reservation);
     },
-    onSettled: invalidateSeatMap,
+    onSettled: invalidateInventory,
   });
 
   return {
-    create: (request: CreateReservationRequest) => createMutation.mutateAsync(request),
+    createSeated: (request: CreateReservationRequest) => createSeatedMutation.mutateAsync(request),
+    createGeneralAdmission: (request: CreateGeneralAdmissionReservationRequest) =>
+      createGeneralAdmissionMutation.mutateAsync(request),
     cancel: (reservationId: string) => cancelMutation.mutateAsync(reservationId),
-    isCreating: createMutation.isPending,
+    isCreating: createSeatedMutation.isPending || createGeneralAdmissionMutation.isPending,
     isCancelling: cancelMutation.isPending,
-    createError: createMutation.error,
+    createError: createSeatedMutation.error ?? createGeneralAdmissionMutation.error,
     cancelError: cancelMutation.error,
   };
 }
