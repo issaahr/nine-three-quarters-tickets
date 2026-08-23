@@ -55,6 +55,9 @@ export class OrganizerEventResponseDto {
   public soldTickets!: number;
 
   @ApiPropertyOptional({ minimum: 0 })
+  public availableTickets!: number | null;
+
+  @ApiPropertyOptional({ minimum: 0 })
   public inventoryTotal!: number | null;
 
   @ApiProperty({ minimum: 0 })
@@ -70,6 +73,7 @@ export class OrganizerEventResponseDto {
     event,
     isActive,
     soldTickets,
+    availableTickets,
     inventoryTotal,
     revenueCents,
   }: OrganizerEventWithStats): OrganizerEventResponseDto {
@@ -90,6 +94,7 @@ export class OrganizerEventResponseDto {
       priceCents: event.priceCents,
       isActive,
       soldTickets,
+      availableTickets,
       inventoryTotal,
       revenueCents,
     };

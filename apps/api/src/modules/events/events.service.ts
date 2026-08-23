@@ -14,6 +14,7 @@ import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
 import { EventSeat } from './eventSeat.entity';
 import { EventStatus } from './eventStatus.enum';
+import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { CatalogItemNotFoundError } from './errors/catalogItemNotFound.error';
 import { EventCannotBePublishedError } from './errors/eventCannotBePublished.error';
 import { EventMustStartInFutureError } from './errors/eventMustStartInFuture.error';
@@ -43,6 +44,7 @@ export class EventsService {
     @Inject(catalogProviderToken)
     private readonly catalogProvider: CatalogProvider,
     private readonly dataSource: DataSource,
+    private readonly seatRealtimeGateway: SeatRealtimeGateway,
   ) {}
 
   /**
@@ -221,5 +223,38 @@ export class EventsService {
       event.status = EventStatus.Published;
       return eventsRepository.save(event);
     });
+  }
+
+  /**
+   * Atualiza somente o preço vigente, preservando valores fotografados em compras existentes.
+   *
+   * @param organizerId - Identificador do organizador proprietário do Event.
+   * @param eventId - Identificador do Event cujo preço será atualizado.
+   * @param priceCents - Novo preço inteiro em centavos.
+   * @returns Event com o preço vigente atualizado.
+   */
+  public async updatePrice(
+    organizerId: string,
+    eventId: string,
+    priceCents: number,
+  ): Promise<Event> {
+    return this.eventRepository.updatePrice(organizerId, eventId, priceCents);
+  }
+
+  /**
+   * Cancela uma ocorrência futura e anuncia os assentos liberados após o commit.
+   *
+   * @param organizerId - Identificador do organizador que solicita o cancelamento.
+   * @param eventId - Identificador do Event futuro a ser cancelado.
+   * @returns Event já cancelado.
+   */
+  public async cancel(organizerId: string, eventId: string): Promise<Event> {
+    const result = await this.eventRepository.cancel(organizerId, eventId);
+
+    if (result.releasedEventSeatIds.length > 0) {
+      this.seatRealtimeGateway.emitReleased({ eventId, eventSeatIds: result.releasedEventSeatIds });
+    }
+
+    return result.event;
   }
 }

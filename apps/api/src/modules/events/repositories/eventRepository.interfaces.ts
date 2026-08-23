@@ -26,6 +26,12 @@ export interface OrganizerEventWithStats {
   event: Event;
   isActive: boolean;
   soldTickets: number;
+  availableTickets: number | null;
   inventoryTotal: number | null;
   revenueCents: number;
+}
+
+export interface EventCancellationResult {
+  event: Event;
+  releasedEventSeatIds: string[];
 }

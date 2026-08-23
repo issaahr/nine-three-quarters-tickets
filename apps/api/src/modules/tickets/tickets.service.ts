@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 
 import { CheckInResult } from './checkInResult.enum';
 import { Ticket } from './ticket.entity';
@@ -9,6 +10,8 @@ import { TicketNotFoundError } from './errors/ticketNotFound.error';
 import { TicketRepository } from './repositories/ticket.repository';
 import { TicketDetails, TicketPurchase } from './tickets.interfaces';
 import { TicketStatus } from './ticketStatus.enum';
+import { Payment } from '../payments/payment.entity';
+import { PaymentStatus } from '../payments/paymentStatus.enum';
 
 const maximumCredentialGenerationAttempts = 20;
 
@@ -18,6 +21,8 @@ export class TicketsService {
   public constructor(
     private readonly ticketCredentialService: TicketCredentialService,
     private readonly ticketRepository: TicketRepository,
+    @InjectRepository(Payment)
+    private readonly paymentsRepository: Repository<Payment>,
   ) {}
 
   /**
@@ -65,10 +70,39 @@ export class TicketsService {
         confirmedAt: ticket.reservationItem.reservation.confirmedAt!,
         event: details.event,
         tickets: [details],
+        canCancel: false,
+        eligibleUntil: null,
+        paymentMethod: null,
       });
     }
 
-    return [...purchases.values()];
+    // A elegibilidade termina no menor instante entre sete dias da aprovação e o início do evento.
+    const now = new Date();
+    return Promise.all(
+      [...purchases.values()].map(async (purchase) => {
+        const payment = await this.paymentsRepository.findOneBy({
+          reservationId: purchase.reservationId,
+          status: PaymentStatus.Approved,
+        });
+        const eligibleUntil = payment?.approvedAt
+          ? new Date(
+              Math.min(
+                payment.approvedAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+                purchase.event.startsAt.getTime(),
+              ),
+            )
+          : null;
+        return {
+          ...purchase,
+          paymentMethod: payment?.method ?? null,
+          eligibleUntil,
+          canCancel:
+            Boolean(eligibleUntil) &&
+            eligibleUntil!.getTime() > now.getTime() &&
+            purchase.tickets.every((ticket) => ticket.status === TicketStatus.Valid),
+        };
+      }),
+    );
   }
 
   /**

@@ -6,6 +6,7 @@ import { EventSeat } from '../../events/eventSeat.entity';
 import { ReservationItem } from '../reservationItem.entity';
 import { Reservation } from '../reservation.entity';
 import { ReservationStatus } from '../reservationStatus.enum';
+import { Ticket } from '../../tickets/ticket.entity';
 import {
   AcquireEventSeatsParameters,
   ReleasedEventSeatRow,
@@ -80,6 +81,55 @@ export class ReservationRepository {
   }
 
   /**
+   * Cancela Tickets ainda utilizáveis para impedir que uma alteração concorrente os invalide parcialmente.
+   *
+   * @param manager - EntityManager vinculado à transação de cancelamento.
+   * @param reservationItemIds - Itens cujos Tickets devem ser cancelados.
+   * @param cancelledAt - Instante autoritativo que marca o cancelamento.
+   * @returns Quantidade de Tickets efetivamente cancelados.
+   */
+  public async cancelTickets(
+    manager: EntityManager,
+    reservationItemIds: string[],
+    cancelledAt: Date,
+  ): Promise<number> {
+    const result = await manager
+      .getRepository(Ticket)
+      .createQueryBuilder()
+      .update(Ticket)
+      .set({ cancelledAt })
+      .where('"reservationItemId" IN (:...reservationItemIds)', { reservationItemIds })
+      .andWhere('"checkedInAt" IS NULL')
+      .andWhere('"cancelledAt" IS NULL')
+      .execute();
+    return result.affected ?? 0;
+  }
+
+  /**
+   * Libera assentos vendidos somente quando todos ainda representam a venda cancelada.
+   *
+   * @param manager - EntityManager vinculado à transação de cancelamento.
+   * @param eventSeatIds - Assentos vendidos pelos itens cancelados.
+   * @returns Identificadores dos assentos efetivamente liberados.
+   */
+  public async releaseSoldEventSeats(
+    manager: EntityManager,
+    eventSeatIds: string[],
+  ): Promise<string[]> {
+    if (eventSeatIds.length === 0) return [];
+    const result = await manager
+      .getRepository(EventSeat)
+      .createQueryBuilder()
+      .update(EventSeat)
+      .set({ soldAt: null, holdReservationId: null, holdExpiresAt: null })
+      .where('"id" IN (:...eventSeatIds)', { eventSeatIds })
+      .andWhere('"soldAt" IS NOT NULL')
+      .returning('"id"')
+      .execute();
+    return (result.raw as ReleasedEventSeatRow[]).map(({ id }) => id);
+  }
+
+  /**
    * Carrega uma Reservation do CUSTOMER com seus itens, sem revelar recursos de outro usuário.
    *
    * @param customerId - Identificador do CUSTOMER que deve possuir a Reservation.
@@ -129,8 +179,8 @@ export class ReservationRepository {
   ): Promise<ReservationDetail | null> {
     const queryBuilder = this.reservationsRepository.createQueryBuilder('reservation').addSelect(
       `CASE
-          WHEN "reservation"."confirmedAt" IS NOT NULL THEN '${ReservationStatus.Confirmed}'
           WHEN "reservation"."cancelledAt" IS NOT NULL THEN '${ReservationStatus.Cancelled}'
+          WHEN "reservation"."confirmedAt" IS NOT NULL THEN '${ReservationStatus.Confirmed}'
           WHEN "reservation"."expiresAt" <= CURRENT_TIMESTAMP THEN '${ReservationStatus.Expired}'
           ELSE '${ReservationStatus.Active}'
         END`,

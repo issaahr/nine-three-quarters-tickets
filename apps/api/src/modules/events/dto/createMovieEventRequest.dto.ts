@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsUUID, Matches, Min } from 'class-validator';
+import { IsInt, IsUUID, Matches, Max, Min } from 'class-validator';
 
 export class CreateMovieEventRequestDto {
   @ApiProperty({ example: '693134' })
@@ -19,5 +19,6 @@ export class CreateMovieEventRequestDto {
   @ApiProperty({ example: 2500, minimum: 0 })
   @IsInt({ message: 'Preço deve ser informado em centavos inteiros' })
   @Min(0, { message: 'Preço não pode ser negativo' })
+  @Max(100_000_000, { message: 'Preço excede o limite permitido' })
   public priceCents!: number;
 }
