@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { AddressInfo } from 'node:net';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { io, Socket } from 'socket.io-client';
 import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
@@ -14,6 +16,11 @@ import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
+import { RealtimeEvent } from '../src/modules/realtime/realtimeEvent.enum';
+import {
+  EventRoomJoined,
+  SeatRealtimeDelta,
+} from '../src/modules/realtime/seatRealtime.interfaces';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { User } from '../src/modules/users/user.entity';
@@ -40,7 +47,7 @@ describe('Reservations seated', () => {
 
     app = testingModule.createNestApplication();
     new Application().configure(app);
-    await app.init();
+    await app.listen(0, '127.0.0.1');
 
     dataSource = app.get(DataSource);
     eventsRepository = dataSource.getRepository(Event);
@@ -49,8 +56,8 @@ describe('Reservations seated', () => {
     reservationItemsRepository = dataSource.getRepository(ReservationItem);
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
     seatRealtimeGateway = app.get(SeatRealtimeGateway);
-    jest.spyOn(seatRealtimeGateway, 'emitHeld').mockImplementation();
-    jest.spyOn(seatRealtimeGateway, 'emitReleased').mockImplementation();
+    jest.spyOn(seatRealtimeGateway, 'emitHeld');
+    jest.spyOn(seatRealtimeGateway, 'emitReleased');
     customerOne = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'customer.one.demo@ntq.local' });
@@ -530,5 +537,53 @@ describe('Reservations seated', () => {
       .set('Cookie', customerCookie)
       .send({ eventId: randomUUID(), eventSeatIds: [duplicateSeatId, duplicateSeatId] })
       .expect(400);
+  });
+
+  it('projeta um hold HTTP para outro cliente conectado à room da ocorrência', async () => {
+    const event = await createEvent();
+    const [seat] = await createEventSeats(event, 1);
+    const cookie = await authenticate(customerOne.email);
+    const address = app.getHttpServer().address() as AddressInfo;
+    const serverUrl = `http://127.0.0.1:${address.port}`;
+
+    const connectClient = (): Promise<Socket> => {
+      const client = io(serverUrl, {
+        forceNew: true,
+        reconnection: false,
+        transports: ['websocket'],
+      });
+
+      return new Promise((resolve, reject) => {
+        client.once('connect', () => resolve(client));
+        client.once('connect_error', reject);
+      });
+    };
+    const joinEvent = (client: Socket): Promise<EventRoomJoined> =>
+      new Promise((resolve) => client.emit(RealtimeEvent.EventJoin, event.id, resolve));
+    const [purchasingClient, observingClient] = await Promise.all([
+      connectClient(),
+      connectClient(),
+    ]);
+
+    try {
+      await Promise.all([joinEvent(purchasingClient), joinEvent(observingClient)]);
+      const observedDelta = new Promise<SeatRealtimeDelta>((resolve) => {
+        observingClient.once(RealtimeEvent.SeatHeld, resolve);
+      });
+
+      await request(app.getHttpServer())
+        .post('/reservations')
+        .set('Cookie', cookie)
+        .send({ eventId: event.id, eventSeatIds: [seat.id] })
+        .expect(201);
+
+      await expect(observedDelta).resolves.toEqual({
+        eventId: event.id,
+        eventSeatIds: [seat.id],
+      });
+    } finally {
+      purchasingClient.disconnect();
+      observingClient.disconnect();
+    }
   });
 });

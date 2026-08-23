@@ -92,7 +92,7 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
         className={
           isActive
             ? 'mt-4 self-center rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
-            : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
+            : 'mt-4 self-center rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50 sm:absolute sm:left-1/2 sm:top-1/2 sm:mt-0 sm:-translate-x-1/2 sm:-translate-y-1/2'
         }
       >
         {isActive ? 'Desativar câmera' : 'Ativar câmera'}

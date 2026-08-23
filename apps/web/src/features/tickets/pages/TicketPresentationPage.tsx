@@ -91,8 +91,8 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
 
       <div className="mt-6 flex w-full justify-center">
         <article className="w-full max-w-[410px] overflow-hidden bg-[#2B0A10] text-[#F5F2EC] [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_22px),calc(100%_-_22px)_100%,0_100%)]">
-          <header className="flex flex-col gap-5 px-5 pb-6 pt-6 sm:flex-row sm:items-start sm:justify-between sm:px-8 sm:pt-8">
-            <div>
+          <header className="relative flex flex-col gap-5 px-5 pb-6 pt-6 sm:flex-row sm:items-start sm:justify-between sm:px-8 sm:pt-8">
+            <div className="min-w-0 pr-12 sm:pr-0">
               <p className="m-0 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#C9A768]">
                 {ticket.event.category === 'MOVIE' ? 'Filme' : 'Show'}
               </p>
@@ -103,7 +103,9 @@ export function TicketPresentationPage({ shared = false }: TicketPresentationPag
                 {formatTicketEventDateTime(ticket.event.startsAt, ticket.event.venueTimeZone)}
               </p>
             </div>
-            <span className="font-heading text-2xl font-semibold text-[#D9C7A0]">9¾</span>
+            <span className="absolute right-5 top-6 font-heading text-2xl font-semibold text-[#D9C7A0] sm:static">
+              9¾
+            </span>
           </header>
 
           <div className="px-5 pb-6 sm:px-8">
