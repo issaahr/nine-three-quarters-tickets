@@ -32,7 +32,10 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
             Disponível
           </span>
           <span className="flex items-center gap-2">
-            <span aria-hidden="true" className="size-3 rounded-sm bg-primary" />
+            <span
+              aria-hidden="true"
+              className="size-3 rounded-sm border border-brass-dark bg-secondary"
+            />
             Selecionado
           </span>
           <span className="flex items-center gap-2">
@@ -78,7 +81,7 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
                 style={{ gridColumn: seat.x + 1, gridRow: seat.y + 1 }}
                 className={`min-h-8 rounded-[3px] border px-1 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-70 ${
                   selected
-                    ? 'border-[#A9855B] bg-[#C9A768] text-[#2B0A10]'
+                    ? 'border-brass-dark bg-secondary text-secondary-foreground'
                     : available
                       ? 'border-[#C9BEAE] bg-white text-foreground hover:border-primary hover:bg-primary/10'
                       : 'border-[#B7AFA3] bg-[#B7AFA3] text-[#5A5650]'

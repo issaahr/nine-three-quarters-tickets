@@ -27,6 +27,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-brass-dark: var(--brass-dark);
+  --color-status-valid: var(--status-valid);
+  --color-status-valid-background: var(--status-valid-background);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -88,6 +91,9 @@ body {
     --border: oklch(0.598 0.01 80); /* Cinza quente #8A857C */
     --input: oklch(0.598 0.01 80); /* Cinza quente #8A857C */
     --ring: oklch(0.763 0.11 82); /* Latão #C9A768 */
+    --brass-dark: oklch(0.632 0.09 75); /* Latão escuro #A9855B */
+    --status-valid: oklch(0.45 0.08 150); /* Verde musgo #3E6B4F */
+    --status-valid-background: oklch(0.94 0.025 150); /* Fundo de estado válido #E8F0EA */
 
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
