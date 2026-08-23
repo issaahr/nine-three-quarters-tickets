@@ -178,6 +178,7 @@ describe('catálogo público de eventos', () => {
 
     expect(await screen.findByRole('heading', { name: 'Pista' })).toBeInTheDocument();
     expect(screen.getByText('Entrada geral')).toBeInTheDocument();
+    expect(screen.getByText('Preço unitário')).toBeInTheDocument();
     expect(screen.getByText('1 ingresso · Pista')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Aumentar quantidade' }));
     expect(screen.getByText('2 ingressos · Pista')).toBeInTheDocument();
@@ -369,6 +370,14 @@ describe('catálogo público de eventos', () => {
     expect(soldSeat).toBeDisabled();
     expect(screen.getByText('Selecione seus assentos')).toBeInTheDocument();
     expect(screen.getByText('A seleção ainda não reserva os assentos.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Deslize horizontalmente para visualizar todos os assentos.'),
+    ).toBeInTheDocument();
+    const seatMapGrid = screen
+      .getAllByLabelText('Mapa de assentos')
+      .find((element) => element.tagName === 'DIV');
+
+    expect(seatMapGrid?.parentElement).toHaveClass('overflow-x-auto', 'sm:overflow-visible');
 
     await user.click(availableSeat);
 

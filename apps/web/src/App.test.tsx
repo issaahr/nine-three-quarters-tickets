@@ -39,6 +39,7 @@ beforeEach(() => {
     http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
     http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
     http.get(`${apiUrl}/gate/events`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/tickets`, () => HttpResponse.json([])),
   );
 });
 
@@ -74,6 +75,14 @@ describe('fluxo de autenticação', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('user-1')).not.toBeInTheDocument();
     expect(screen.queryByText(/@/)).not.toBeInTheDocument();
+  });
+
+  it('oculta Eventos no header mobile do cliente autenticado', async () => {
+    renderApp('/customer/tickets', { id: 'customer-1', role: UserRole.Customer });
+
+    expect(await screen.findByRole('heading', { name: 'Meus ingressos' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Eventos' })).toHaveClass('hidden', 'sm:inline-block');
+    expect(screen.getByRole('link', { name: 'Meus ingressos' })).toBeInTheDocument();
   });
 
   it('mantém a home pública disponível quando a sessão não existe', async () => {

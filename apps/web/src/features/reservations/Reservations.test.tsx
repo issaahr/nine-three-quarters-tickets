@@ -102,6 +102,11 @@ describe('checkout de Reservation', () => {
     expect(await screen.findByText('A1')).toBeInTheDocument();
     expect(screen.getByText('A2')).toBeInTheDocument();
     expect(screen.getByText('R$ 51,80')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /a compra pode ser cancelada integralmente em até sete dias da aprovação do pagamento/i,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('informa expiração autoritativa e permite retornar explicitamente à seleção', async () => {

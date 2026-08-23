@@ -60,7 +60,7 @@ export function AuthenticatedLayout() {
                   to={navigation.homePath}
                   end
                   className={({ isActive }) =>
-                    `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
+                    `hidden rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary sm:inline-block ${
                       isActive
                         ? 'text-primary-foreground'
                         : 'text-[#C9BBA6] hover:text-primary-foreground'

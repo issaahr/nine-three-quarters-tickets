@@ -345,6 +345,9 @@ describe('gestão inicial de Events pelo organizador', () => {
     await user.type(screen.getByLabelText('Capacidade de entrada geral'), '0');
 
     expect(screen.getByRole('button', { name: 'Publicar' })).toBeDisabled();
+    expect(screen.getByLabelText('Capacidade de entrada geral')).toHaveClass(
+      '[appearance:textfield]',
+    );
 
     await user.clear(screen.getByLabelText('Capacidade de entrada geral'));
     await user.type(screen.getByLabelText('Capacidade de entrada geral'), '500');

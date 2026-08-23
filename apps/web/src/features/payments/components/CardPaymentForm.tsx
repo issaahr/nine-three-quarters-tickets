@@ -329,6 +329,11 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
         <p className="mb-0 text-center text-xs text-muted-foreground">
           Pagamento simulado — nenhum dado é cobrado ou armazenado.
         </p>
+        <p className="mb-0 text-center text-xs leading-5 text-muted-foreground">
+          Política de cancelamento: a compra pode ser cancelada integralmente em até sete dias da
+          aprovação do pagamento, desde que o evento ainda não tenha começado e nenhum ingresso
+          tenha sido utilizado.
+        </p>
       </form>
     </section>
   );

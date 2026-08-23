@@ -238,7 +238,7 @@ export function EventForm({ category, selectedItem }: EventFormProps) {
               aria-required="true"
               aria-invalid={!!errors.capacity}
               aria-describedby={errors.capacity ? 'capacity-error' : 'capacity-hint'}
-              className={fieldClassName}
+              className={`${fieldClassName} [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
               {...register('capacity', { valueAsNumber: true })}
             />
             {errors.capacity?.message ? (
