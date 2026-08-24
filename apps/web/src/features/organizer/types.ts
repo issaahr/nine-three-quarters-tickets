@@ -43,6 +43,7 @@ export interface OrganizerEvent {
   admissionMode: AdmissionMode;
   status: EventStatus;
   startsAt: string;
+  createdAt: string;
   priceCents: number;
   isActive: boolean;
   soldTickets: number;

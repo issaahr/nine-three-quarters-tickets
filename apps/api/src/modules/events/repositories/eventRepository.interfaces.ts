@@ -8,6 +8,7 @@ export interface EventDiscoveryFilters {
   city?: string;
   dateFrom?: string;
   dateTo?: string;
+  sort?: 'recent' | 'oldest';
   page: number;
 }
 
@@ -30,6 +31,17 @@ export interface OrganizerEventWithStats {
   availableTickets: number | null;
   inventoryTotal: number | null;
   revenueCents: number;
+}
+
+export interface GateEventsFilters {
+  page: number;
+  today?: boolean;
+}
+
+export interface GateEventsPage {
+  events: Event[];
+  page: number;
+  hasMore: boolean;
 }
 
 export interface EventCancellationResult {

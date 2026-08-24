@@ -81,4 +81,5 @@ export interface EventDiscoveryFilters {
   city?: string;
   dateFrom?: string;
   dateTo?: string;
+  sort?: 'recent' | 'oldest';
 }

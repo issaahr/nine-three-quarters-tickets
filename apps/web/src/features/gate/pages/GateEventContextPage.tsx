@@ -5,36 +5,25 @@ import { isApiRateLimitError, rateLimitErrorMessage } from '@/lib/api';
 import { formatGateEventDateTime } from '../../events/eventPresentation';
 import { CheckInResultPanel } from '../components/CheckInResultPanel';
 import { TicketCameraScanner } from '../components/TicketCameraScanner';
-import { useCheckInCredential, useCheckInManualCode, useGateEvents } from '../hooks';
+import { useCheckInCredential, useCheckInManualCode, useGateEvent } from '../hooks';
 import { CheckInResult } from '../types';
 
 export function GateEventContextPage() {
   const { eventId } = useParams<{ eventId: string }>();
-  const eventsQuery = useGateEvents();
+  const eventQuery = useGateEvent(eventId);
   const checkInCredentialMutation = useCheckInCredential();
   const checkInManualCodeMutation = useCheckInManualCode();
   const [manualCode, setManualCode] = useState('');
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  if (eventsQuery.isPending) {
+  if (eventQuery.isPending) {
     return <main className="px-6 py-12 lg:px-8">Carregando contexto da portaria...</main>;
   }
 
-  if (eventsQuery.isError) {
-    return (
-      <main className="px-6 py-12 lg:px-8">
-        <h1 className="font-heading text-3xl font-semibold">
-          Não foi possível carregar a portaria
-        </h1>
-        <p className="mt-3 text-surface-dark-muted">Tente novamente em instantes.</p>
-      </main>
-    );
-  }
+  const event = eventQuery.data;
 
-  const event = eventsQuery.data?.find(({ id }) => id === eventId);
-
-  if (!event) {
+  if (eventQuery.isError || !event) {
     return (
       <main className="px-6 py-12 lg:px-8">
         <h1 className="font-heading text-3xl font-semibold">Evento indisponível</h1>

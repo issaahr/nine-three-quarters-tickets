@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useProgressiveList } from '@/hooks/useInfiniteScroll';
 import { cn } from '@/lib/utils';
 import { EventCategory, EventStatus } from '../../events/types';
 import { formatEventPrice } from '../../events/eventPresentation';
@@ -42,6 +43,7 @@ export function OrganizerHome() {
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'ALL'>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [sortOrder, setSortOrder] = useState<'recent' | 'oldest'>('recent');
   const eventsQuery = useOrganizerEvents();
   const publishMutation = usePublishEvent();
   const organizerEvents = eventsQuery.data ?? [];
@@ -61,8 +63,25 @@ export function OrganizerHome() {
       (!dateTo || eventDate <= dateTo)
     );
   });
+  const sortedFilteredEvents = [...filteredEvents].sort((a, b) => {
+    const timeA = new Date(a.createdAt).getTime();
+    const timeB = new Date(b.createdAt).getTime();
+
+    return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
+  });
+  const filterKey = `${titleQuery}|${categoryFilter}|${statusFilter}|${dateFrom}|${dateTo}|${sortOrder}`;
+  const {
+    visibleItems: visibleEvents,
+    hasMore,
+    sentinelRef,
+  } = useProgressiveList(sortedFilteredEvents, 10, filterKey);
   const hasActiveFilters = Boolean(
-    titleQuery || categoryFilter !== 'ALL' || statusFilter !== 'ALL' || dateFrom || dateTo,
+    titleQuery ||
+    categoryFilter !== 'ALL' ||
+    statusFilter !== 'ALL' ||
+    dateFrom ||
+    dateTo ||
+    sortOrder !== 'recent',
   );
 
   // Remove o flash do histórico sem ocultá-lo durante a navegação que o originou.
@@ -156,7 +175,7 @@ export function OrganizerHome() {
         <>
           <section
             aria-label="Filtros de eventos"
-            className="mb-6 grid gap-3 border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
+            className="mb-6 grid gap-3 border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-6"
           >
             <div>
               <label
@@ -244,6 +263,24 @@ export function OrganizerHome() {
                 className="h-10 rounded-[4px] bg-white"
               />
             </div>
+            <div>
+              <label
+                htmlFor="organizer-sort"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                Ordem
+              </label>
+              <select
+                id="organizer-sort"
+                aria-label="Ordenar por"
+                value={sortOrder}
+                onChange={(event) => setSortOrder(event.target.value as 'recent' | 'oldest')}
+                className="h-10 w-full rounded-[4px] border border-input bg-white px-3 text-sm"
+              >
+                <option value="recent">Mais recentes</option>
+                <option value="oldest">Mais antigos</option>
+              </select>
+            </div>
             {hasActiveFilters && (
               <button
                 type="button"
@@ -253,8 +290,9 @@ export function OrganizerHome() {
                   setStatusFilter('ALL');
                   setDateFrom('');
                   setDateTo('');
+                  setSortOrder('recent');
                 }}
-                className="text-left text-sm font-medium text-primary underline-offset-4 hover:underline sm:col-span-2 lg:col-span-5"
+                className="text-left text-sm font-medium text-primary underline-offset-4 hover:underline sm:col-span-2 lg:col-span-6"
               >
                 Limpar filtros
               </button>
@@ -272,16 +310,21 @@ export function OrganizerHome() {
               </p>
             </section>
           ) : (
-            <section aria-label="Eventos do organizador" className="grid gap-3">
-              {filteredEvents.map((event) => (
-                <OrganizerEventCard
-                  key={event.id}
-                  event={event}
-                  onPublish={(eventId) => void handlePublish(eventId)}
-                  isPublishing={publishMutation.isPending && publishMutation.variables === event.id}
-                />
-              ))}
-            </section>
+            <>
+              <section aria-label="Eventos do organizador" className="grid gap-3">
+                {visibleEvents.map((event) => (
+                  <OrganizerEventCard
+                    key={event.id}
+                    event={event}
+                    onPublish={(eventId) => void handlePublish(eventId)}
+                    isPublishing={
+                      publishMutation.isPending && publishMutation.variables === event.id
+                    }
+                  />
+                ))}
+              </section>
+              {hasMore && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+            </>
           )}
         </>
       )}

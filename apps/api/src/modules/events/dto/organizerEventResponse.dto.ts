@@ -49,7 +49,8 @@ export class OrganizerEventResponseDto {
   public priceCents!: number;
 
   @ApiProperty({
-    description: 'Indica se o evento está publicado e contabiliza no painel de eventos ativos, independentemente de já ter iniciado ou não.',
+    description:
+      'Indica se o evento está publicado e contabiliza no painel de eventos ativos, independentemente de já ter iniciado ou não.',
   })
   public isActive!: boolean;
 

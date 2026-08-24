@@ -1,19 +1,44 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { formatEventDetailDateTime } from '../../events/eventPresentation';
-import { isEventOnCurrentVenueDay } from '../eventDay';
 import { useGateEvents } from '../hooks';
+import { GateEvent } from '../types';
 
 export function GateEventSelectionPage() {
-  const eventsQuery = useGateEvents();
   const [showOnlyToday, setShowOnlyToday] = useState(false);
+  const eventsQuery = useGateEvents({ today: showOnlyToday || undefined });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = eventsQuery;
+  const isNextPageError = Boolean(
+    eventsQuery.isFetchNextPageError ||
+    (eventsQuery.isError && (eventsQuery.data?.pages.length ?? 0) > 0),
+  );
+
+  const events = useMemo(() => {
+    const byId = new Map<string, GateEvent>();
+    for (const page of eventsQuery.data?.pages ?? []) {
+      for (const event of page.items) {
+        byId.set(event.id, event);
+      }
+    }
+    return Array.from(byId.values());
+  }, [eventsQuery.data]);
+
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: fetchNextPage,
+    hasMore: Boolean(hasNextPage),
+    isLoading: isFetchingNextPage,
+    isError: isNextPageError,
+    rootMargin: '240px',
+  });
 
   if (eventsQuery.isPending) {
     return <main className="px-6 py-12 lg:px-8">Carregando Events para operação...</main>;
   }
 
-  if (eventsQuery.isError) {
+  if (eventsQuery.isError && events.length === 0) {
     return (
       <main className="px-6 py-12 lg:px-8">
         <h1 className="font-heading text-3xl font-semibold">
@@ -24,12 +49,7 @@ export function GateEventSelectionPage() {
     );
   }
 
-  const events = eventsQuery.data ?? [];
-  const displayedEvents = showOnlyToday
-    ? events.filter((event) => isEventOnCurrentVenueDay(event.startsAt, event.venueTimeZone))
-    : events;
-
-  if (events.length === 0) {
+  if (events.length === 0 && !showOnlyToday) {
     return (
       <main className="px-6 py-12 lg:px-8">
         <p className="text-[11px] font-medium uppercase tracking-[2px] text-brass-dark">
@@ -62,29 +82,40 @@ export function GateEventSelectionPage() {
         {showOnlyToday ? 'Mostrar todos' : 'Ver eventos de hoje'}
       </button>
 
-      {displayedEvents.length === 0 ? (
+      {events.length === 0 ? (
         <p className="mt-8 text-surface-dark-muted">Não há Events para hoje.</p>
       ) : (
-        <ul className="mt-8 grid gap-3" aria-label="Events disponíveis para operação">
-          {displayedEvents.map((event) => (
-            <li key={event.id}>
-              <Link
-                to={`/gate/events/${encodeURIComponent(event.id)}`}
-                className="block rounded-[4px] border border-surface-dark-border bg-surface-dark-deep p-5 transition-colors hover:border-brass-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
-              >
-                <span className="block font-heading text-xl font-semibold text-background">
-                  {event.title}
-                </span>
-                <span className="mt-2 block text-sm text-surface-dark-subtle">
-                  {event.venueName}
-                </span>
-                <span className="mt-1 block text-sm text-border">
-                  {formatEventDetailDateTime(event.startsAt, event.venueTimeZone)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-8 grid gap-3" aria-label="Events disponíveis para operação">
+            {events.map((event) => (
+              <li key={event.id}>
+                <Link
+                  to={`/gate/events/${encodeURIComponent(event.id)}`}
+                  className="block rounded-[4px] border border-surface-dark-border bg-surface-dark-deep p-5 transition-colors hover:border-brass-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+                >
+                  <span className="block font-heading text-xl font-semibold text-background">
+                    {event.title}
+                  </span>
+                  <span className="mt-2 block text-sm text-surface-dark-subtle">
+                    {event.venueName}
+                  </span>
+                  <span className="mt-1 block text-sm text-border">
+                    {formatEventDetailDateTime(event.startsAt, event.venueTimeZone)}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {hasNextPage && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+          <InfiniteScrollStatus
+            isLoading={isFetchingNextPage}
+            isError={isNextPageError}
+            onRetry={() => void fetchNextPage()}
+            loadingText="Carregando mais eventos..."
+            errorText="Não foi possível carregar mais eventos."
+            retryText="Tentar novamente"
+          />
+        </>
       )}
     </main>
   );

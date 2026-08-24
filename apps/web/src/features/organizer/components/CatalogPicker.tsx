@@ -1,9 +1,11 @@
 import { Search } from 'lucide-react';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
 import { Input } from '@/components/ui/input';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { cn } from '@/lib/utils';
 
 import { EventCategory } from '../../events/types';
@@ -27,7 +29,6 @@ interface CatalogPickerProps {
  * Mantém descoberta e seleção restritas ao catálogo correspondente ao tipo de Event escolhido.
  */
 export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPickerProps) {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState<string>();
   const [visibleItemCount, setVisibleItemCount] = useState(10);
@@ -54,39 +55,19 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
   const singularLabel = isShow ? 'atração' : 'filme';
   const pluralLabel = isShow ? 'atrações' : 'filmes';
 
-  useEffect(() => {
-    const target = loadMoreRef.current;
-
-    if (!target || typeof IntersectionObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) {
-          return;
-        }
-
-        if (visibleItemCount < loadedItems.length) {
-          setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
-        } else if (hasNextCatalogPage && !isFetchingNextCatalogPage && !hasNextCatalogPageError) {
-          void fetchNextCatalogPage();
-        }
-      },
-      { rootMargin: '240px' },
-    );
-
-    observer.observe(target);
-
-    return () => observer.disconnect();
-  }, [
-    loadedItems.length,
-    fetchNextCatalogPage,
-    hasNextCatalogPage,
-    hasNextCatalogPageError,
-    isFetchingNextCatalogPage,
-    visibleItemCount,
-  ]);
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: () => {
+      if (visibleItemCount < loadedItems.length) {
+        setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
+      } else if (hasNextCatalogPage && !isFetchingNextCatalogPage && !hasNextCatalogPageError) {
+        void fetchNextCatalogPage();
+      }
+    },
+    hasMore: visibleItemCount < loadedItems.length || Boolean(hasNextCatalogPage),
+    isLoading: isFetchingNextCatalogPage,
+    isError: hasNextCatalogPageError,
+    rootMargin: '240px',
+  });
 
   /**
    * Inicia a pesquisa somente por ação explícita, evitando chamadas a cada tecla digitada.
@@ -228,33 +209,19 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
         </div>
       )}
 
-      {(visibleItemCount < loadedItems.length || catalog.hasNextPage) && (
-        <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
+      {(visibleItemCount < loadedItems.length || Boolean(catalog.hasNextPage)) && (
+        <div ref={sentinelRef} className="h-8" aria-hidden="true" />
       )}
 
-      {catalog.isFetchingNextPage && (
-        <p role="status" className="mt-3 text-center text-sm text-muted-foreground">
-          Carregando mais {pluralLabel}...
-        </p>
-      )}
-
-      {hasNextCatalogPageError && (
-        <div className="mt-3 text-center">
-          <p role="alert" className="text-sm text-destructive">
-            Não foi possível carregar mais {pluralLabel}.
-          </p>
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void handleRetryNextPage()}
-            className="mt-2"
-          >
-            Tentar novamente
-          </Button>
-        </div>
-      )}
+      <InfiniteScrollStatus
+        isLoading={catalog.isFetchingNextPage}
+        isError={hasNextCatalogPageError}
+        onRetry={() => void handleRetryNextPage()}
+        loadingText={`Carregando mais ${pluralLabel}...`}
+        errorText={`Não foi possível carregar mais ${pluralLabel}.`}
+        retryText="Tentar novamente"
+        className="mt-3 text-center"
+      />
     </section>
   );
 }

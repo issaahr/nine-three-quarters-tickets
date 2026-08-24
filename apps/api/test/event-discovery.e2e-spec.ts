@@ -1,18 +1,29 @@
 import { randomUUID } from 'node:crypto';
 
 import { INestApplication } from '@nestjs/common';
+
 import { Test } from '@nestjs/testing';
+
 import request from 'supertest';
+
 import { DataSource, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+
 import { Application } from '../src/application';
+
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
+
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
+
 import { Event } from '../src/modules/events/event.entity';
+
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
+
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+
 import { User } from '../src/modules/users/user.entity';
+
 import { Venue } from '../src/modules/venues/venue.entity';
 
 describe('descoberta pública de Events', () => {
@@ -34,11 +45,14 @@ describe('descoberta pública de Events', () => {
     await app.init();
 
     const dataSource = app.get(DataSource);
+
     eventsRepository = dataSource.getRepository(Event);
     venuesRepository = dataSource.getRepository(Venue);
+
     organizer = await dataSource
       .getRepository(User)
       .findOneByOrFail({ email: 'organizer.demo@ntq.local' });
+
     venue = await venuesRepository.save({
       name: `Cinema Descoberta ${randomUUID()}`,
       address: 'Rua Pública, 93',
@@ -48,6 +62,7 @@ describe('descoberta pública de Events', () => {
       timeZone: 'Pacific/Kiritimati',
       admissionMode: AdmissionMode.Seated,
     });
+
     accentedVenue = await venuesRepository.save({
       name: `Cinema São Paulo ${randomUUID()}`,
       address: 'Rua Acentuada, 93',
@@ -63,8 +78,10 @@ describe('descoberta pública de Events', () => {
     if (createdEventIds.length > 0) {
       await eventsRepository.delete(createdEventIds);
     }
+
     await venuesRepository.delete(venue.id);
     await venuesRepository.delete(accentedVenue.id);
+
     await app.close();
   });
 
@@ -94,11 +111,13 @@ describe('descoberta pública de Events', () => {
     });
 
     createdEventIds.push(event.id);
+
     return event;
   }
 
   it('expõe somente Events publicados e futuros sem exigir autenticação', async () => {
     const published = await createEvent({});
+
     await createEvent({ status: EventStatus.Draft });
     await createEvent({ status: EventStatus.Cancelled });
     await createEvent({ startsAt: new Date('2020-06-01T10:30:00.000Z') });
@@ -123,6 +142,7 @@ describe('descoberta pública de Events', () => {
       page: 1,
       hasMore: false,
     });
+
     expect(response.body.items[0]).not.toHaveProperty('organizerId');
     expect(response.body.items[0]).not.toHaveProperty('externalId');
     expect(response.body.items[0]).not.toHaveProperty('status');
@@ -189,6 +209,7 @@ describe('descoberta pública de Events', () => {
       .get('/events')
       .query({ query: paginationMarker, page: 1 })
       .expect(200);
+
     const secondPage = await request(app.getHttpServer())
       .get('/events')
       .query({ query: paginationMarker, page: 2 })
@@ -196,8 +217,10 @@ describe('descoberta pública de Events', () => {
 
     expect(firstPage.body.items).toHaveLength(12);
     expect(firstPage.body.hasMore).toBe(true);
+
     expect(secondPage.body.items).toHaveLength(1);
     expect(secondPage.body.hasMore).toBe(false);
+
     expect([
       ...firstPage.body.items.map(({ id }: { id: string }) => id),
       ...secondPage.body.items.map(({ id }: { id: string }) => id),
@@ -209,7 +232,11 @@ describe('descoberta pública de Events', () => {
     [EventStatus.Published, new Date('2020-08-01T10:30:00.000Z'), true],
     [EventStatus.Cancelled, new Date('2099-08-01T10:30:00.000Z'), false],
   ])('lê uma ocorrência %s preservando seu estado temporal', async (status, startsAt, isPast) => {
-    const event = await createEvent({ status, startsAt, title: `Detalhe ${status} ${isPast}` });
+    const event = await createEvent({
+      status,
+      startsAt,
+      title: `Detalhe ${status} ${isPast}`,
+    });
 
     const response = await request(app.getHttpServer()).get(`/events/${event.id}`).expect(200);
 
@@ -222,6 +249,7 @@ describe('descoberta pública de Events', () => {
         priceCents: event.priceCents,
       }),
     );
+
     expect(response.body).not.toHaveProperty('externalId');
     expect(response.body).not.toHaveProperty('organizerId');
   });
@@ -239,12 +267,57 @@ describe('descoberta pública de Events', () => {
     [{ dateFrom: '2099-02-31' }, 'Data inicial deve representar uma data válida'],
     [{ dateFrom: '01/06/2099' }, 'Data inicial deve usar o formato YYYY-MM-DD'],
     [{ page: 0 }, 'Página deve ser maior ou igual a 1'],
+    [{ sort: 'ASC' }, 'Ordenação deve ser "recent" ou "oldest"'],
+    [{ sort: 'DESC' }, 'Ordenação deve ser "recent" ou "oldest"'],
+    [{ sort: 'INVALID' }, 'Ordenação deve ser "recent" ou "oldest"'],
   ])('rejeita filtros sem contrato: %o', async (query, expectedMessage) => {
     const response = await request(app.getHttpServer()).get('/events').query(query).expect(400);
 
     expect(response.body.message).toEqual(
       expect.arrayContaining([expect.stringContaining(expectedMessage)]),
     );
+  });
+
+  it('aceita ordenação pública apenas com recent e oldest', async () => {
+    const sortMarker = randomUUID();
+
+    const older = await createEvent({
+      title: `Evento Mais Antigo ${sortMarker}`,
+      description: `Evento de teste de ordenação ${sortMarker}.`,
+      startsAt: new Date('2035-01-01T10:00:00.000Z'),
+    });
+
+    const newer = await createEvent({
+      title: `Evento Mais Recente ${sortMarker}`,
+      description: `Evento de teste de ordenação ${sortMarker}.`,
+      startsAt: new Date('2035-02-01T10:00:00.000Z'),
+    });
+
+    const recentResponse = await request(app.getHttpServer())
+      .get('/events')
+      .query({
+        query: sortMarker,
+        sort: 'recent',
+      })
+      .expect(200);
+
+    expect(recentResponse.body.items.map(({ id }: { id: string }) => id)).toEqual([
+      newer.id,
+      older.id,
+    ]);
+
+    const oldestResponse = await request(app.getHttpServer())
+      .get('/events')
+      .query({
+        query: sortMarker,
+        sort: 'oldest',
+      })
+      .expect(200);
+
+    expect(oldestResponse.body.items.map(({ id }: { id: string }) => id)).toEqual([
+      older.id,
+      newer.id,
+    ]);
   });
 
   it('rejeita período invertido com erro de domínio explícito', async () => {

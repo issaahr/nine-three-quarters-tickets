@@ -18,12 +18,15 @@ import { EventNotFoundError } from '../errors/eventNotFound.error';
 import {
   EventDiscoveryFilters,
   EventDiscoveryPage,
+  GateEventsFilters,
+  GateEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
   EventCancellationResult,
 } from './eventRepository.interfaces';
 
 const eventDiscoveryPageSize = 12;
+const gateEventsPageSize = 10;
 
 /**
  * Concentra consultas semânticas de Event que exigem QueryBuilder ou valores calculados pelo PostgreSQL.
@@ -255,9 +258,11 @@ export class EventRepository {
       );
     }
 
+    const direction = filters.sort === 'recent' ? 'DESC' : 'ASC';
+
     const offset = (filters.page - 1) * eventDiscoveryPageSize;
     const events = await queryBuilder
-      .orderBy('event.startsAt', 'ASC')
+      .orderBy('event.startsAt', direction)
       .addOrderBy('event.id', 'ASC')
       .skip(offset)
       .take(eventDiscoveryPageSize + 1)
@@ -272,6 +277,59 @@ export class EventRepository {
   }
 
   /**
+   * Consulta paginada dos Events publicados operáveis pela portaria com filtro opcional por data atual.
+   *
+   * @param filters - Critérios de paginação e filtro temporal no fuso do Venue.
+   * @returns Página de ocorrências operáveis e indicador determinístico de hasMore.
+   */
+  public async findOperableForGate(filters: GateEventsFilters): Promise<GateEventsPage> {
+    const page = Math.max(1, filters.page || 1);
+    const offset = (page - 1) * gateEventsPageSize;
+
+    const queryBuilder = this.repository
+      .createQueryBuilder('event')
+      .innerJoinAndSelect('event.venue', 'venue')
+      .where('event.status = :publishedStatus', { publishedStatus: EventStatus.Published });
+
+    if (filters.today) {
+      queryBuilder.andWhere(
+        `("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date = (CURRENT_TIMESTAMP AT TIME ZONE "venue"."timeZone")::date`,
+      );
+    }
+
+    const events = await queryBuilder
+      .orderBy('event.startsAt', 'ASC')
+      .addOrderBy('event.id', 'ASC')
+      .skip(offset)
+      .take(gateEventsPageSize + 1)
+      .getMany();
+
+    const hasMore = events.length > gateEventsPageSize;
+
+    return {
+      events: hasMore ? events.slice(0, gateEventsPageSize) : events,
+      page,
+      hasMore,
+    };
+  }
+
+  /**
+   * Carrega o contexto de um Event publicado específico para operação direta na portaria.
+   *
+   * @param eventId - Identificador único do evento.
+   * @returns Entidade do evento publicada com Venue, ou null se não encontrada/não publicada.
+   */
+  public async findOperableGateEventById(eventId: string): Promise<Event | null> {
+    return this.repository.findOne({
+      where: {
+        id: eventId,
+        status: EventStatus.Published,
+      },
+      relations: { venue: true },
+    });
+  }
+
+  /**
    * Carrega os Events do organizador com agregados de vendas calculados no PostgreSQL.
    *
    * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
@@ -281,10 +339,7 @@ export class EventRepository {
     const result = await this.repository
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
-      .addSelect(
-        '"event"."status" = :publishedStatus',
-        'eventIsActive',
-      )
+      .addSelect('"event"."status" = :publishedStatus', 'eventIsActive')
       .addSelect(
         (subquery) =>
           subquery
@@ -351,7 +406,7 @@ export class EventRepository {
       .where('"event"."organizerId" = :organizerId', { organizerId })
       .setParameter('publishedStatus', EventStatus.Published)
       .setParameter('completedRefundStatus', RefundStatus.Completed)
-      .orderBy('event.startsAt', 'DESC')
+      .orderBy('event.createdAt', 'DESC')
       .getRawAndEntities();
 
     return result.entities.map((event, index) => {

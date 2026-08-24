@@ -31,6 +31,7 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
   const [city, setCity] = useState(filters.city ?? '');
   const [dateFrom, setDateFrom] = useState(filters.dateFrom ?? '');
   const [dateTo, setDateTo] = useState(filters.dateTo ?? '');
+  const [sortOrder, setSortOrder] = useState<'recent' | 'oldest'>(filters.sort ?? 'recent');
   const [periodError, setPeriodError] = useState<string>();
   const [isExpanded, setIsExpanded] = useState(false);
   const selectedGenre = suggestedGenres.includes(genre) ? genre : '';
@@ -51,6 +52,7 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
       city: city.trim().replace(/\s+/g, ' ') || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      sort: sortOrder,
     });
   }
 
@@ -60,6 +62,7 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
     setCity('');
     setDateFrom('');
     setDateTo('');
+    setSortOrder('recent');
     setPeriodError(undefined);
     onApply({});
   }
@@ -155,7 +158,7 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
               />
             </div>
           </div>
-          <div className="mt-4 grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(150px,0.6fr)_minmax(150px,0.6fr)_auto]">
+          <div className="mt-4 grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(140px,0.5fr)_minmax(140px,0.5fr)_minmax(140px,0.5fr)_auto]">
             <div>
               <label htmlFor="event-date-from" className={labelClassName}>
                 A partir de
@@ -181,6 +184,27 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
                 onChange={(event) => setDateTo(event.target.value)}
                 className={fieldClassName}
               />
+            </div>
+            <div>
+              <label htmlFor="event-sort" className={labelClassName}>
+                Ordem
+              </label>
+              <Select<string>
+                value={sortOrder}
+                onValueChange={(value) => setSortOrder(value as 'recent' | 'oldest')}
+              >
+                <SelectTrigger id="event-sort" className="h-10">
+                  <SelectValue>
+                    {(value: string | null) =>
+                      value === 'recent' ? 'Mais recentes' : 'Mais antigos'
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="oldest">Mais antigos</SelectItem>
+                  <SelectItem value="recent">Mais recentes</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-1 xl:justify-end">
               <Button type="submit" className="h-10 flex-1 rounded-[4px] px-5 xl:flex-none">

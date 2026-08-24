@@ -312,6 +312,34 @@ describe('catálogo público de eventos', () => {
     expect(requestedUrl?.searchParams.has('genre')).toBe(false);
   });
 
+  it('aplica ordem de eventos no formulário de filtros e envia para a consulta', async () => {
+    let capturedSort: string | null = null;
+    server.use(
+      http.get(`${apiUrl}/events`, ({ request }) => {
+        capturedSort = new URL(request.url).searchParams.get('sort');
+        return HttpResponse.json({ items: [event], page: 1, hasMore: false });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents();
+    expect(await screen.findByRole('heading', { name: event.title })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Filtros' }));
+    await user.click(screen.getByRole('combobox', { name: 'Ordem' }));
+    await user.click(await screen.findByRole('option', { name: 'Mais recentes' }));
+    await user.click(screen.getByRole('button', { name: 'Aplicar filtros' }));
+
+    await waitFor(() => expect(capturedSort).toBe('recent'));
+  });
+
+  it('mantém altura mínima reservada no título dos cards de eventos para hierarquia consistente', async () => {
+    renderEvents();
+
+    const titleHeading = await screen.findByRole('heading', { name: event.title });
+    expect(titleHeading).toHaveClass('min-h-14');
+  });
+
   it('mantém a barra de busca disponível enquanto os filtros avançados estão recolhidos', async () => {
     const user = userEvent.setup();
     renderEvents();
@@ -387,6 +415,78 @@ describe('catálogo público de eventos', () => {
     expect(
       await screen.findByRole('heading', { name: 'Nenhum evento corresponde aos filtros' }),
     ).toBeInTheDocument();
+  });
+
+  it('exibe fallback de erro e permite retry no infinite scroll da descoberta pública', async () => {
+    const page1Item = {
+      id: 'event-p1',
+      title: 'Filme Página 1',
+      imageUrl: null,
+      genres: ['Fantasia'],
+      category: EventCategory.Movie,
+      admissionMode: AdmissionMode.Seated,
+      startsAt: '2030-08-25T20:00:00.000Z',
+      priceCents: 2500,
+      venueName: 'Cine Imperial',
+      venueCity: 'Fortaleza',
+      venueState: 'CE',
+    };
+    const page2Item = {
+      id: 'event-p2',
+      title: 'Filme Página 2 Recuperado',
+      imageUrl: null,
+      genres: ['Fantasia'],
+      category: EventCategory.Movie,
+      admissionMode: AdmissionMode.Seated,
+      startsAt: '2030-08-26T20:00:00.000Z',
+      priceCents: 2500,
+      venueName: 'Cine Imperial',
+      venueCity: 'Fortaleza',
+      venueState: 'CE',
+    };
+
+    let triggerObserver: ((entries: IntersectionObserverEntry[]) => void) | undefined;
+    class MockObserver implements Partial<IntersectionObserver> {
+      public constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
+        triggerObserver = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+      public unobserve(): void {}
+    }
+    vi.stubGlobal('IntersectionObserver', MockObserver);
+
+    let failPage2 = true;
+    server.use(
+      http.get(`${apiUrl}/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const page = url.searchParams.get('page');
+        if (page === '2') {
+          if (failPage2) {
+            return new HttpResponse(null, { status: 500 });
+          }
+          return HttpResponse.json({ items: [page2Item], page: 2, hasMore: false });
+        }
+        return HttpResponse.json({ items: [page1Item], page: 1, hasMore: true });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEvents();
+
+    expect(await screen.findByText('Filme Página 1')).toBeInTheDocument();
+
+    await waitFor(() => expect(triggerObserver).toBeDefined());
+    triggerObserver!([{ isIntersecting: true } as IntersectionObserverEntry]);
+
+    expect(await screen.findByText('Não foi possível carregar mais eventos.')).toBeInTheDocument();
+    const retryButton = screen.getByRole('button', { name: 'Tentar novamente' });
+
+    failPage2 = false;
+    await user.click(retryButton);
+
+    expect(await screen.findByText('Filme Página 2 Recuperado')).toBeInTheDocument();
+    expect(screen.getByText('Filme Página 1')).toBeInTheDocument();
   });
 
   it('abre uma única ocorrência com conteúdo local, Venue e preço claros', async () => {

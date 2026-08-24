@@ -43,7 +43,7 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
             9¾
           </div>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 pr-24 sm:pr-0">
           <h2 className="mb-2 mt-0 break-words font-heading text-xl font-semibold">
             {event.title}
           </h2>

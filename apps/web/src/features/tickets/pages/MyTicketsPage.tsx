@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { useProgressiveList } from '@/hooks/useInfiniteScroll';
 import { formatEventDateTime } from '../../events/eventPresentation';
 import { useCancelTicketPurchase, useTickets } from '../hooks';
 import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentation';
@@ -21,6 +22,13 @@ export function MyTicketsPage() {
   const [purchaseToCancel, setPurchaseToCancel] = useState<TicketPurchase | null>(null);
   const [showRefundNotice, setShowRefundNotice] = useState(false);
   const [showCancellationError, setShowCancellationError] = useState(false);
+
+  const purchases = ticketsQuery.data ?? [];
+  const {
+    visibleItems: visiblePurchases,
+    hasMore,
+    sentinelRef,
+  } = useProgressiveList(purchases, 10);
 
   if (ticketsQuery.isPending) {
     return (
@@ -52,8 +60,6 @@ export function MyTicketsPage() {
     );
   }
 
-  const purchases = ticketsQuery.data ?? [];
-
   return (
     <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 lg:px-12">
       <header className="max-w-2xl">
@@ -83,27 +89,29 @@ export function MyTicketsPage() {
         </section>
       ) : (
         <div className="mt-8 space-y-8">
-          {purchases.map((purchase) => (
+          {visiblePurchases.map((purchase) => (
             <section key={purchase.reservationId} className="bg-white p-5 sm:p-7">
-              <header className="relative border-b border-border pb-5">
-                <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
-                  {purchase.tickets.length}{' '}
-                  {purchase.tickets.length === 1
-                    ? 'ingresso nesta compra'
-                    : 'ingressos nesta compra'}
-                </p>
-                <h2 className="mb-0 mt-2 font-heading text-2xl font-semibold">
-                  {purchase.event.title}
-                </h2>
-                <div className="mt-3 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:gap-x-5">
-                  <p className="m-0 flex items-center gap-2">
-                    <CalendarDays className="size-4 text-primary" aria-hidden="true" />
-                    {formatEventDateTime(purchase.event.startsAt, purchase.event.venueTimeZone)}
+              <header className="flex items-start justify-between gap-4 border-b border-border pb-5">
+                <div className="min-w-0 flex-1">
+                  <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
+                    {purchase.tickets.length}{' '}
+                    {purchase.tickets.length === 1
+                      ? 'ingresso nesta compra'
+                      : 'ingressos nesta compra'}
                   </p>
-                  <p className="m-0 flex items-center gap-2">
-                    <MapPin className="size-4 text-primary" aria-hidden="true" />
-                    {purchase.event.venueName} · {purchase.event.venueCity}
-                  </p>
+                  <h2 className="mb-0 mt-2 break-words font-heading text-2xl font-semibold">
+                    {purchase.event.title}
+                  </h2>
+                  <div className="mt-3 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:gap-x-5">
+                    <p className="m-0 flex items-center gap-2">
+                      <CalendarDays className="size-4 text-primary" aria-hidden="true" />
+                      {formatEventDateTime(purchase.event.startsAt, purchase.event.venueTimeZone)}
+                    </p>
+                    <p className="m-0 flex items-center gap-2">
+                      <MapPin className="size-4 text-primary" aria-hidden="true" />
+                      {purchase.event.venueName} · {purchase.event.venueCity}
+                    </p>
+                  </div>
                 </div>
                 <Button
                   type="button"
@@ -111,7 +119,7 @@ export function MyTicketsPage() {
                   disabled={!purchase.canCancel}
                   onClick={() => setPurchaseToCancel(purchase)}
                   aria-label="Cancelar compra"
-                  className="absolute right-0 top-0 rounded-[4px]"
+                  className="shrink-0 rounded-[4px]"
                 >
                   Cancelar<span className="hidden sm:inline"> compra</span>
                 </Button>
@@ -143,6 +151,7 @@ export function MyTicketsPage() {
               </ul>
             </section>
           ))}
+          {hasMore && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
         </div>
       )}
       {purchaseToCancel && (

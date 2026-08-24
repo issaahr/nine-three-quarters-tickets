@@ -48,7 +48,7 @@ export function EventCard({ event }: EventCardProps) {
               </span>
             </div>
 
-            <h2 className="m-0 line-clamp-2 font-heading text-xl font-semibold leading-tight text-foreground">
+            <h2 className="m-0 min-h-14 line-clamp-2 font-heading text-xl font-semibold leading-tight text-foreground">
               {event.title}
             </h2>
 

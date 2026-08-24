@@ -11,6 +11,7 @@ import { AdmissionMode } from './admissionMode.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
+import { GateEventsQueryDto } from './dto/gateEventsQuery.dto';
 import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
 import { EventSeat } from './eventSeat.entity';
@@ -28,6 +29,7 @@ import { EventRepository } from './repositories/event.repository';
 import { EventSeatRepository } from './repositories/eventSeat.repository';
 import {
   EventDiscoveryPage,
+  GateEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
 } from './repositories/eventRepository.interfaces';
@@ -165,16 +167,30 @@ export class EventsService {
   }
 
   /**
-   * Lista Events publicados para seleção da portaria sem inferir um fechamento temporal.
+   * Lista Events publicados para seleção da portaria com paginação server-side e filtro temporal opcional.
    *
-   * @returns Ocorrências operáveis, carregadas com o Venue necessário ao contexto visual.
+   * @param query - Parâmetros de paginação e filtro temporal de hoje.
+   * @returns Página de ocorrências operáveis e indicador determinístico de hasMore.
    */
-  public findOperableForGate(): Promise<Event[]> {
-    return this.eventsRepository.find({
-      where: { status: EventStatus.Published },
-      relations: { venue: true },
-      order: { startsAt: 'ASC', id: 'ASC' },
+  public findOperableForGate(query: GateEventsQueryDto): Promise<GateEventsPage> {
+    return this.eventRepository.findOperableForGate({
+      page: query.page ?? 1,
+      today: query.today,
     });
+  }
+
+  /**
+   * Obtém o contexto operacional de um Event publicado específico para uso direto da portaria.
+   *
+   * @param eventId - Identificador único do evento.
+   * @returns Event publicado carregado com seu Venue.
+   */
+  public async findOperableGateEventById(eventId: string): Promise<Event> {
+    const event = await this.eventRepository.findOperableGateEventById(eventId);
+    if (!event) {
+      throw new EventNotFoundError();
+    }
+    return event;
   }
 
   /**

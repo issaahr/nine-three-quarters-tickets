@@ -192,6 +192,8 @@ describe('Meus ingressos', () => {
     expect(cancelButton).toHaveAttribute('aria-label', 'Cancelar compra');
     expect(cancelButton.querySelector('span')).toHaveClass('hidden', 'sm:inline');
     expect(cancelButton.querySelector('span')).toHaveTextContent('compra');
+    expect(cancelButton.parentElement).toHaveClass('flex', 'items-start', 'justify-between');
+    expect(cancelButton).toHaveClass('shrink-0');
     await user.click(cancelButton);
     await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
 

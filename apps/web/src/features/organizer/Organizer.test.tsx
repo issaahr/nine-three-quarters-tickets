@@ -243,6 +243,103 @@ describe('gestão inicial de Events pelo organizador', () => {
     ).toBeInTheDocument();
   });
 
+  it('ordena localmente os eventos entre mais recentes e mais antigos', async () => {
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json([
+          {
+            id: 'event-1',
+            venueId: venue.id,
+            venueName: venue.name,
+            venueCity: venue.city,
+            venueTimeZone: venue.timeZone,
+            title: 'Evento Antigo',
+            genres: movie.genres,
+            category: EventCategory.Movie,
+            admissionMode: AdmissionMode.Seated,
+            status: EventStatus.Published,
+            createdAt: '2030-01-01T10:00:00.000Z',
+            startsAt: '2030-12-01T20:00:00.000Z',
+            priceCents: 2000,
+            isActive: true,
+            soldTickets: 0,
+            availableTickets: 50,
+            inventoryTotal: 50,
+            revenueCents: 0,
+          },
+          {
+            id: 'event-2',
+            venueId: venue.id,
+            venueName: venue.name,
+            venueCity: venue.city,
+            venueTimeZone: venue.timeZone,
+            title: 'Evento Recente',
+            genres: movie.genres,
+            category: EventCategory.Movie,
+            admissionMode: AdmissionMode.Seated,
+            status: EventStatus.Published,
+            createdAt: '2030-02-01T10:00:00.000Z',
+            startsAt: '2030-01-01T20:00:00.000Z',
+            priceCents: 2000,
+            isActive: true,
+            soldTickets: 0,
+            availableTickets: 50,
+            inventoryTotal: 50,
+            revenueCents: 0,
+          },
+        ]),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderOrganizer();
+    expect(await screen.findByRole('heading', { name: 'Evento Recente' })).toBeInTheDocument();
+    const headingsDefault = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headingsDefault).toEqual(['Evento Recente', 'Evento Antigo']);
+    await user.selectOptions(screen.getByLabelText('Ordenar por'), 'oldest');
+    const headingsOldest = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headingsOldest).toEqual(['Evento Antigo', 'Evento Recente']);
+    await user.selectOptions(screen.getByLabelText('Ordenar por'), 'recent');
+    const headingsRecent = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headingsRecent).toEqual(['Evento Recente', 'Evento Antigo']);
+  });
+
+  it('aplica espaçamento lateral no título do card no mobile para quebra de linha antes do badge de status', async () => {
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json([
+          {
+            id: 'event-long',
+            venueId: venue.id,
+            venueName: venue.name,
+            venueCity: venue.city,
+            venueTimeZone: venue.timeZone,
+            title:
+              'Um Título Muito Longo Para Ocorrência Que Deveria Quebrar Linha Sem Invadir o Status',
+            genres: movie.genres,
+            category: EventCategory.Movie,
+            admissionMode: AdmissionMode.Seated,
+            status: EventStatus.Published,
+            startsAt: '2030-09-01T20:00:00.000Z',
+            priceCents: 2000,
+            isActive: true,
+            soldTickets: 0,
+            availableTickets: 50,
+            inventoryTotal: 50,
+            revenueCents: 0,
+          },
+        ]),
+      ),
+    );
+
+    renderOrganizer();
+
+    const titleHeading = await screen.findByRole('heading', {
+      name: /Um Título Muito Longo/,
+    });
+    expect(titleHeading.parentElement).toHaveClass('pr-24', 'sm:pr-0');
+  });
+
   it('apresenta empty state com "Crie seu primeiro evento" quando o organizador não possui eventos', async () => {
     server.use(http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])));
 
