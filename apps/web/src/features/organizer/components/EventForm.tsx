@@ -4,15 +4,15 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { NumericFormat } from 'react-number-format';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../../../components/ui/select';
+} from '@/components/ui/select';
 import { EventCategory } from '../../events/types';
 import { useCreateMovieEvent, useCreateShowEvent, usePublishEvent, useVenues } from '../hooks';
 import { CreateEventFormValues, getCreateEventSchema } from '../schemas';

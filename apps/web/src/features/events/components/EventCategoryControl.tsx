@@ -1,4 +1,4 @@
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 import { EventCategory } from '../types';
 
 export const allCategoriesValue = 'ALL';

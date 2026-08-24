@@ -1,8 +1,8 @@
 import { CalendarDays, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { EventStatus, OrganizerEvent } from '../types';
 

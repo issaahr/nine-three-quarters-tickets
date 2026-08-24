@@ -5,10 +5,10 @@ import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory } from '../events/types';
-import { server } from '../../test/server';
+import { server } from '@/test/server';
 import { TicketStatus } from './types';
 
 const apiUrl = 'http://api.test';

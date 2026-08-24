@@ -1,4 +1,4 @@
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 import { SharedTicket, TicketPurchase } from './types';
 
 /** Carrega somente as compras confirmadas pertencentes ao CUSTOMER autenticado. */

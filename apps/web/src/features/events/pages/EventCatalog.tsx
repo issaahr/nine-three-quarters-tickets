@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 import { EventCard } from '../components/EventCard';
 import { allCategoriesValue, EventCategoryControl } from '../components/EventCategoryControl';
 import { EventFilters } from '../components/EventFilters';

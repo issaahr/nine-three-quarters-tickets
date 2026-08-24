@@ -2,9 +2,9 @@ import { Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
-import { buttonVariants } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
-import { cn } from '../../../lib/utils';
+import { buttonVariants } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import { EventCategory, EventStatus } from '../../events/types';
 import { formatEventPrice } from '../../events/eventPresentation';
 import { OrganizerEventCard } from '../components/OrganizerEventCard';

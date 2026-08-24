@@ -5,10 +5,10 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory } from '../events/types';
-import { server } from '../../test/server';
+import { server } from '@/test/server';
 import { EventStatus } from './types';
 
 const apiUrl = 'http://api.test';

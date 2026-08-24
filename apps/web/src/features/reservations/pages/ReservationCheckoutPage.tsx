@@ -3,8 +3,8 @@ import { Check, Clock3, MapPin, Ticket } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { buttonVariants } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { formatEventDetailDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { useEventDetail, useEventSeatMap } from '../../events/hooks';
 import { AdmissionMode } from '../../events/types';

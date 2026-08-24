@@ -1,7 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
+import { isApiRateLimitError, rateLimitErrorMessage } from '@/lib/api';
 import { formatGateEventDateTime } from '../../events/eventPresentation';
 import { CheckInResultPanel } from '../components/CheckInResultPanel';
 import { TicketCameraScanner } from '../components/TicketCameraScanner';

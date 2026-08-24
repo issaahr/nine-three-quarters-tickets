@@ -1,8 +1,8 @@
 import { Minus, Plus, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { Button, buttonVariants } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { formatEventPrice } from '../eventPresentation';
 
 interface GeneralAdmissionReservationPanelProps {

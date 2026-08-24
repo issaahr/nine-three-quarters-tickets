@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { Link, useParams } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { useCancelOrganizerEvent, useOrganizerEvents, useUpdateEventPrice } from '../hooks';
 import { EventStatus } from '../types';

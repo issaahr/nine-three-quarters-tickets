@@ -3,8 +3,8 @@ import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { Button, buttonVariants } from '../../../components/ui/button';
-import { cn } from '../../../lib/utils';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useAuth } from '../../auth/hooks';
 import { UserRole } from '../../auth/types';
 import { useActiveReservation, useReservationMutations } from '../../reservations/hooks';

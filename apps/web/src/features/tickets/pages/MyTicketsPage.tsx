@@ -3,7 +3,7 @@ import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useState } from 'react';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 import { formatEventDateTime } from '../../events/eventPresentation';
 import { useCancelTicketPurchase, useTickets } from '../hooks';
 import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentation';

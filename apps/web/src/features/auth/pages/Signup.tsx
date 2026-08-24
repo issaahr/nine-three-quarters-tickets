@@ -5,9 +5,9 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useNavigate } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
-import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { isApiRateLimitError, rateLimitErrorMessage } from '@/lib/api';
 import { AuthPageLayout } from '../components/AuthPageLayout';
 import { useAuth, useSignup } from '../hooks';
 import { SignupFormValues, signupSchema } from '../schemas';

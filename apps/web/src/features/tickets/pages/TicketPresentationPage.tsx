@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 import { formatTicketEventDateTime } from '../../events/eventPresentation';
 import { useSharedTicket } from '../hooks';
 import { getTicketStatusLabel } from '../ticketPresentation';

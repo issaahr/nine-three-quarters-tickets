@@ -1,7 +1,7 @@
 import { LogOut } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 import { useAuth } from '../../auth/hooks';
 import { UserRole } from '../../auth/types';
 import { BrandLink } from '../../navigation/components/BrandLink';

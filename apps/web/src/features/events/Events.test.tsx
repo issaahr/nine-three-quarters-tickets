@@ -5,8 +5,8 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../App';
-import { server } from '../../test/server';
+import { App } from '@/App';
+import { server } from '@/test/server';
 import {
   AdmissionMode,
   EventCategory,
