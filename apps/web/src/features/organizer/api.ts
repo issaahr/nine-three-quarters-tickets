@@ -36,8 +36,8 @@ export async function searchCatalogAttractions(query: string, page: number): Pro
   return response.data;
 }
 
-export async function fetchRelevantAttractions(page: number): Promise<CatalogPage> {
-  const response = await api.get<CatalogPage>('/catalog/attractions/relevant', {
+export async function fetchPopularAttractions(page: number): Promise<CatalogPage> {
+  const response = await api.get<CatalogPage>('/catalog/attractions/popular', {
     params: { page },
   });
   return response.data;

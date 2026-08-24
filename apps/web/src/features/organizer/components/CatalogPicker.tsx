@@ -27,6 +27,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
   const [catalogQuery, setCatalogQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState<string>();
   const [visibleItemCount, setVisibleItemCount] = useState(10);
+  const [isAutomaticPaginationPaused, setIsAutomaticPaginationPaused] = useState(false);
   const isShow = category === EventCategory.Show;
   const catalog = useCatalog(category, submittedQuery);
   const loadedItems = [
@@ -41,8 +42,19 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
   const fetchNextCatalogPage = catalog.fetchNextPage;
   const hasNextCatalogPage = catalog.hasNextPage;
   const isFetchingNextCatalogPage = catalog.isFetchingNextPage;
+  const hasNextCatalogPageError = catalog.isFetchNextPageError;
   const singularLabel = isShow ? 'atração' : 'filme';
   const pluralLabel = isShow ? 'atrações' : 'filmes';
+
+  useEffect(() => {
+    if (hasNextCatalogPageError) {
+      setIsAutomaticPaginationPaused(true);
+    }
+  }, [hasNextCatalogPageError]);
+
+  useEffect(() => {
+    setIsAutomaticPaginationPaused(false);
+  }, [category, submittedQuery]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -59,7 +71,12 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
 
         if (visibleItemCount < loadedItems.length) {
           setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
-        } else if (hasNextCatalogPage && !isFetchingNextCatalogPage) {
+        } else if (
+          hasNextCatalogPage &&
+          !isFetchingNextCatalogPage &&
+          !hasNextCatalogPageError &&
+          !isAutomaticPaginationPaused
+        ) {
           void fetchNextCatalogPage();
         }
       },
@@ -72,6 +89,8 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
     loadedItems.length,
     fetchNextCatalogPage,
     hasNextCatalogPage,
+    hasNextCatalogPageError,
+    isAutomaticPaginationPaused,
     isFetchingNextCatalogPage,
     visibleItemCount,
   ]);
@@ -96,6 +115,14 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
     }
   }
 
+  async function handleRetryNextPage(): Promise<void> {
+    const result = await catalog.fetchNextPage();
+
+    if (!result.isError) {
+      setIsAutomaticPaginationPaused(false);
+    }
+  }
+
   return (
     <section aria-labelledby="catalog-search-title">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -103,7 +130,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
           {submittedQuery
             ? `Resultados para “${submittedQuery}”`
             : isShow
-              ? 'Shows relevantes no Brasil'
+              ? 'Shows em alta'
               : 'Filmes em alta'}
         </h2>
         {submittedQuery && (
@@ -116,7 +143,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
             }}
             className="text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            ← Voltar aos {isShow ? 'shows relevantes no Brasil' : 'filmes em destaque'}
+            ← Voltar aos {isShow ? 'shows em alta' : 'filmes em destaque'}
           </button>
         )}
       </div>
@@ -142,7 +169,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
         </Button>
       </form>
 
-      {catalog.isError && (
+      {catalog.isError && !hasNextCatalogPageError && (
         <p role="alert" className="mt-4 text-sm text-destructive">
           Não foi possível carregar o catálogo. Tente novamente.
         </p>
@@ -210,6 +237,22 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
         <p role="status" className="mt-3 text-center text-sm text-muted-foreground">
           Carregando mais {pluralLabel}...
         </p>
+      )}
+      {hasNextCatalogPageError && (
+        <div className="mt-3 text-center">
+          <p role="alert" className="text-sm text-destructive">
+            Não foi possível carregar mais {pluralLabel}.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void handleRetryNextPage()}
+            className="mt-2"
+          >
+            Tentar novamente
+          </Button>
+        </div>
       )}
     </section>
   );

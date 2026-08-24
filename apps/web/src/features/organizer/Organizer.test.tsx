@@ -303,7 +303,7 @@ describe('gestão inicial de Events pelo organizador', () => {
         attractionSearchHandler(new URL(request.url).searchParams.get('query'));
         return HttpResponse.json({ items: [attraction], page: 1, hasMore: false });
       }),
-      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+      http.get(`${apiUrl}/catalog/attractions/popular`, () =>
         HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
       ),
       http.post(`${apiUrl}/events/shows`, async ({ request }) => {
@@ -325,7 +325,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     await screen.findByRole('heading', { name: 'Filmes em alta' });
     await user.click(screen.getByRole('button', { name: /Show/ }));
 
-    expect(screen.getByRole('heading', { name: 'Shows relevantes no Brasil' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Shows em alta' })).toBeInTheDocument();
     expect(screen.queryByText(movie.title)).not.toBeInTheDocument();
     expect(screen.queryByText(attraction.description)).not.toBeInTheDocument();
     expect(attractionSearchHandler).not.toHaveBeenCalled();
@@ -480,6 +480,77 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByText('Filme 11', { exact: true })).toBeInTheDocument();
   });
 
+  it('interrompe a paginação automática de filmes após falha incremental e permite repetir a página', async () => {
+    let observerCallback!: IntersectionObserverCallback;
+    let failedPageThree = false;
+    const catalogHandler = vi.fn(({ request }: { request: Request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'));
+
+      if (page === 3 && !failedPageThree) {
+        failedPageThree = true;
+        return new HttpResponse(null, { status: 502 });
+      }
+
+      const pageItems =
+        page === 1
+          ? Array.from({ length: 10 }, (_, index) => ({
+              ...movie,
+              externalId: String(index + 1),
+              title: `Filme ${index + 1}`,
+            }))
+          : [{ ...movie, externalId: String(page * 10 + 1), title: `Filme ${page * 10 + 1}` }];
+
+      return HttpResponse.json({ items: pageItems, page, hasMore: page < 3 });
+    });
+
+    class IntersectionObserverMock {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+
+      public observe(): void {}
+
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+    server.use(
+      http.get(`${apiUrl}/venues`, () => HttpResponse.json([venue])),
+      http.get(`${apiUrl}/catalog/movies/popular`, catalogHandler),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+
+    expect(await screen.findByText('Filme 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(2));
+    triggerObserver();
+    expect(await screen.findByText('Filme 21', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais filmes.',
+    );
+    expect(screen.getByText('Filme 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    triggerObserver();
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(3));
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(4));
+    triggerObserver();
+    expect(await screen.findByText('Filme 31', { exact: true })).toBeInTheDocument();
+  });
+
   it('mantém paginação infinita ao pesquisar atrações para um show', async () => {
     let observerCallback!: IntersectionObserverCallback;
 
@@ -521,7 +592,7 @@ describe('gestão inicial de Events pelo organizador', () => {
               hasMore: false,
             });
       }),
-      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+      http.get(`${apiUrl}/catalog/attractions/popular`, () =>
         HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
       ),
     );
@@ -534,5 +605,91 @@ describe('gestão inicial de Events pelo organizador', () => {
 
     expect(await screen.findByText(attraction.title, { exact: true })).toBeInTheDocument();
     expect(await screen.findByText('System of a Down', { exact: true })).toBeInTheDocument();
+  });
+
+  it('interrompe a paginação automática de atrações após falha incremental e permite repetir a página', async () => {
+    let observerCallback!: IntersectionObserverCallback;
+    let failedPageThree = false;
+    const attractionsHandler = vi.fn(({ request }: { request: Request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'));
+
+      if (page === 3 && !failedPageThree) {
+        failedPageThree = true;
+        return new HttpResponse(null, { status: 502 });
+      }
+
+      const pageItems =
+        page === 1
+          ? Array.from({ length: 10 }, (_, index) => ({
+              ...attraction,
+              externalId: `attraction-${index + 1}`,
+              title: `Atração ${index + 1}`,
+            }))
+          : [
+              {
+                ...attraction,
+                externalId: `attraction-${page * 10 + 1}`,
+                title: `Atração ${page * 10 + 1}`,
+              },
+            ];
+
+      return HttpResponse.json({ items: pageItems, page, hasMore: page < 3 });
+    });
+
+    class IntersectionObserverMock {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+
+      public observe(): void {}
+
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+    server.use(
+      http.get(`${apiUrl}/venues`, ({ request }) => {
+        const admissionMode = new URL(request.url).searchParams.get('admissionMode');
+        return HttpResponse.json(
+          admissionMode === AdmissionMode.GeneralAdmission ? [generalAdmissionVenue] : [venue],
+        );
+      }),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({ items: [movie], page: 1, hasMore: false }),
+      ),
+      http.get(`${apiUrl}/catalog/attractions/popular`, attractionsHandler),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+    await user.click(screen.getByRole('button', { name: /Show/ }));
+
+    expect(await screen.findByText('Atração 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(2));
+    triggerObserver();
+    expect(await screen.findByText('Atração 21', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais atrações.',
+    );
+    expect(screen.getByText('Atração 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    triggerObserver();
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(3));
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(4));
+    triggerObserver();
+    expect(await screen.findByText('Atração 31', { exact: true })).toBeInTheDocument();
   });
 });

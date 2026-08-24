@@ -55,7 +55,7 @@ describe('catálogo e criação de Event', () => {
   const showCatalogProvider: ShowCatalogProvider = {
     source: CatalogSource.Ticketmaster,
     search: jest.fn(),
-    listRelevantInBrazil: jest.fn(),
+    listPopular: jest.fn(),
     findByExternalId: jest.fn(),
   };
 
@@ -96,7 +96,7 @@ describe('catálogo e criação de Event', () => {
       .mockReset()
       .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
     jest
-      .mocked(showCatalogProvider.listRelevantInBrazil)
+      .mocked(showCatalogProvider.listPopular)
       .mockReset()
       .mockResolvedValue({ items: [attraction], page: 1, hasMore: false });
     jest.mocked(showCatalogProvider.findByExternalId).mockReset().mockResolvedValue(attraction);
@@ -199,21 +199,21 @@ describe('catálogo e criação de Event', () => {
       .expect(403);
   });
 
-  it('lista atrações relevantes no Brasil para a descoberta inicial do ORGANIZER', async () => {
+  it('lista atrações musicais em alta para a descoberta inicial do ORGANIZER', async () => {
     const organizerCookie = await authenticate('organizer.demo@ntq.local');
 
     await request(app.getHttpServer())
-      .get('/catalog/attractions/relevant')
+      .get('/catalog/attractions/popular')
       .query({ page: 2 })
       .set('Cookie', organizerCookie)
       .expect(200)
       .expect({ items: [attraction], page: 1, hasMore: false });
 
-    expect(showCatalogProvider.listRelevantInBrazil).toHaveBeenCalledWith(2);
+    expect(showCatalogProvider.listPopular).toHaveBeenCalledWith(2);
 
     const customerCookie = await authenticate('customer.one.demo@ntq.local');
     await request(app.getHttpServer())
-      .get('/catalog/attractions/relevant')
+      .get('/catalog/attractions/popular')
       .set('Cookie', customerCookie)
       .expect(403);
   });

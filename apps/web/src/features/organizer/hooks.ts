@@ -4,7 +4,7 @@ import {
   createMovieEvent,
   createShowEvent,
   fetchPopularMovies,
-  fetchRelevantAttractions,
+  fetchPopularAttractions,
   fetchOrganizerEvents,
   fetchVenues,
   publishEvent,
@@ -43,7 +43,7 @@ export function useCatalog(category: EventCategory, query?: string) {
       category === EventCategory.Show
         ? query
           ? searchCatalogAttractions(query, pageParam)
-          : fetchRelevantAttractions(pageParam)
+          : fetchPopularAttractions(pageParam)
         : query
           ? searchCatalogMovies(query, pageParam)
           : fetchPopularMovies(pageParam),

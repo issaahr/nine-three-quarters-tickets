@@ -282,7 +282,7 @@ export class EventRepository {
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
       .addSelect(
-        '"event"."status" = :publishedStatus AND "event"."startsAt" > CURRENT_TIMESTAMP',
+        '"event"."status" = :publishedStatus',
         'eventIsActive',
       )
       .addSelect(

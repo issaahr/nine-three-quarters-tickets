@@ -94,7 +94,7 @@ describe('TicketmasterCatalogProvider', () => {
     const requestedUrl = new URL(String(url));
     expect(requestedUrl.pathname).toBe('/discovery/v2/attractions.json');
     expect(requestedUrl.searchParams.get('keyword')).toBe('Florence & rock');
-    expect(requestedUrl.searchParams.get('classificationName')).toBe('music');
+    expect(requestedUrl.searchParams.get('classificationId')).toBe('KZFzniwnSyZfZ7v7nJ');
     expect(requestedUrl.searchParams.get('page')).toBe('1');
     expect(requestedUrl.searchParams.get('size')).toBe('20');
     expect(requestedUrl.searchParams.get('apikey')).toBe('test-ticketmaster-key');
@@ -114,7 +114,7 @@ describe('TicketmasterCatalogProvider', () => {
     });
   });
 
-  it('deriva atrações únicas dos eventos musicais relevantes no Brasil', async () => {
+  it('lista atrações musicais em alta com paginação normalizada', async () => {
     const attraction = {
       id: 'K8vZ917Gku7',
       name: 'System of a Down',
@@ -124,17 +124,13 @@ describe('TicketmasterCatalogProvider', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         _embedded: {
-          events: [
-            { _embedded: { attractions: [attraction] } },
-            { _embedded: { attractions: [attraction] } },
-            { name: 'Evento sem atração' },
-          ],
+          attractions: [attraction],
         },
-        page: { size: 10, totalElements: 25, totalPages: 3, number: 0 },
+        page: { size: 20, totalElements: 45, totalPages: 3, number: 1 },
       }),
     );
 
-    await expect(new TicketmasterCatalogProvider().listRelevantInBrazil(1)).resolves.toEqual({
+    await expect(new TicketmasterCatalogProvider().listPopular(2)).resolves.toEqual({
       items: [
         {
           source: CatalogSource.Ticketmaster,
@@ -146,17 +142,17 @@ describe('TicketmasterCatalogProvider', () => {
           genres: ['Music', 'Metal'],
         },
       ],
-      page: 1,
+      page: 2,
       hasMore: true,
     });
 
     const requestedUrl = new URL(String(fetchMock.mock.calls[0][0]));
-    expect(requestedUrl.pathname).toBe('/discovery/v2/events.json');
-    expect(requestedUrl.searchParams.get('countryCode')).toBe('BR');
-    expect(requestedUrl.searchParams.get('classificationName')).toBe('music');
+    expect(requestedUrl.pathname).toBe('/discovery/v2/attractions.json');
+    expect(requestedUrl.searchParams.get('classificationId')).toBe('KZFzniwnSyZfZ7v7nJ');
+    expect(requestedUrl.searchParams.get('countryCode')).toBe('US');
     expect(requestedUrl.searchParams.get('sort')).toBe('relevance,desc');
-    expect(requestedUrl.searchParams.get('size')).toBe('10');
-    expect(requestedUrl.searchParams.get('page')).toBe('0');
+    expect(requestedUrl.searchParams.get('size')).toBe('20');
+    expect(requestedUrl.searchParams.get('page')).toBe('1');
   });
 
   it('recarrega uma Attraction por ID e usa additionalInfo como descrição disponível', async () => {

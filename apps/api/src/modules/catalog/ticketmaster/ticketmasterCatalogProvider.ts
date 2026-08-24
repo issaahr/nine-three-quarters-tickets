@@ -14,14 +14,11 @@ import {
   TicketmasterClassification,
   TicketmasterClassificationLevel,
   TicketmasterImage,
-  TicketmasterEvent,
-  TicketmasterEventSearchResponse,
   TicketmasterPageMetadata,
 } from './ticketmaster.types';
 
 const ticketmasterApiBaseUrl = 'https://app.ticketmaster.com/discovery/v2/';
 const ticketmasterPageSize = 20;
-const ticketmasterRelevantEventsPageSize = 10;
 
 @Injectable()
 export class TicketmasterCatalogProvider implements ShowCatalogProvider {
@@ -37,12 +34,36 @@ export class TicketmasterCatalogProvider implements ShowCatalogProvider {
    * @returns Página de atrações normalizadas sem atributos externos de venda.
    */
   public async search(query: string, page: number): Promise<CatalogPage> {
-    const response = await this.request('attractions.json', {
+    return this.loadAttractionPage({
       keyword: query,
-      classificationName: 'music',
+      // Garante o retorno apenas de shows musicais (música pop, rock, festivais, etc.)
+      classificationId: 'KZFzniwnSyZfZ7v7nJ',
       page: String(page - 1),
       size: String(ticketmasterPageSize),
     });
+  }
+
+  /**
+   * Lista atrações musicais em alta para a descoberta inicial do organizador.
+   *
+   * @param page - Página interna solicitada, iniciada em um.
+   * @returns Página de atrações normalizadas para seleção no catálogo.
+   */
+  public async listPopular(page: number): Promise<CatalogPage> {
+    return this.loadAttractionPage({
+      // Garante o retorno apenas de shows musicais (música pop, rock, festivais, etc.)
+      classificationId: 'KZFzniwnSyZfZ7v7nJ',
+      // Fixa o país para garantir volume e metadados ricos (artistas globais) em vez de falhas por payloads incompletos.
+      countryCode: 'US',
+      sort: 'relevance,desc',
+      page: String(page - 1),
+      size: String(ticketmasterPageSize),
+    });
+  }
+
+  /** Compartilha a normalização das páginas de atrações pesquisadas e em alta. */
+  private async loadAttractionPage(parameters: Record<string, string>): Promise<CatalogPage> {
+    const response = await this.request('attractions.json', parameters);
     const payload = await this.readJson(response);
 
     if (!this.isAttractionSearchResponse(payload)) {
@@ -53,48 +74,6 @@ export class TicketmasterCatalogProvider implements ShowCatalogProvider {
 
     return {
       items: attractions.map((attraction) => this.normalizeAttraction(attraction)),
-      page: payload.page.number + 1,
-      hasMore: payload.page.number + 1 < payload.page.totalPages,
-    };
-  }
-
-  /**
-   * Deriva atrações das ocorrências musicais relevantes no Brasil sem restringir a pesquisa textual.
-   *
-   * A Ticketmaster ordena os Events por relevância. Apenas a Attraction principal de cada ocorrência
-   * é apresentada e identidades repetidas são eliminadas dentro da página externa.
-   *
-   * @param page - Página interna solicitada, iniciada em um.
-   * @returns Atrações normalizadas correspondentes aos Events brasileiros da página.
-   */
-  public async listRelevantInBrazil(page: number): Promise<CatalogPage> {
-    const response = await this.request('events.json', {
-      countryCode: 'BR',
-      classificationName: 'music',
-      sort: 'relevance,desc',
-      size: String(ticketmasterRelevantEventsPageSize),
-      page: String(page - 1),
-    });
-    const payload = await this.readJson(response);
-
-    if (!this.isEventSearchResponse(payload)) {
-      throw new CatalogUnavailableError();
-    }
-
-    const uniqueAttractions = new Map<string, TicketmasterAttraction>();
-
-    for (const event of payload._embedded?.events ?? []) {
-      const attraction = event._embedded?.attractions?.[0];
-
-      if (attraction && !uniqueAttractions.has(attraction.id)) {
-        uniqueAttractions.set(attraction.id, attraction);
-      }
-    }
-
-    return {
-      items: [...uniqueAttractions.values()].map((attraction) =>
-        this.normalizeAttraction(attraction),
-      ),
       page: payload.page.number + 1,
       hasMore: payload.page.number + 1 < payload.page.totalPages,
     };
@@ -151,7 +130,10 @@ export class TicketmasterCatalogProvider implements ShowCatalogProvider {
     }
 
     if (!response.ok && response.status !== 404) {
-      this.logger.warn(`Ticketmaster respondeu com status ${response.status} em ${path}`);
+      const requestedPage = parameters.page ? ` na página ${Number(parameters.page) + 1}` : '';
+      this.logger.warn(
+        `Ticketmaster respondeu com status ${response.status} em ${path}${requestedPage}`,
+      );
       throw new CatalogUnavailableError();
     }
 
@@ -249,37 +231,6 @@ export class TicketmasterCatalogProvider implements ShowCatalogProvider {
       this.isRecord(value._embedded) &&
       Array.isArray(value._embedded.attractions) &&
       value._embedded.attractions.every((attraction) => this.isAttraction(attraction))
-    );
-  }
-
-  /** Valida a página de Events e as Attractions principais consumidas pela descoberta inicial. */
-  private isEventSearchResponse(value: unknown): value is TicketmasterEventSearchResponse {
-    if (!this.isRecord(value) || !this.isPageMetadata(value.page)) {
-      return false;
-    }
-
-    if (value._embedded === undefined) {
-      return true;
-    }
-
-    return (
-      this.isRecord(value._embedded) &&
-      Array.isArray(value._embedded.events) &&
-      value._embedded.events.every((event) => this.isEvent(event))
-    );
-  }
-
-  /** Valida somente o recorte de Event necessário para alcançar sua Attraction principal. */
-  private isEvent(value: unknown): value is TicketmasterEvent {
-    if (!this.isRecord(value) || value._embedded === undefined) {
-      return this.isRecord(value);
-    }
-
-    return (
-      this.isRecord(value._embedded) &&
-      (value._embedded.attractions === undefined ||
-        (Array.isArray(value._embedded.attractions) &&
-          value._embedded.attractions.every((attraction) => this.isAttraction(attraction))))
     );
   }
 
