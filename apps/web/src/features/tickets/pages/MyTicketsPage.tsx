@@ -10,9 +10,9 @@ import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentat
 import { TicketPurchase, TicketStatus } from '../types';
 
 const ticketStatusClassName: Record<TicketStatus, string> = {
-  [TicketStatus.Valid]: 'text-[#8FBF9F]',
-  [TicketStatus.Used]: 'text-[#C9BBA6]',
-  [TicketStatus.Cancelled]: 'text-[#D99999]',
+  [TicketStatus.Valid]: 'text-status-valid',
+  [TicketStatus.Used]: 'text-primary-foreground',
+  [TicketStatus.Cancelled]: 'text-destructive',
 };
 
 export function MyTicketsPage() {
@@ -74,7 +74,7 @@ export function MyTicketsPage() {
       </header>
 
       {purchases.length === 0 ? (
-        <section className="mt-8 border border-dashed border-[#C9BBA6] bg-white px-6 py-12 text-center">
+        <section className="mt-8 border border-dashed border-border bg-white px-6 py-12 text-center">
           <Ticket className="mx-auto size-7 text-primary" aria-hidden="true" />
           <h2 className="mb-0 mt-4 font-heading text-2xl font-semibold">Nenhum ingresso emitido</h2>
           <p className="mb-0 mt-2 text-sm leading-6 text-muted-foreground">
@@ -85,7 +85,7 @@ export function MyTicketsPage() {
         <div className="mt-8 space-y-8">
           {purchases.map((purchase) => (
             <section key={purchase.reservationId} className="bg-white p-5 sm:p-7">
-              <header className="relative border-b border-[#E1DACB] pb-5">
+              <header className="relative border-b border-border pb-5">
                 <p className="m-0 text-[10px] font-semibold uppercase tracking-[1.5px] text-primary">
                   {purchase.tickets.length}{' '}
                   {purchase.tickets.length === 1
@@ -110,9 +110,10 @@ export function MyTicketsPage() {
                   variant="destructive"
                   disabled={!purchase.canCancel}
                   onClick={() => setPurchaseToCancel(purchase)}
+                  aria-label="Cancelar compra"
                   className="absolute right-0 top-0 rounded-[4px]"
                 >
-                  Cancelar compra
+                  Cancelar<span className="hidden sm:inline"> compra</span>
                 </Button>
               </header>
 
@@ -121,13 +122,13 @@ export function MyTicketsPage() {
                   <li key={ticket.publicId}>
                     <Link
                       to={`/customer/tickets/${encodeURIComponent(ticket.credential)}`}
-                      className="flex w-full items-center justify-between gap-4 bg-[#2B0A10] px-4 py-4 text-[#F5F2EC] no-underline transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)]"
+                      className="flex w-full items-center justify-between gap-4 bg-secondary-foreground px-4 py-4 text-background no-underline transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)]"
                     >
                       <div>
                         <p className="m-0 text-sm font-medium">
                           {getTicketLocationLabel(ticket.seatLabel)}
                         </p>
-                        <p className="mb-0 mt-1 font-mono text-xs tracking-[0.12em] text-[#D9C7A0]">
+                        <p className="mb-0 mt-1 font-mono text-xs tracking-[0.12em] text-primary-foreground">
                           {ticket.manualCode}
                         </p>
                       </div>

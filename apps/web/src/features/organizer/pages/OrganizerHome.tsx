@@ -145,7 +145,7 @@ export function OrganizerHome() {
 
       {eventsQuery.data?.length === 0 && (
         <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
-          <h2 className="font-heading text-2xl font-semibold">Sua programação começa aqui</h2>
+          <h2 className="font-heading text-2xl font-semibold">Crie seu primeiro evento</h2>
           <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
             Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.
           </p>
@@ -158,49 +158,92 @@ export function OrganizerHome() {
             aria-label="Filtros de eventos"
             className="mb-6 grid gap-3 border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5"
           >
-            <Input
-              type="search"
-              aria-label="Pesquisar por título"
-              value={titleQuery}
-              onChange={(event) => setTitleQuery(event.target.value)}
-              placeholder="Pesquisar por título"
-              className="h-10 rounded-[4px] bg-white"
-            />
-            <select
-              aria-label="Filtrar por tipo"
-              value={categoryFilter}
-              onChange={(event) => setCategoryFilter(event.target.value as EventCategory | 'ALL')}
-              className="h-10 rounded-[4px] border border-input bg-white px-3 text-sm"
-            >
-              <option value="ALL">Todos os tipos</option>
-              <option value={EventCategory.Movie}>Filmes</option>
-              <option value={EventCategory.Show}>Shows</option>
-            </select>
-            <select
-              aria-label="Filtrar por status"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value as EventStatus | 'ALL')}
-              className="h-10 rounded-[4px] border border-input bg-white px-3 text-sm"
-            >
-              <option value="ALL">Todos os status</option>
-              <option value={EventStatus.Draft}>Rascunhos</option>
-              <option value={EventStatus.Published}>Publicados</option>
-              <option value={EventStatus.Cancelled}>Cancelados</option>
-            </select>
-            <Input
-              type="date"
-              aria-label="Data inicial"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-              className="h-10 rounded-[4px] bg-white"
-            />
-            <Input
-              type="date"
-              aria-label="Data final"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-              className="h-10 rounded-[4px] bg-white"
-            />
+            <div>
+              <label
+                htmlFor="organizer-title"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                Título
+              </label>
+              <Input
+                id="organizer-title"
+                type="search"
+                aria-label="Pesquisar por título"
+                value={titleQuery}
+                onChange={(event) => setTitleQuery(event.target.value)}
+                placeholder="Pesquisar por título"
+                className="h-10 rounded-[4px] bg-white"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="organizer-category"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                Categoria
+              </label>
+              <select
+                id="organizer-category"
+                aria-label="Filtrar por tipo"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value as EventCategory | 'ALL')}
+                className="h-10 w-full rounded-[4px] border border-input bg-white px-3 text-sm"
+              >
+                <option value="ALL">Todos os tipos</option>
+                <option value={EventCategory.Movie}>Filmes</option>
+                <option value={EventCategory.Show}>Shows</option>
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="organizer-status"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                Status
+              </label>
+              <select
+                id="organizer-status"
+                aria-label="Filtrar por status"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as EventStatus | 'ALL')}
+                className="h-10 w-full rounded-[4px] border border-input bg-white px-3 text-sm"
+              >
+                <option value="ALL">Todos os status</option>
+                <option value={EventStatus.Draft}>Rascunhos</option>
+                <option value={EventStatus.Published}>Publicados</option>
+                <option value={EventStatus.Cancelled}>Cancelados</option>
+              </select>
+            </div>
+            <div>
+              <label
+                htmlFor="organizer-date-from"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                A partir de dd/mm/aaaa
+              </label>
+              <Input
+                id="organizer-date-from"
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="h-10 rounded-[4px] bg-white"
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="organizer-date-to"
+                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+              >
+                Até dd/mm/aaaa
+              </label>
+              <Input
+                id="organizer-date-to"
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="h-10 rounded-[4px] bg-white"
+              />
+            </div>
             {hasActiveFilters && (
               <button
                 type="button"

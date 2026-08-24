@@ -103,7 +103,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
   };
 
   return (
-    <section className="mt-8 border-t border-[#E2D9CB] pt-7" aria-labelledby="payment-heading">
+    <section className="mt-8 border-t border-border pt-7" aria-labelledby="payment-heading">
       <div className="flex items-center gap-2">
         <CreditCard className="size-5 text-primary" aria-hidden="true" />
         <h2 id="payment-heading" className="m-0 font-heading text-2xl font-semibold">
@@ -119,7 +119,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
           type="button"
           variant="outline"
           onClick={() => reset(cardPresets.approved)}
-          className="h-auto rounded-[4px] border-[#D4CCBE] py-2 text-xs"
+          className="h-auto rounded-[4px] border-border py-2 text-xs"
         >
           Usar cartão aprovado
         </Button>
@@ -127,7 +127,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
           type="button"
           variant="outline"
           onClick={() => reset(cardPresets.declined)}
-          className="h-auto rounded-[4px] border-[#D4CCBE] py-2 text-xs"
+          className="h-auto rounded-[4px] border-border py-2 text-xs"
         >
           Usar cartão recusado
         </Button>
@@ -190,7 +190,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
             placeholder="0000 0000 0000 0000"
             {...register('cardNumber')}
             aria-invalid={Boolean(errors.cardNumber)}
-            className="h-11 rounded-[4px] border-[#D4CCBE] bg-white font-mono"
+            className="h-11 rounded-[4px] border-border bg-white font-mono"
           />
           {errors.cardNumber?.message && (
             <p role="alert" className="mb-0 mt-1.5 text-xs text-destructive">
@@ -211,7 +211,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
             autoComplete="cc-name"
             {...register('cardholderName')}
             aria-invalid={Boolean(errors.cardholderName)}
-            className="h-11 rounded-[4px] border-[#D4CCBE] bg-white"
+            className="h-11 rounded-[4px] border-border bg-white"
           />
           {errors.cardholderName?.message && (
             <p role="alert" className="mb-0 mt-1.5 text-xs text-destructive">
@@ -235,7 +235,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
               placeholder="MM/AA"
               {...register('expiry')}
               aria-invalid={Boolean(errors.expiry)}
-              className="h-11 rounded-[4px] border-[#D4CCBE] bg-white font-mono"
+              className="h-11 rounded-[4px] border-border bg-white font-mono"
             />
             {errors.expiry?.message && (
               <p role="alert" className="mb-0 mt-1.5 text-xs text-destructive">
@@ -258,7 +258,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
                 autoComplete="cc-csc"
                 {...register('cvv')}
                 aria-invalid={Boolean(errors.cvv)}
-                className="h-11 rounded-[4px] border-[#D4CCBE] bg-white pr-10 font-mono"
+                className="h-11 rounded-[4px] border-border bg-white pr-10 font-mono"
               />
               <button
                 type="button"
@@ -287,7 +287,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
             variant="outline"
             disabled={isPaying || isPending || isCancelling}
             onClick={() => setIsCancellationConfirmationOpen(true)}
-            className="h-auto rounded-[4px] border-[#D4CCBE] py-3 text-sm font-semibold"
+            className="h-auto rounded-[4px] border-border py-3 text-sm font-semibold"
           >
             Cancelar reserva
           </Button>
@@ -300,7 +300,7 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
           </Button>
         </div>
         {isCancellationConfirmationOpen && (
-          <div className="border border-[#D4CCBE] bg-[#F8F4EC] p-4" role="alert">
+          <div className="border border-border bg-muted p-4" role="alert">
             <p className="m-0 text-sm leading-6">
               Cancelar esta reserva libera os assentos imediatamente. Deseja continuar?
             </p>

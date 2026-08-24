@@ -1,15 +1,19 @@
 import { Search } from 'lucide-react';
+
 import { FormEvent, useEffect, useRef, useState } from 'react';
 
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { cn } from '../../../lib/utils';
+
 import { EventCategory } from '../../events/types';
+
 import { useCatalog } from '../hooks';
 import { CatalogItem } from '../types';
 
 const fieldClassName =
   'h-11 rounded-[4px] border-border bg-card px-3 text-sm focus-visible:border-primary';
+
 const catalogCardClipPath =
   '[clip-path:polygon(0_0,100%_0,100%_calc(100%_-_8px),calc(100%_-_8px)_100%,0_100%)]';
 
@@ -27,9 +31,10 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
   const [catalogQuery, setCatalogQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState<string>();
   const [visibleItemCount, setVisibleItemCount] = useState(10);
-  const [isAutomaticPaginationPaused, setIsAutomaticPaginationPaused] = useState(false);
+
   const isShow = category === EventCategory.Show;
   const catalog = useCatalog(category, submittedQuery);
+
   const loadedItems = [
     ...new Map(
       (catalog.data?.pages.flatMap(({ items }) => items) ?? []).map((item) => [
@@ -38,23 +43,16 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
       ]),
     ).values(),
   ];
+
   const visibleItems = loadedItems.slice(0, visibleItemCount);
+
   const fetchNextCatalogPage = catalog.fetchNextPage;
   const hasNextCatalogPage = catalog.hasNextPage;
   const isFetchingNextCatalogPage = catalog.isFetchingNextPage;
   const hasNextCatalogPageError = catalog.isFetchNextPageError;
+
   const singularLabel = isShow ? 'atração' : 'filme';
   const pluralLabel = isShow ? 'atrações' : 'filmes';
-
-  useEffect(() => {
-    if (hasNextCatalogPageError) {
-      setIsAutomaticPaginationPaused(true);
-    }
-  }, [hasNextCatalogPageError]);
-
-  useEffect(() => {
-    setIsAutomaticPaginationPaused(false);
-  }, [category, submittedQuery]);
 
   useEffect(() => {
     const target = loadMoreRef.current;
@@ -71,12 +69,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
 
         if (visibleItemCount < loadedItems.length) {
           setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
-        } else if (
-          hasNextCatalogPage &&
-          !isFetchingNextCatalogPage &&
-          !hasNextCatalogPageError &&
-          !isAutomaticPaginationPaused
-        ) {
+        } else if (hasNextCatalogPage && !isFetchingNextCatalogPage && !hasNextCatalogPageError) {
           void fetchNextCatalogPage();
         }
       },
@@ -84,13 +77,13 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
     );
 
     observer.observe(target);
+
     return () => observer.disconnect();
   }, [
     loadedItems.length,
     fetchNextCatalogPage,
     hasNextCatalogPage,
     hasNextCatalogPageError,
-    isAutomaticPaginationPaused,
     isFetchingNextCatalogPage,
     visibleItemCount,
   ]);
@@ -100,6 +93,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
    */
   function handleSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+
     const normalizedQuery = catalogQuery.trim();
 
     if (normalizedQuery.length >= 2) {
@@ -116,11 +110,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
   }
 
   async function handleRetryNextPage(): Promise<void> {
-    const result = await catalog.fetchNextPage();
-
-    if (!result.isError) {
-      setIsAutomaticPaginationPaused(false);
-    }
+    await catalog.fetchNextPage();
   }
 
   return (
@@ -133,6 +123,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
               ? 'Shows em alta'
               : 'Filmes em alta'}
         </h2>
+
         {submittedQuery && (
           <button
             type="button"
@@ -147,10 +138,12 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
           </button>
         )}
       </div>
+
       <form onSubmit={handleSearch} className="mt-4 flex gap-2">
         <label htmlFor="catalog-query" className="sr-only">
           Pesquisar {singularLabel}
         </label>
+
         <Input
           id="catalog-query"
           value={catalogQuery}
@@ -161,6 +154,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
           required={isShow}
           className={fieldClassName}
         />
+
         <Button type="submit" disabled={catalog.isFetching} className="h-11 rounded-[4px] px-4">
           <Search aria-hidden="true" />
           <span className="hidden sm:inline">
@@ -193,9 +187,10 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
                 aria-pressed={isSelected}
                 onClick={() => onSelect(item)}
                 className={cn(
-                  'w-full p-[2px] text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                  'w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                  isSelected ? 'p-[2px]' : 'p-[3px]',
                   catalogCardClipPath,
-                  isSelected ? 'bg-primary' : 'bg-border',
+                  isSelected ? 'bg-primary' : 'bg-border-light',
                 )}
               >
                 <span
@@ -208,15 +203,18 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
                       9¾
                     </span>
                   )}
+
                   <span className="min-w-0">
                     <strong className="block font-heading text-lg font-semibold">
                       {item.title}
                     </strong>
+
                     {!isShow && (
                       <span className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">
                         {item.description ?? 'Descrição não disponível.'}
                       </span>
                     )}
+
                     {item.genres.length > 0 && (
                       <span className="mt-2 block text-[10px] uppercase tracking-[1px] text-primary">
                         {item.genres.join(' · ')}
@@ -233,16 +231,19 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
       {(visibleItemCount < loadedItems.length || catalog.hasNextPage) && (
         <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
       )}
+
       {catalog.isFetchingNextPage && (
         <p role="status" className="mt-3 text-center text-sm text-muted-foreground">
           Carregando mais {pluralLabel}...
         </p>
       )}
+
       {hasNextCatalogPageError && (
         <div className="mt-3 text-center">
           <p role="alert" className="text-sm text-destructive">
             Não foi possível carregar mais {pluralLabel}.
           </p>
+
           <Button
             type="button"
             variant="outline"

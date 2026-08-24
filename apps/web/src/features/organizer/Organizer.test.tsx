@@ -201,6 +201,11 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
     expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+    expect(screen.getByText('Título')).toBeInTheDocument();
+    expect(screen.getByText('Categoria')).toBeInTheDocument();
+    expect(screen.getByText('Status')).toBeInTheDocument();
+    expect(screen.getByText('A partir de dd/mm/aaaa')).toBeInTheDocument();
+    expect(screen.getByText('Até dd/mm/aaaa')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Pesquisar por título'), 'cold');
     expect(screen.getByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
@@ -215,17 +220,77 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Filtrar por status'), 'ALL');
-    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '2030-11-01' } });
+    fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), {
+      target: { value: '2030-11-01' },
+    });
     expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
 
+    fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), {
+      target: { value: '2030-09-30' },
+    });
+    expect(screen.getByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Coldplay' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sessão cancelada' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), { target: { value: '' } });
     await user.clear(screen.getByLabelText('Pesquisar por título'));
-    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '' } });
     await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Show);
     await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado');
     expect(
       await screen.findByRole('heading', { name: 'Nenhum evento encontrado' }),
     ).toBeInTheDocument();
+  });
+
+  it('apresenta empty state com "Crie seu primeiro evento" quando o organizador não possui eventos', async () => {
+    server.use(http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])));
+
+    renderOrganizer();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Crie seu primeiro evento' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('destaca o card selecionado com bg-primary e p-[2px] e os não selecionados com bg-border-light e p-[3px]', async () => {
+    server.use(
+      http.get(`${apiUrl}/venues`, () => HttpResponse.json([venue])),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({
+          items: [
+            movie,
+            {
+              ...movie,
+              externalId: 'movie-2',
+              title: 'Interestelar',
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
+      ),
+      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+
+    const dunaButton = await screen.findByRole('button', { name: /Duna: Parte Dois/ });
+    const interestelarButton = screen.getByRole('button', { name: /Interestelar/ });
+
+    expect(dunaButton).toHaveClass('bg-border-light', 'p-[3px]');
+    expect(interestelarButton).toHaveClass('bg-border-light', 'p-[3px]');
+
+    await user.click(dunaButton);
+
+    expect(dunaButton).toHaveClass('bg-primary', 'p-[2px]');
+    expect(interestelarButton).toHaveClass('bg-border-light', 'p-[3px]');
   });
 
   it('cria e publica usando somente identidade externa e dados locais', async () => {

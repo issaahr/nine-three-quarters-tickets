@@ -188,7 +188,11 @@ describe('Meus ingressos', () => {
     const user = userEvent.setup();
 
     renderTickets();
-    await user.click(await screen.findByRole('button', { name: 'Cancelar compra' }));
+    const cancelButton = await screen.findByRole('button', { name: 'Cancelar compra' });
+    expect(cancelButton).toHaveAttribute('aria-label', 'Cancelar compra');
+    expect(cancelButton.querySelector('span')).toHaveClass('hidden', 'sm:inline');
+    expect(cancelButton.querySelector('span')).toHaveTextContent('compra');
+    await user.click(cancelButton);
     await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
 
     expect(
