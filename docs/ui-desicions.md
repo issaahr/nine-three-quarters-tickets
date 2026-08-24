@@ -8,24 +8,41 @@ Este documento resume as decisões de marca e UI tomadas para o projeto, e o rac
 
 **Linha vermelha deliberada:** nunca usar o brasão de Hogwarts, a fonte do logo oficial, ícones específicos do universo (raio, óculos, chapéu seletor) ou citações dos livros/filmes. A referência vive no nome e na paleta, não em elementos apropriados da marca oficial.
 
-## Paleta
+## Paleta e tokens
 
-| Papel Cor Uso        |                       |                                       |
-| -------------------- | --------------------- | ------------------------------------- |
-| Ink                  | `#121212`             | Texto principal em fundo claro        |
-| Paper                | `#F5F2EC`             | Fundo base (papel envelhecido)        |
-| Vinho escuro         | `#2B0A10`             | Header, superfícies escuras, ingresso |
-| Bordô                | `#681E2B`             | Botões primários, destaques           |
-| Latão                | `#C9A768`             | Logo, elementos de assinatura         |
-| Champanhe            | `#D9C7A0`             | Texto de destaque em fundo escuro     |
-| Graphite / Warm Gray | `#5A5650` / `#8A857C` | Texto secundário                      |
+A identidade utiliza uma paleta baseada em papel envelhecido, vinho, bordô e latão, complementada por neutros quentes e cores funcionais dessaturadas.
 
-**Paletas descartadas e por quê:**
+Os valores abaixo representam os principais papéis visuais. A implementação utiliza tokens CSS para permitir que esses papéis sejam reaproveitados de forma consistente pelos componentes.
+
+| Papel / Token                           | Valor     | Uso                                    |
+| --------------------------------------- | --------- | -------------------------------------- |
+| Ink (`--foreground`)                    | `#121212` | Texto principal em fundo claro         |
+| Paper (`--background`)                  | `#F5F2EC` | Fundo base (papel envelhecido)         |
+| Vinho escuro (`--secondary-foreground`) | `#2B0A10` | Header, superfícies escuras e ingresso |
+| Bordô (`--primary`)                     | `#681E2B` | Botões primários e destaques           |
+| Latão (`--secondary`)                   | `#C9A768` | Logo e elementos de assinatura         |
+| Champanhe (`--primary-foreground`)      | `#D9C7A0` | Texto de destaque em fundo escuro      |
+| Graphite (`--muted-foreground`)         | `#5A5650` | Texto secundário                       |
+| Warm Gray (`--border`)                  | `#8A857C` | Bordas padrão e elementos terciários   |
+
+A paleta também possui tokens complementares para situações específicas de interface, incluindo bordas editoriais, bordas de inputs e painéis, divisores sutis, superfícies escuras e variantes de latão e estados funcionais. Esses tokens refinam a aplicação da identidade sem introduzir novas cores de marca.
+
+### Paletas descartadas e por quê
 
 - Verde profundo + verde-limão neon → lida imediatamente como identidade de casa de apostas (Betnacional, Sportingbet), mesmo tendo lógica ferroviária no papel.
-- Dourado saturado sobre vinho sólido → lê como brasão de casa de Hogwarts (vermelho+dourado = Grifinória). Resolvido tratando o dourado como **latão de bilheteria antiga**, não como ouro heráldico — mais opaco, mais acastanhado.
+- Dourado saturado sobre vinho sólido → lê como brasão de casa de Hogwarts (vermelho+dourado = Grifinória). Resolvido tratando o dourado como **latão de bilheteria antiga**, não como ouro heráldico — mais opaco e mais acastanhado.
 
-**Estados funcionais:** verde musgo (`#3E6B4F`) para válido/confirmado, vermelho terroso (`#8B3A3A`) para inválido/recusado — nunca semáforo puro (verde/vermelho saturados), para não reforçar leitura de app financeiro/apostas. Cor sempre combinada com ícone, texto e forma, nunca só matiz.
+### Estados funcionais
+
+Válido / confirmado utiliza verde musgo (`--status-valid`, `#3E6B4F`).
+
+Inválido / recusado utiliza vermelho terroso (`--destructive`, `#8B3A3A`).
+
+Existem variantes suaves e de fundo para esses estados, utilizadas conforme a superfície em que o estado aparece.
+
+A escolha deliberada é evitar verde e vermelho saturados de semáforo, preservando a linguagem editorial da interface e evitando uma leitura de aplicativo financeiro ou de apostas.
+
+Cor nunca é o único indicador de estado: deve ser combinada com texto, ícone e/ou forma.
 
 ## Tipografia
 
@@ -36,10 +53,15 @@ Este documento resume as decisões de marca e UI tomadas para o projeto, e o rac
 ## Elementos de assinatura
 
 1. **Logo como placa de plataforma:** "9¾" grande + "TICKETS" pequeno, mesma linha de base, mesma cor — tratados como uma peça tipográfica única, não como ícone + texto separados.
+
 2. **Fileira de furos de perfuração:** substitui qualquer traço tracejado genérico. Reaproveitada como base do logo, divisor e detalhe de composição em elementos ligados ao ingresso físico. Além da leitura de canhoto/talão, a perfuração também remete sutilmente ao rolo de filme.
+
 3. **Selo circular perfurado:** versão compacta da assinatura da marca, adequada para favicon / ícone de app.
+
 4. **Carimbo de validação:** desenho reservado exclusivamente para o momento em que a portaria confirma um ingresso válido — marca e função do produto se tornam o mesmo elemento visual.
+
 5. **Corte de canto:** cards de evento e peças de ticketing utilizam um pequeno corte diagonal no canto inferior direito. A alteração é de silhueta, não de decoração: transforma o retângulo genérico em um objeto que lembra um ingresso físico sem competir com imagem ou conteúdo.
+
 6. **Chips com canto quase reto:** filtros, horários informativos e pequenas etiquetas utilizam raio baixo, próximo de `2px`, evitando o formato pill típico de interfaces SaaS. A referência visual é etiqueta de bagagem, bilhete impresso e sinalização física.
 
 ### Uso do corte de canto
@@ -53,14 +75,23 @@ O corte funciona como assinatura recorrente e suficientemente discreta para ser 
 ## Decisões de UX relevantes
 
 - **Catálogo misto (filme + show):** card com moldura única e hierarquia de informação idêntica para os dois tipos de conteúdo (API TMDb e Ticketmaster), variando principalmente imagem, categoria e metadados. Evita a sensação de "dois catálogos colados".
+
 - **Cards orientados pelo conteúdo:** pôsteres e imagens dos provedores carregam grande parte da variação visual. A interface ao redor permanece sóbria para não competir com o material dos eventos.
+
 - **Horário do evento:** data e horário são apresentados segundo o horário local do venue. Quando relevante, a interface pode explicitar também o offset, por exemplo `22:00 · horário local de São Paulo · UTC−03:00`. A interface não converte silenciosamente o horário do evento para o fuso do navegador.
+
 - **Detalhe de filme:** data, horário, venue e sala aparecem como informações fixas daquela ocorrência. A seleção de assentos acontece diretamente sobre o inventário correspondente.
+
 - **Detalhe de show:** a área de compra apresenta a modalidade de entrada aplicável, preço, quantidade e total sem alterar a linguagem visual utilizada no restante do catálogo.
+
 - **Assentos:** estados de livre, selecionado e indisponível usam forma e contraste além da cor. A identificação textual do assento continua disponível no resumo da seleção.
+
 - **Sem dark mode geral:** o papel envelhecido é parte da identidade, não um "modo claro" substituível. Não existe toggle de tema.
+
 - **Exceção funcional — tela de portaria:** fundo escuro por justificativa operacional (uso em entrada de evento, potencialmente à noite, e redução de reflexo), não por preferência de usuário.
+
 - **Pagamento:** estados de aprovação e recusa mantêm a identidade visual geral e utilizam cores funcionais apenas como reforço. A copy deve refletir somente métodos efetivamente disponíveis; enquanto apenas cartão estiver implementado, uma recusa orienta o usuário a revisar os dados ou tentar novamente, sem sugerir um método ainda inexistente.
+
 - **Ações destrutivas:** cancelamentos nunca dependem somente da estilização do botão. A interface sempre apresenta uma confirmação intermediária explicando a consequência da ação.
 
 ### Meus ingressos

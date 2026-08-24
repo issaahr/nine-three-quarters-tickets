@@ -17,30 +17,28 @@ export function RoleLanding({
       <section className="max-w-2xl">
         <p
           className={`mb-4 text-[11px] font-medium uppercase tracking-[2px] ${
-            operational ? 'text-[#A9855B]' : 'text-primary'
+            operational ? 'text-brass-dark' : 'text-primary'
           }`}
         >
           {eyebrow}
         </p>
         <h1
           className={`m-0 font-heading text-4xl font-semibold leading-tight sm:text-5xl ${
-            operational ? 'text-[#F5F2EC]' : 'text-foreground'
+            operational ? 'text-background' : 'text-foreground'
           }`}
         >
           {title}
         </h1>
         <p
           className={`mt-5 max-w-xl text-[15px] leading-7 ${
-            operational ? 'text-[#B7AFA3]' : 'text-muted-foreground'
+            operational ? 'text-surface-dark-muted' : 'text-muted-foreground'
           }`}
         >
           {description}
         </p>
         <div
           className={`mt-9 border-l-2 py-1 pl-4 text-[12px] uppercase tracking-[1.2px] ${
-            operational
-              ? 'border-[#681E2B] text-[#8A857C]'
-              : 'border-secondary text-muted-foreground'
+            operational ? 'border-primary text-border' : 'border-secondary text-muted-foreground'
           }`}
         >
           Sessão autenticada

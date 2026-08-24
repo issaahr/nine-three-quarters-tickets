@@ -95,7 +95,7 @@ export function EventCatalog() {
             Carregando eventos...
           </p>
         ) : query.isError && events.length === 0 ? (
-          <div className="border border-[#D8CEBE] bg-white px-6 py-12 text-center">
+          <div className="border border-border-clip bg-white px-6 py-12 text-center">
             <h2 className="m-0 font-heading text-2xl">Não foi possível carregar os eventos</h2>
             <p className="mb-5 mt-2 text-sm text-muted-foreground">Tente novamente em instantes.</p>
             <Button type="button" onClick={() => void query.refetch()} className="rounded-[4px]">
@@ -103,7 +103,7 @@ export function EventCatalog() {
             </Button>
           </div>
         ) : events.length === 0 ? (
-          <div className="border border-[#D8CEBE] bg-white px-6 py-12 text-center">
+          <div className="border border-border-clip bg-white px-6 py-12 text-center">
             <h2 className="m-0 font-heading text-2xl">
               {hasFilters ? 'Nenhum evento corresponde aos filtros' : 'Nenhum evento disponível'}
             </h2>

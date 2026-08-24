@@ -31,14 +31,14 @@ export function AuthenticatedLayout() {
     <div
       className={
         navigation.operational
-          ? 'min-h-screen bg-[#1A0A0D] text-[#F5F2EC]'
+          ? 'min-h-screen bg-surface-dark text-background'
           : 'min-h-screen bg-background text-foreground'
       }
     >
       <header
         className={
           navigation.operational
-            ? 'border-b border-[#3A1A20] bg-[#0D0507]'
+            ? 'border-b border-surface-dark-border bg-surface-dark-deep'
             : 'bg-secondary-foreground'
         }
       >
@@ -50,7 +50,7 @@ export function AuthenticatedLayout() {
 
           <div className="flex items-center gap-2 sm:gap-5">
             {user.role !== UserRole.Customer && (
-              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">
+              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-border sm:inline">
                 {navigation.label}
               </span>
             )}
@@ -63,7 +63,7 @@ export function AuthenticatedLayout() {
                     `hidden rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary sm:inline-block ${
                       isActive
                         ? 'text-primary-foreground'
-                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                        : 'text-surface-dark-subtle hover:text-primary-foreground'
                     }`
                   }
                 >
@@ -77,7 +77,7 @@ export function AuthenticatedLayout() {
                     `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
                       isActive
                         ? 'text-primary-foreground'
-                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                        : 'text-surface-dark-subtle hover:text-primary-foreground'
                     }`
                   }
                 >
@@ -90,7 +90,7 @@ export function AuthenticatedLayout() {
               variant="outline"
               disabled={isLoggingOut}
               onClick={() => void handleLogout()}
-              className="h-8 rounded-[4px] border-[#6B5636] bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-[#3A1A20] hover:text-primary-foreground"
+              className="h-8 rounded-[4px] border-brass-border bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-surface-dark-border hover:text-primary-foreground"
             >
               <LogOut aria-hidden="true" />
               <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
@@ -104,7 +104,7 @@ export function AuthenticatedLayout() {
           role="alert"
           className={
             navigation.operational
-              ? 'border-b border-[#3A1A20] bg-[#2B0A10] px-4 py-2 text-center text-[13px] text-[#D99999]'
+              ? 'border-b border-surface-dark-border bg-secondary-foreground px-4 py-2 text-center text-[13px] text-destructive-soft'
               : 'bg-destructive/10 px-4 py-2 text-center text-[13px] text-destructive'
           }
         >

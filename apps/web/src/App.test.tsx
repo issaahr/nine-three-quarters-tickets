@@ -420,7 +420,7 @@ describe('fluxo de autenticação', () => {
     await screen.findByRole('heading', { name: 'Nenhum Event disponível' });
     const main = screen.getByRole('main');
 
-    expect(main.parentElement).toHaveClass('bg-[#1A0A0D]');
+    expect(main.parentElement).toHaveClass('bg-surface-dark');
     expect(screen.getByText('Operação de portaria')).toBeInTheDocument();
   });
 

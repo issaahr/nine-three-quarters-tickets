@@ -27,7 +27,7 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
   const isDraft = event.status === EventStatus.Draft;
   const showSales = event.status !== EventStatus.Cancelled;
   return (
-    <article className="relative border border-[#DED6C7] bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]">
+    <article className="relative border border-border-panel bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]">
       <Link
         to={`/organizer/events/${event.id}`}
         className="grid grid-cols-[64px_minmax(0,1fr)] gap-4 text-inherit no-underline sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:items-center"
@@ -56,7 +56,7 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
             {event.venueName} · {event.venueCity}
           </p>
         </div>
-        <div className="col-span-2 flex items-center justify-end gap-5 border-t border-[#E8E1D5] pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
+        <div className="col-span-2 flex items-center justify-end gap-5 border-t border-border-subtle pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
           {showSales && (
             <div className="text-right">
               <p className="m-0 font-mono text-sm font-medium">

@@ -14,7 +14,7 @@ import { EventDiscoveryFilters } from '../types';
 
 const allGenresValue = 'ALL';
 const fieldClassName =
-  'h-10 rounded-[4px] border-[#B8AEA0] bg-white px-3 text-sm focus-visible:border-primary';
+  'h-10 rounded-[4px] border-border-input bg-white px-3 text-sm focus-visible:border-primary';
 const labelClassName =
   'mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground';
 
@@ -67,7 +67,7 @@ export function EventFilters({ filters, suggestedGenres, onApply }: EventFilters
   return (
     <form
       onSubmit={handleSubmit}
-      className="border border-[#D8CEBE] bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)] sm:p-5"
+      className="border border-border-clip bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)] sm:p-5"
       aria-label="Busca e filtros de eventos"
     >
       {!isExpanded ? (

@@ -20,7 +20,7 @@ export function EventCard({ event }: EventCardProps) {
   return (
     <Link
       to={`/events/${event.id}`}
-      className="group block h-full bg-[#D8CEBE] p-px text-inherit no-underline transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]"
+      className="group block h-full bg-border-clip p-px text-inherit no-underline transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]"
       aria-label={`Ver detalhes de ${event.title}`}
     >
       <article className="h-full">

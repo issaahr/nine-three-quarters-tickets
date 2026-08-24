@@ -15,31 +15,31 @@ const resultPresentation: Record<
     title: 'Entrada liberada',
     description: 'Check-in registrado com sucesso.',
     icon: Check,
-    iconClassName: 'border-[#3E6B4F] text-[#8FBF9F]',
+    iconClassName: 'border-status-valid text-status-valid-soft',
   },
   [CheckInResult.Invalid]: {
     title: 'Credencial inválida',
     description: 'Não foi possível validar este ingresso.',
     icon: X,
-    iconClassName: 'border-[#8B3A3A] text-[#D99999]',
+    iconClassName: 'border-destructive text-destructive-soft',
   },
   [CheckInResult.AlreadyUsed]: {
     title: 'Ingresso já utilizado',
     description: 'Este ingresso já foi utilizado',
     icon: Clock3,
-    iconClassName: 'border-[#A9855B] text-[#D9C7A0]',
+    iconClassName: 'border-brass-dark text-primary-foreground',
   },
   [CheckInResult.EventMismatch]: {
     title: 'Evento diferente',
     description: 'Ingresso não pertence a este evento',
     icon: MapPinOff,
-    iconClassName: 'border-[#62605B] text-[#B7AFA3]',
+    iconClassName: 'border-neutral-dark-border text-surface-dark-muted',
   },
   [CheckInResult.Cancelled]: {
     title: 'Ingresso cancelado',
     description: 'Este Ticket não permite entrada.',
     icon: X,
-    iconClassName: 'border-[#8B3A3A] text-[#D99999]',
+    iconClassName: 'border-destructive text-destructive-soft',
   },
 };
 
@@ -51,7 +51,7 @@ export function CheckInResultPanel({ result, onReset }: CheckInResultPanelProps)
   return (
     <section
       role="status"
-      className="rounded-[8px] bg-[#1A0A0D] p-6 text-center text-[#F5F2EC]"
+      className="rounded-[8px] bg-surface-dark p-6 text-center text-background"
       aria-live="assertive"
     >
       <span
@@ -60,11 +60,11 @@ export function CheckInResultPanel({ result, onReset }: CheckInResultPanelProps)
         <Icon className="size-6" aria-hidden="true" />
       </span>
       <h2 className="mt-3 font-heading text-xl font-semibold">{presentation.title}</h2>
-      <p className="mt-1 text-sm text-[#8A857C]">{presentation.description}</p>
+      <p className="mt-1 text-sm text-border">{presentation.description}</p>
       <button
         type="button"
         onClick={onReset}
-        className="mt-6 rounded-[4px] border border-[#6B5636] px-4 py-2 text-sm font-medium text-[#D9C7A0] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+        className="mt-6 rounded-[4px] border border-brass-border px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
       >
         Nova validação
       </button>

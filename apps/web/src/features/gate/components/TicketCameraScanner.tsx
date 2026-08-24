@@ -72,9 +72,11 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
   useEffect(() => stopCamera, []);
 
   return (
-    <section className="relative flex flex-col rounded-[4px] border border-[#3A1A20] bg-[#0D0507] p-5">
+    <section className="relative flex flex-col rounded-[4px] border border-surface-dark-border bg-surface-dark-deep p-5">
       <h2 className="font-heading text-xl font-semibold">Leitor por câmera</h2>
-      <p className="mt-2 text-sm text-[#B7AFA3]">Aponte a câmera para o QR Code do ingresso.</p>
+      <p className="mt-2 text-sm text-surface-dark-muted">
+        Aponte a câmera para o QR Code do ingresso.
+      </p>
       <video
         ref={videoReference}
         muted
@@ -91,14 +93,14 @@ export function TicketCameraScanner({ disabled, onCredential }: TicketCameraScan
         onClick={() => void (isActive ? stopCamera() : startCamera())}
         className={
           isActive
-            ? 'mt-4 self-center rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
-            : 'mt-4 self-center rounded-[4px] border border-[#A9855B] px-4 py-2 text-sm font-medium text-[#F5F2EC] transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50 sm:absolute sm:left-1/2 sm:top-1/2 sm:mt-0 sm:-translate-x-1/2 sm:-translate-y-1/2'
+            ? 'mt-4 self-center rounded-[4px] border border-brass-dark px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50'
+            : 'mt-4 self-center rounded-[4px] border border-brass-dark px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary disabled:opacity-50 sm:absolute sm:left-1/2 sm:top-1/2 sm:mt-0 sm:-translate-x-1/2 sm:-translate-y-1/2'
         }
       >
         {isActive ? 'Desativar câmera' : 'Ativar câmera'}
       </button>
       {message && (
-        <p role="status" className="mt-3 text-sm text-[#D9C7A0]">
+        <p role="status" className="mt-3 text-sm text-primary-foreground">
           {message}
         </p>
       )}

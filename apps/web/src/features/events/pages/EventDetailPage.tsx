@@ -264,7 +264,7 @@ export function EventDetailPage() {
         Voltar aos eventos
       </Link>
 
-      <article className="mx-auto grid max-w-5xl overflow-hidden bg-[#D8CEBE] p-px [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_16px),calc(100%_-_16px)_100%,0_100%)] sm:grid-cols-[240px_minmax(0,1fr)]">
+      <article className="mx-auto grid max-w-5xl overflow-hidden bg-border-clip p-px [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_16px),calc(100%_-_16px)_100%,0_100%)] sm:grid-cols-[240px_minmax(0,1fr)]">
         <div className="bg-white p-2 sm:p-3">
           {event.imageUrl ? (
             <img
@@ -308,7 +308,7 @@ export function EventDetailPage() {
             {event.description || 'Sem descrição disponível.'}
           </p>
 
-          <dl className="mt-6 grid gap-4 border-y border-[#E2D9CB] py-4 sm:grid-cols-2">
+          <dl className="mt-6 grid gap-4 border-y border-border-subtle py-4 sm:grid-cols-2">
             <div>
               <dt className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[1.3px] text-primary">
                 <CalendarDays className="size-4" aria-hidden="true" />
@@ -384,7 +384,7 @@ export function EventDetailPage() {
                 selectionDisabled={!canSelectSeats}
                 onToggleSeat={toggleSeat}
               />
-              <div className="mt-6 border-t border-[#E2D9CB] pt-5">
+              <div className="mt-6 border-t border-border-subtle pt-5">
                 {canSelectSeats && (
                   <p className="mb-0 text-sm text-muted-foreground">
                     A seleção ainda não reserva os assentos.
@@ -409,15 +409,15 @@ export function EventDetailPage() {
                   </div>
                 )}
                 {canSelectSeats && (
-                  <div className="mt-5 flex flex-wrap items-center justify-between gap-4 bg-[#2B0A10] p-4 text-primary-foreground sm:p-5">
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-4 bg-secondary-foreground p-4 text-primary-foreground sm:p-5">
                     <div>
-                      <p aria-live="polite" className="m-0 text-sm font-medium text-[#F5F2EC]">
+                      <p aria-live="polite" className="m-0 text-sm font-medium text-background">
                         {selectedSeatIds.length === 0
                           ? 'Selecione seus assentos'
                           : `${selectedSeatIds.length} assento${selectedSeatIds.length === 1 ? '' : 's'} selecionado${selectedSeatIds.length === 1 ? '' : 's'}.`}
                       </p>
                       {selectedSeatIds.length > 0 && (
-                        <p className="mb-0 mt-1 font-mono text-sm text-[#D9C7A0]">
+                        <p className="mb-0 mt-1 font-mono text-sm text-primary-foreground">
                           {formatEventPrice(selectedSeatIds.length * event.priceCents)}
                         </p>
                       )}
@@ -427,7 +427,7 @@ export function EventDetailPage() {
                         type="button"
                         disabled={selectedSeatIds.length === 0 || isCreating}
                         onClick={() => void startSeatedReservation()}
-                        className="rounded-[4px] bg-[#681E2B] text-primary-foreground hover:bg-[#4E1420]"
+                        className="rounded-[4px]"
                       >
                         {isCreating ? 'Reservando...' : 'Reservar assentos'}
                       </Button>

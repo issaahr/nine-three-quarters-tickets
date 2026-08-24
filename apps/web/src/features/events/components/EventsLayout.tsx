@@ -32,7 +32,7 @@ export function EventsLayout() {
 
           <div className="flex items-center gap-2 sm:gap-5">
             {user && user.role !== UserRole.Customer && (
-              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-[#8A857C] sm:inline">
+              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-border sm:inline">
                 {navigation?.label}
               </span>
             )}
@@ -45,7 +45,7 @@ export function EventsLayout() {
                     `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${!hasDedicatedArea ? 'hidden sm:inline-block ' : ''}${
                       isActive
                         ? 'text-primary-foreground'
-                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                        : 'text-surface-dark-subtle hover:text-primary-foreground'
                     }`
                   }
                 >
@@ -59,7 +59,7 @@ export function EventsLayout() {
                     `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
                       isActive
                         ? 'text-primary-foreground'
-                        : 'text-[#C9BBA6] hover:text-primary-foreground'
+                        : 'text-surface-dark-subtle hover:text-primary-foreground'
                     }`
                   }
                 >
@@ -74,7 +74,7 @@ export function EventsLayout() {
                 variant="outline"
                 disabled={isLoggingOut}
                 onClick={() => void handleLogout()}
-                className="h-8 rounded-[4px] border-[#6B5636] bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-[#3A1A20] hover:text-primary-foreground"
+                className="h-8 rounded-[4px] border-brass-border bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-surface-dark-border hover:text-primary-foreground"
               >
                 <LogOut aria-hidden="true" />
                 <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
@@ -84,7 +84,7 @@ export function EventsLayout() {
             ) : (
               <NavLink
                 to="/login"
-                className="rounded-[4px] border border-[#6B5636] px-3 py-2 text-[12px] text-primary-foreground transition-colors hover:bg-[#3A1A20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+                className="rounded-[4px] border border-brass-border px-3 py-2 text-[12px] text-primary-foreground transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
               >
                 Entrar
               </NavLink>
