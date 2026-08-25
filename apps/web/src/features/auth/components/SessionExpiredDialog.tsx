@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
 
 /** Exige novo login quando uma ação autenticada recebe 401 da API. */
 export function SessionExpiredDialog() {

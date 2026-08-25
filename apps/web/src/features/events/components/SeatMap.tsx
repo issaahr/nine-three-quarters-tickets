@@ -39,7 +39,7 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
             Selecionado
           </span>
           <span className="flex items-center gap-2">
-            <span aria-hidden="true" className="size-3 rounded-sm bg-[#B7AFA3]" />
+            <span aria-hidden="true" className="size-3 rounded-sm bg-muted" />
             Indisponível
           </span>
         </div>
@@ -47,7 +47,7 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
 
       <div className="mx-auto mt-7 flex max-w-xl flex-col items-center">
         <div className="w-full max-w-md" aria-hidden="true">
-          <div className="h-1 rounded-full bg-[#D4CCBE]" />
+          <div className="h-1 rounded-full bg-border" />
           <p className="mb-0 mt-2 text-center text-[10px] font-medium uppercase tracking-[2px] text-muted-foreground">
             Tela
           </p>
@@ -87,8 +87,8 @@ export function SeatMap({ seats, selectedSeatIds, selectionDisabled, onToggleSea
                     selected
                       ? 'border-brass-dark bg-secondary text-secondary-foreground'
                       : available
-                        ? 'border-[#C9BEAE] bg-white text-foreground hover:border-primary hover:bg-primary/10'
-                        : 'border-[#B7AFA3] bg-[#B7AFA3] text-[#5A5650]'
+                        ? 'border-border bg-white text-foreground hover:border-primary hover:bg-primary/10'
+                        : 'border-muted bg-muted text-muted-foreground'
                   }`}
                 >
                   {seat.label}

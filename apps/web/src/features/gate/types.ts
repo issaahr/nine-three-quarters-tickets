@@ -6,6 +6,17 @@ export interface GateEvent {
   startsAt: string;
 }
 
+export interface GateEventsFilters {
+  page?: number;
+  today?: boolean;
+}
+
+export interface GateEventsPage {
+  items: GateEvent[];
+  page: number;
+  hasMore: boolean;
+}
+
 export enum CheckInResult {
   Valid = 'VALID',
   Invalid = 'INVALID',

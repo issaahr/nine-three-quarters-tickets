@@ -5,10 +5,10 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory } from '../events/types';
-import { server } from '../../test/server';
+import { server } from '@/test/server';
 import { EventStatus } from './types';
 
 const apiUrl = 'http://api.test';
@@ -89,27 +89,31 @@ describe('gestão inicial de Events pelo organizador', () => {
     const publishHandler = vi.fn();
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-1',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: movie.title,
-            imageUrl: movie.imageUrl,
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: published ? EventStatus.Published : EventStatus.Draft,
-            startsAt: '2030-09-01T23:30:00.000Z',
-            priceCents: 2500,
-            isActive: false,
-            soldTickets: 12,
-            inventoryTotal: 60,
-            revenueCents: 30000,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-1',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: movie.title,
+              imageUrl: movie.imageUrl,
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: published ? EventStatus.Published : EventStatus.Draft,
+              startsAt: '2030-09-01T23:30:00.000Z',
+              priceCents: 2500,
+              isActive: false,
+              soldTickets: 12,
+              inventoryTotal: 60,
+              revenueCents: 30000,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
       http.post(`${apiUrl}/events/event-1/publish`, () => {
         publishHandler();
@@ -131,101 +135,414 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByText('Publicado')).toBeInTheDocument();
   });
 
-  it('filtra localmente por título, tipo, status e período sem alterar os indicadores globais', async () => {
+  it('atualiza a busca via backend ao filtrar por título, tipo, status e período', async () => {
+    const allItems = [
+      {
+        id: 'event-movie',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Duna: Parte Dois',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        startsAt: '2030-09-01T23:30:00.000Z',
+        priceCents: 2500,
+        isActive: true,
+        soldTickets: 12,
+        availableTickets: 48,
+        inventoryTotal: 60,
+        revenueCents: 30000,
+      },
+      {
+        id: 'event-show',
+        venueId: generalAdmissionVenue.id,
+        venueName: generalAdmissionVenue.name,
+        venueCity: generalAdmissionVenue.city,
+        venueTimeZone: generalAdmissionVenue.timeZone,
+        title: 'Coldplay',
+        genres: attraction.genres,
+        category: EventCategory.Show,
+        admissionMode: AdmissionMode.GeneralAdmission,
+        status: EventStatus.Draft,
+        startsAt: '2030-10-02T01:00:00.000Z',
+        priceCents: 15000,
+        isActive: false,
+        soldTickets: 3,
+        availableTickets: 497,
+        inventoryTotal: 500,
+        revenueCents: 45000,
+      },
+      {
+        id: 'event-cancelled',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Sessão cancelada',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Cancelled,
+        startsAt: '2030-11-01T23:30:00.000Z',
+        priceCents: 3000,
+        isActive: false,
+        soldTickets: 1,
+        availableTickets: null,
+        inventoryTotal: null,
+        revenueCents: 0,
+      },
+    ];
+
+    function eventVenueDate(item: (typeof allItems)[number]): string {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: item.venueTimeZone }).format(
+        new Date(item.startsAt),
+      );
+    }
+
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const query = url.searchParams.get('query')?.toLowerCase() ?? '';
+        const category = url.searchParams.get('category');
+        const status = url.searchParams.get('status');
+        const dateFrom = url.searchParams.get('dateFrom');
+        const dateTo = url.searchParams.get('dateTo');
+
+        const filtered = allItems.filter((item) => {
+          const eventDate = eventVenueDate(item);
+          return (
+            (!query || item.title.toLowerCase().includes(query)) &&
+            (!category || item.category === category) &&
+            (!status || item.status === status) &&
+            (!dateFrom || eventDate >= dateFrom) &&
+            (!dateTo || eventDate <= dateTo)
+          );
+        });
+
+        return HttpResponse.json({ items: filtered, page: 1, hasMore: false });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderOrganizer();
+
+    expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+    expect(screen.getByText('Título')).toBeInTheDocument();
+    expect(screen.getByText('Categoria')).toBeInTheDocument();
+    expect(screen.getByText('Status')).toBeInTheDocument();
+    expect(screen.getByText('A partir de dd/mm/aaaa')).toBeInTheDocument();
+    expect(screen.getByText('Até dd/mm/aaaa')).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'cold{enter}');
+    expect(await screen.findByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Pesquisar por título'));
+    await user.keyboard('{enter}');
+    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Movie);
+    await user.selectOptions(screen.getByLabelText('Filtrar por status'), EventStatus.Cancelled);
+    expect(await screen.findByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Filtrar por status'), 'ALL');
+    fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), {
+      target: { value: '2030-11-01' },
+    });
+    expect(await screen.findByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), { target: { value: '2030-09-30' } });
+    expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Coldplay' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sessão cancelada' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), { target: { value: '' } });
+    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Show);
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado{enter}');
+    expect(
+      await screen.findByRole('heading', { name: 'Nenhum evento encontrado' }),
+    ).toBeInTheDocument();
+  });
+
+  it('reordena via backend entre mais recentes e mais antigos', async () => {
+    const items = [
+      {
+        id: 'event-1',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Evento Antigo',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        createdAt: '2030-01-01T10:00:00.000Z',
+        startsAt: '2030-12-01T20:00:00.000Z',
+        priceCents: 2000,
+        isActive: true,
+        soldTickets: 0,
+        availableTickets: 50,
+        inventoryTotal: 50,
+        revenueCents: 0,
+      },
+      {
+        id: 'event-2',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Evento Recente',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        createdAt: '2030-02-01T10:00:00.000Z',
+        startsAt: '2030-01-01T20:00:00.000Z',
+        priceCents: 2000,
+        isActive: true,
+        soldTickets: 0,
+        availableTickets: 50,
+        inventoryTotal: 50,
+        revenueCents: 0,
+      },
+    ];
+
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const sort = url.searchParams.get('sort') ?? 'recent';
+        const sorted = [...items].sort((a, b) => {
+          const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          return sort === 'oldest' ? diff : -diff;
+        });
+        return HttpResponse.json({ items: sorted, page: 1, hasMore: false });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderOrganizer();
+
+    expect(await screen.findByRole('heading', { name: 'Evento Recente' })).toBeInTheDocument();
+    const headingsDefault = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+    expect(headingsDefault).toEqual(['Evento Recente', 'Evento Antigo']);
+
+    await user.selectOptions(screen.getByLabelText('Ordenar por'), 'oldest');
+    await waitFor(() => {
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Evento Antigo', 'Evento Recente']);
+    });
+
+    await user.selectOptions(screen.getByLabelText('Ordenar por'), 'recent');
+    await waitFor(() => {
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Evento Recente', 'Evento Antigo']);
+    });
+  });
+
+  it('aplica espaçamento lateral no título do card no mobile para quebra de linha antes do badge de status', async () => {
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-movie',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Duna: Parte Dois',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Published,
-            startsAt: '2030-09-01T23:30:00.000Z',
-            priceCents: 2500,
-            isActive: true,
-            soldTickets: 12,
-            availableTickets: 48,
-            inventoryTotal: 60,
-            revenueCents: 30000,
-          },
-          {
-            id: 'event-show',
-            venueId: generalAdmissionVenue.id,
-            venueName: generalAdmissionVenue.name,
-            venueCity: generalAdmissionVenue.city,
-            venueTimeZone: generalAdmissionVenue.timeZone,
-            title: 'Coldplay',
-            genres: attraction.genres,
-            category: EventCategory.Show,
-            admissionMode: AdmissionMode.GeneralAdmission,
-            status: EventStatus.Draft,
-            startsAt: '2030-10-02T01:00:00.000Z',
-            priceCents: 15000,
-            isActive: false,
-            soldTickets: 3,
-            availableTickets: 497,
-            inventoryTotal: 500,
-            revenueCents: 45000,
-          },
-          {
-            id: 'event-cancelled',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Sessão cancelada',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Cancelled,
-            startsAt: '2030-11-01T23:30:00.000Z',
-            priceCents: 3000,
-            isActive: false,
-            soldTickets: 1,
-            availableTickets: null,
-            inventoryTotal: null,
-            revenueCents: 0,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-long',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title:
+                'Um Título Muito Longo Para Ocorrência Que Deveria Quebrar Linha Sem Invadir o Status',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              startsAt: '2030-09-01T20:00:00.000Z',
+              priceCents: 2000,
+              isActive: true,
+              soldTickets: 0,
+              availableTickets: 50,
+              inventoryTotal: 50,
+              revenueCents: 0,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
+      ),
+    );
+
+    renderOrganizer();
+
+    const titleHeading = await screen.findByRole('heading', {
+      name: /Um Título Muito Longo/,
+    });
+    expect(titleHeading.parentElement).toHaveClass('pr-24', 'sm:pr-0');
+  });
+
+  it('carrega páginas subsequentes com scroll infinito no painel do organizador e suporta retry em falhas', async () => {
+    let observerCallback: IntersectionObserverCallback = () => {};
+
+    class IntersectionObserverMock implements Partial<IntersectionObserver> {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+
+    let page2Requests = 0;
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        if (page === 1) {
+          return HttpResponse.json({
+            items: [
+              {
+                id: 'event-page1',
+                venueId: venue.id,
+                venueName: venue.name,
+                venueCity: venue.city,
+                venueTimeZone: venue.timeZone,
+                title: 'Evento Página 1',
+                genres: movie.genres,
+                category: EventCategory.Movie,
+                admissionMode: AdmissionMode.Seated,
+                status: EventStatus.Published,
+                createdAt: '2030-01-01T10:00:00.000Z',
+                startsAt: '2030-12-01T20:00:00.000Z',
+                priceCents: 2000,
+                isActive: true,
+                soldTickets: 5,
+                availableTickets: 45,
+                inventoryTotal: 50,
+                revenueCents: 10000,
+              },
+            ],
+            page: 1,
+            hasMore: true,
+          });
+        }
+        page2Requests++;
+        if (page2Requests === 1) {
+          return new HttpResponse(null, { status: 500 });
+        }
+        return HttpResponse.json({
+          items: [
+            {
+              id: 'event-page2',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Evento Página 2',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              createdAt: '2030-01-02T10:00:00.000Z',
+              startsAt: '2030-12-02T20:00:00.000Z',
+              priceCents: 2500,
+              isActive: true,
+              soldTickets: 2,
+              availableTickets: 48,
+              inventoryTotal: 50,
+              revenueCents: 5000,
+            },
+          ],
+          page: 2,
+          hasMore: false,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderOrganizer();
+
+    expect(await screen.findByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais eventos.',
+    );
+    expect(screen.getByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('heading', { name: 'Evento Página 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+  });
+
+  it('apresenta empty state com "Crie seu primeiro evento" quando o organizador não possui eventos', async () => {
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
+    );
+
+    renderOrganizer();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Crie seu primeiro evento' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('destaca o card selecionado com bg-primary e p-[2px] e os não selecionados com bg-border-light e p-[3px]', async () => {
+    server.use(
+      http.get(`${apiUrl}/venues`, () => HttpResponse.json([venue])),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({
+          items: [
+            movie,
+            {
+              ...movie,
+              externalId: 'movie-2',
+              title: 'Interestelar',
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
+      ),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
       ),
     );
     const user = userEvent.setup();
 
-    renderOrganizer();
-    expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
-    expect(screen.getByText('16')).toBeInTheDocument();
-    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+    renderOrganizer('/organizer/events/new');
 
-    await user.type(screen.getByLabelText('Pesquisar por título'), 'cold');
-    expect(screen.getByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
-    expect(screen.getByText('16')).toBeInTheDocument();
-    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
+    const dunaButton = await screen.findByRole('button', { name: /Duna: Parte Dois/ });
+    const interestelarButton = screen.getByRole('button', { name: /Interestelar/ });
 
-    await user.clear(screen.getByLabelText('Pesquisar por título'));
-    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Movie);
-    await user.selectOptions(screen.getByLabelText('Filtrar por status'), EventStatus.Cancelled);
-    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+    expect(dunaButton).toHaveClass('bg-border-light', 'p-[3px]');
+    expect(interestelarButton).toHaveClass('bg-border-light', 'p-[3px]');
 
-    await user.selectOptions(screen.getByLabelText('Filtrar por status'), 'ALL');
-    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '2030-11-01' } });
-    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
+    await user.click(dunaButton);
 
-    await user.clear(screen.getByLabelText('Pesquisar por título'));
-    fireEvent.change(screen.getByLabelText('Data inicial'), { target: { value: '' } });
-    await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Show);
-    await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado');
-    expect(
-      await screen.findByRole('heading', { name: 'Nenhum evento encontrado' }),
-    ).toBeInTheDocument();
+    expect(dunaButton).toHaveClass('bg-primary', 'p-[2px]');
+    expect(interestelarButton).toHaveClass('bg-border-light', 'p-[3px]');
   });
 
   it('cria e publica usando somente identidade externa e dados locais', async () => {
@@ -250,7 +567,9 @@ describe('gestão inicial de Events pelo organizador', () => {
         publishHandler();
         return HttpResponse.json({ id: 'event-created', status: EventStatus.Published });
       }),
-      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
     );
     const user = userEvent.setup();
 
@@ -303,7 +622,7 @@ describe('gestão inicial de Events pelo organizador', () => {
         attractionSearchHandler(new URL(request.url).searchParams.get('query'));
         return HttpResponse.json({ items: [attraction], page: 1, hasMore: false });
       }),
-      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+      http.get(`${apiUrl}/catalog/attractions/popular`, () =>
         HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
       ),
       http.post(`${apiUrl}/events/shows`, async ({ request }) => {
@@ -317,7 +636,9 @@ describe('gestão inicial de Events pelo organizador', () => {
         publishHandler();
         return HttpResponse.json({ id: 'show-created', status: EventStatus.Published });
       }),
-      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
     );
     const user = userEvent.setup();
 
@@ -325,7 +646,7 @@ describe('gestão inicial de Events pelo organizador', () => {
     await screen.findByRole('heading', { name: 'Filmes em alta' });
     await user.click(screen.getByRole('button', { name: /Show/ }));
 
-    expect(screen.getByRole('heading', { name: 'Shows relevantes no Brasil' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Shows em alta' })).toBeInTheDocument();
     expect(screen.queryByText(movie.title)).not.toBeInTheDocument();
     expect(screen.queryByText(attraction.description)).not.toBeInTheDocument();
     expect(attractionSearchHandler).not.toHaveBeenCalled();
@@ -480,6 +801,77 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByText('Filme 11', { exact: true })).toBeInTheDocument();
   });
 
+  it('interrompe a paginação automática de filmes após falha incremental e permite repetir a página', async () => {
+    let observerCallback!: IntersectionObserverCallback;
+    let failedPageThree = false;
+    const catalogHandler = vi.fn(({ request }: { request: Request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'));
+
+      if (page === 3 && !failedPageThree) {
+        failedPageThree = true;
+        return new HttpResponse(null, { status: 502 });
+      }
+
+      const pageItems =
+        page === 1
+          ? Array.from({ length: 10 }, (_, index) => ({
+              ...movie,
+              externalId: String(index + 1),
+              title: `Filme ${index + 1}`,
+            }))
+          : [{ ...movie, externalId: String(page * 10 + 1), title: `Filme ${page * 10 + 1}` }];
+
+      return HttpResponse.json({ items: pageItems, page, hasMore: page < 3 });
+    });
+
+    class IntersectionObserverMock {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+
+      public observe(): void {}
+
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+    server.use(
+      http.get(`${apiUrl}/venues`, () => HttpResponse.json([venue])),
+      http.get(`${apiUrl}/catalog/movies/popular`, catalogHandler),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+
+    expect(await screen.findByText('Filme 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(2));
+    triggerObserver();
+    expect(await screen.findByText('Filme 21', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais filmes.',
+    );
+    expect(screen.getByText('Filme 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    triggerObserver();
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(3));
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(catalogHandler).toHaveBeenCalledTimes(4));
+    triggerObserver();
+    expect(await screen.findByText('Filme 31', { exact: true })).toBeInTheDocument();
+  });
+
   it('mantém paginação infinita ao pesquisar atrações para um show', async () => {
     let observerCallback!: IntersectionObserverCallback;
 
@@ -521,7 +913,7 @@ describe('gestão inicial de Events pelo organizador', () => {
               hasMore: false,
             });
       }),
-      http.get(`${apiUrl}/catalog/attractions/relevant`, () =>
+      http.get(`${apiUrl}/catalog/attractions/popular`, () =>
         HttpResponse.json({ items: [attraction], page: 1, hasMore: false }),
       ),
     );
@@ -534,5 +926,91 @@ describe('gestão inicial de Events pelo organizador', () => {
 
     expect(await screen.findByText(attraction.title, { exact: true })).toBeInTheDocument();
     expect(await screen.findByText('System of a Down', { exact: true })).toBeInTheDocument();
+  });
+
+  it('interrompe a paginação automática de atrações após falha incremental e permite repetir a página', async () => {
+    let observerCallback!: IntersectionObserverCallback;
+    let failedPageThree = false;
+    const attractionsHandler = vi.fn(({ request }: { request: Request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'));
+
+      if (page === 3 && !failedPageThree) {
+        failedPageThree = true;
+        return new HttpResponse(null, { status: 502 });
+      }
+
+      const pageItems =
+        page === 1
+          ? Array.from({ length: 10 }, (_, index) => ({
+              ...attraction,
+              externalId: `attraction-${index + 1}`,
+              title: `Atração ${index + 1}`,
+            }))
+          : [
+              {
+                ...attraction,
+                externalId: `attraction-${page * 10 + 1}`,
+                title: `Atração ${page * 10 + 1}`,
+              },
+            ];
+
+      return HttpResponse.json({ items: pageItems, page, hasMore: page < 3 });
+    });
+
+    class IntersectionObserverMock {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+
+      public observe(): void {}
+
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+    server.use(
+      http.get(`${apiUrl}/venues`, ({ request }) => {
+        const admissionMode = new URL(request.url).searchParams.get('admissionMode');
+        return HttpResponse.json(
+          admissionMode === AdmissionMode.GeneralAdmission ? [generalAdmissionVenue] : [venue],
+        );
+      }),
+      http.get(`${apiUrl}/catalog/movies/popular`, () =>
+        HttpResponse.json({ items: [movie], page: 1, hasMore: false }),
+      ),
+      http.get(`${apiUrl}/catalog/attractions/popular`, attractionsHandler),
+    );
+    const user = userEvent.setup();
+
+    renderOrganizer('/organizer/events/new');
+    await user.click(screen.getByRole('button', { name: /Show/ }));
+
+    expect(await screen.findByText('Atração 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(2));
+    triggerObserver();
+    expect(await screen.findByText('Atração 21', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais atrações.',
+    );
+    expect(screen.getByText('Atração 1', { exact: true })).toBeInTheDocument();
+    triggerObserver();
+    triggerObserver();
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(3));
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    await waitFor(() => expect(attractionsHandler).toHaveBeenCalledTimes(4));
+    triggerObserver();
+    expect(await screen.findByText('Atração 31', { exact: true })).toBeInTheDocument();
   });
 });

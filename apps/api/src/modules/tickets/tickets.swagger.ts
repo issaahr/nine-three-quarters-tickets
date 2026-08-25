@@ -7,14 +7,20 @@ import {
 } from '@nestjs/swagger';
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
+import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
 import { CheckInResponseDto } from './dto/checkInResponse.dto';
-import { SharedTicketResponseDto, TicketPurchaseResponseDto } from './dto/ticketResponse.dto';
+import { TicketPurchasesPageResponseDto } from './dto/ticketPurchasesPageResponse.dto';
+import { SharedTicketResponseDto } from './dto/ticketResponse.dto';
 
-/** Documenta a consulta autenticada de Tickets agrupados por compra. */
+/** Documenta a consulta autenticada de Tickets agrupados por compra com paginação. */
 export function ApiListTickets() {
   return applyDecorators(
-    ApiOperation({ summary: 'Lista os Tickets confirmados do CUSTOMER autenticado' }),
-    ApiOkResponse({ type: TicketPurchaseResponseDto, isArray: true }),
+    ApiOperation({ summary: 'Lista os Tickets confirmados do CUSTOMER autenticado com paginação' }),
+    ApiOkResponse({ type: TicketPurchasesPageResponseDto }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Parâmetros de paginação inválidos.',
+    }),
   );
 }
 

@@ -1,15 +1,21 @@
 import { Search } from 'lucide-react';
-import { FormEvent, useEffect, useRef, useState } from 'react';
 
-import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
-import { cn } from '../../../lib/utils';
+import { FormEvent, useState } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
+import { Input } from '@/components/ui/input';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
+import { cn } from '@/lib/utils';
+
 import { EventCategory } from '../../events/types';
+
 import { useCatalog } from '../hooks';
 import { CatalogItem } from '../types';
 
 const fieldClassName =
   'h-11 rounded-[4px] border-border bg-card px-3 text-sm focus-visible:border-primary';
+
 const catalogCardClipPath =
   '[clip-path:polygon(0_0,100%_0,100%_calc(100%_-_8px),calc(100%_-_8px)_100%,0_100%)]';
 
@@ -23,12 +29,13 @@ interface CatalogPickerProps {
  * Mantém descoberta e seleção restritas ao catálogo correspondente ao tipo de Event escolhido.
  */
 export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPickerProps) {
-  const loadMoreRef = useRef<HTMLDivElement>(null);
   const [catalogQuery, setCatalogQuery] = useState('');
   const [submittedQuery, setSubmittedQuery] = useState<string>();
   const [visibleItemCount, setVisibleItemCount] = useState(10);
+
   const isShow = category === EventCategory.Show;
   const catalog = useCatalog(category, submittedQuery);
+
   const loadedItems = [
     ...new Map(
       (catalog.data?.pages.flatMap(({ items }) => items) ?? []).map((item) => [
@@ -37,50 +44,37 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
       ]),
     ).values(),
   ];
+
   const visibleItems = loadedItems.slice(0, visibleItemCount);
+
   const fetchNextCatalogPage = catalog.fetchNextPage;
   const hasNextCatalogPage = catalog.hasNextPage;
   const isFetchingNextCatalogPage = catalog.isFetchingNextPage;
+  const hasNextCatalogPageError = catalog.isFetchNextPageError;
+
   const singularLabel = isShow ? 'atração' : 'filme';
   const pluralLabel = isShow ? 'atrações' : 'filmes';
 
-  useEffect(() => {
-    const target = loadMoreRef.current;
-
-    if (!target || typeof IntersectionObserver === 'undefined') {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) {
-          return;
-        }
-
-        if (visibleItemCount < loadedItems.length) {
-          setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
-        } else if (hasNextCatalogPage && !isFetchingNextCatalogPage) {
-          void fetchNextCatalogPage();
-        }
-      },
-      { rootMargin: '240px' },
-    );
-
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [
-    loadedItems.length,
-    fetchNextCatalogPage,
-    hasNextCatalogPage,
-    isFetchingNextCatalogPage,
-    visibleItemCount,
-  ]);
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: () => {
+      if (visibleItemCount < loadedItems.length) {
+        setVisibleItemCount((current) => Math.min(current + 10, loadedItems.length));
+      } else if (hasNextCatalogPage && !isFetchingNextCatalogPage && !hasNextCatalogPageError) {
+        void fetchNextCatalogPage();
+      }
+    },
+    hasMore: visibleItemCount < loadedItems.length || Boolean(hasNextCatalogPage),
+    isLoading: isFetchingNextCatalogPage,
+    isError: hasNextCatalogPageError,
+    rootMargin: '240px',
+  });
 
   /**
    * Inicia a pesquisa somente por ação explícita, evitando chamadas a cada tecla digitada.
    */
   function handleSearch(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
+
     const normalizedQuery = catalogQuery.trim();
 
     if (normalizedQuery.length >= 2) {
@@ -96,6 +90,10 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
     }
   }
 
+  async function handleRetryNextPage(): Promise<void> {
+    await catalog.fetchNextPage();
+  }
+
   return (
     <section aria-labelledby="catalog-search-title">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -103,9 +101,10 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
           {submittedQuery
             ? `Resultados para “${submittedQuery}”`
             : isShow
-              ? 'Shows relevantes no Brasil'
+              ? 'Shows em alta'
               : 'Filmes em alta'}
         </h2>
+
         {submittedQuery && (
           <button
             type="button"
@@ -116,14 +115,16 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
             }}
             className="text-xs text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            ← Voltar aos {isShow ? 'shows relevantes no Brasil' : 'filmes em destaque'}
+            ← Voltar aos {isShow ? 'shows em alta' : 'filmes em destaque'}
           </button>
         )}
       </div>
+
       <form onSubmit={handleSearch} className="mt-4 flex gap-2">
         <label htmlFor="catalog-query" className="sr-only">
           Pesquisar {singularLabel}
         </label>
+
         <Input
           id="catalog-query"
           value={catalogQuery}
@@ -134,6 +135,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
           required={isShow}
           className={fieldClassName}
         />
+
         <Button type="submit" disabled={catalog.isFetching} className="h-11 rounded-[4px] px-4">
           <Search aria-hidden="true" />
           <span className="hidden sm:inline">
@@ -142,7 +144,7 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
         </Button>
       </form>
 
-      {catalog.isError && (
+      {catalog.isError && !hasNextCatalogPageError && (
         <p role="alert" className="mt-4 text-sm text-destructive">
           Não foi possível carregar o catálogo. Tente novamente.
         </p>
@@ -166,9 +168,10 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
                 aria-pressed={isSelected}
                 onClick={() => onSelect(item)}
                 className={cn(
-                  'w-full p-[2px] text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                  'w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                  isSelected ? 'p-[2px]' : 'p-[3px]',
                   catalogCardClipPath,
-                  isSelected ? 'bg-primary' : 'bg-border',
+                  isSelected ? 'bg-primary' : 'bg-border-light',
                 )}
               >
                 <span
@@ -181,15 +184,18 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
                       9¾
                     </span>
                   )}
+
                   <span className="min-w-0">
                     <strong className="block font-heading text-lg font-semibold">
                       {item.title}
                     </strong>
+
                     {!isShow && (
                       <span className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">
                         {item.description ?? 'Descrição não disponível.'}
                       </span>
                     )}
+
                     {item.genres.length > 0 && (
                       <span className="mt-2 block text-[10px] uppercase tracking-[1px] text-primary">
                         {item.genres.join(' · ')}
@@ -203,14 +209,19 @@ export function CatalogPicker({ category, selectedItem, onSelect }: CatalogPicke
         </div>
       )}
 
-      {(visibleItemCount < loadedItems.length || catalog.hasNextPage) && (
-        <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
+      {(visibleItemCount < loadedItems.length || Boolean(catalog.hasNextPage)) && (
+        <div ref={sentinelRef} className="h-8" aria-hidden="true" />
       )}
-      {catalog.isFetchingNextPage && (
-        <p role="status" className="mt-3 text-center text-sm text-muted-foreground">
-          Carregando mais {pluralLabel}...
-        </p>
-      )}
+
+      <InfiniteScrollStatus
+        isLoading={catalog.isFetchingNextPage}
+        isError={hasNextCatalogPageError}
+        onRetry={() => void handleRetryNextPage()}
+        loadingText={`Carregando mais ${pluralLabel}...`}
+        errorText={`Não foi possível carregar mais ${pluralLabel}.`}
+        retryText="Tentar novamente"
+        className="mt-3 text-center"
+      />
     </section>
   );
 }

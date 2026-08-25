@@ -36,10 +36,14 @@ function renderApp(initialPath = '/', sessionUser?: SessionUser, publicSignupEna
 
 beforeEach(() => {
   server.use(
-    http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/organizer/me/events`, () =>
+      HttpResponse.json({ items: [], page: 1, hasMore: false }),
+    ),
     http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
-    http.get(`${apiUrl}/gate/events`, () => HttpResponse.json([])),
-    http.get(`${apiUrl}/tickets`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/gate/events`, () =>
+      HttpResponse.json({ items: [], page: 1, hasMore: false }),
+    ),
+    http.get(`${apiUrl}/tickets`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
   );
 });
 
@@ -96,6 +100,15 @@ describe('fluxo de autenticação', () => {
     expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
   });
 
+  it('exibe placeholder de carregamento no header enquanto a sessão é verificada', () => {
+    server.use(http.get(`${apiUrl}/auth/session`, () => new Promise(() => {})));
+
+    renderApp();
+
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Entrar' })).not.toBeInTheDocument();
+  });
+
   it('não bloqueia a home pública quando a restauração da sessão falha', async () => {
     server.use(http.get(`${apiUrl}/auth/session`, () => new HttpResponse(null, { status: 500 })));
 
@@ -104,7 +117,7 @@ describe('fluxo de autenticação', () => {
     expect(
       await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Minha área' })).toHaveAttribute('href', '/');
+    expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
     expect(screen.queryByRole('heading', { name: 'Bem-vindo de volta' })).not.toBeInTheDocument();
   });
 
@@ -411,7 +424,7 @@ describe('fluxo de autenticação', () => {
     await screen.findByRole('heading', { name: 'Nenhum Event disponível' });
     const main = screen.getByRole('main');
 
-    expect(main.parentElement).toHaveClass('bg-[#1A0A0D]');
+    expect(main.parentElement).toHaveClass('bg-surface-dark');
     expect(screen.getByText('Operação de portaria')).toBeInTheDocument();
   });
 

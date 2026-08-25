@@ -25,11 +25,26 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-border-light: var(--border-light);
+  --color-border-clip: var(--border-clip);
+  --color-border-input: var(--border-input);
+  --color-border-panel: var(--border-panel);
+  --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-brass-dark: var(--brass-dark);
+  --color-brass-border: var(--brass-border);
   --color-status-valid: var(--status-valid);
+  --color-status-valid-soft: var(--status-valid-soft);
   --color-status-valid-background: var(--status-valid-background);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-alert: var(--destructive-alert);
+  --color-surface-dark: var(--surface-dark);
+  --color-surface-dark-deep: var(--surface-dark-deep);
+  --color-surface-dark-border: var(--surface-dark-border);
+  --color-surface-dark-muted: var(--surface-dark-muted);
+  --color-surface-dark-subtle: var(--surface-dark-subtle);
+  --color-neutral-dark-border: var(--neutral-dark-border);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -89,11 +104,29 @@ body {
     --destructive-foreground: oklch(0.963 0.01 90); /* Papel #F5F2EC */
 
     --border: oklch(0.598 0.01 80); /* Cinza quente #8A857C */
+    --border-light: oklch(0.85 0.01 80);
+    --border-clip: oklch(0.86 0.02 85); /* Moldura/clip de card editorial #D8CEBE */
+    --border-input: oklch(0.76 0.02 80); /* Borda suave de inputs e selects #B8AEA0 */
+    --border-panel: oklch(0.88 0.015 85); /* Borda de painéis e cards do organizador #DED6C7 */
+    --border-subtle: oklch(0.9 0.015 85); /* Divisor interno suave #E2D9CB */
     --input: oklch(0.598 0.01 80); /* Cinza quente #8A857C */
     --ring: oklch(0.763 0.11 82); /* Latão #C9A768 */
     --brass-dark: oklch(0.632 0.09 75); /* Latão escuro #A9855B */
+    --brass-border: oklch(0.48 0.06 75); /* Latão escurecido / borda em fundo escuro #6B5636 */
     --status-valid: oklch(0.45 0.08 150); /* Verde musgo #3E6B4F */
+    --status-valid-soft: oklch(0.74 0.06 150); /* Verde musgo suave #8FBF9F */
     --status-valid-background: oklch(0.94 0.025 150); /* Fundo de estado válido #E8F0EA */
+    --destructive-soft: oklch(0.73 0.07 25); /* Vermelho terroso suave #D99999 */
+    --destructive-alert: oklch(0.82 0.06 25); /* Alerta claro de erro em fundo escuro #F5B6B6 */
+
+    --surface-dark: oklch(0.18 0.03 15); /* Superfície operacional base #1A0A0D */
+    --surface-dark-deep: oklch(0.12 0.02 15); /* Superfície escura profunda #0D0507 */
+    --surface-dark-border: oklch(
+      0.27 0.05 18
+    ); /* Borda/divisor de superfície escura e hover #3A1A20 */
+    --surface-dark-muted: oklch(0.76 0.01 80); /* Texto muted em fundo escuro #B7AFA3 */
+    --surface-dark-subtle: oklch(0.81 0.02 85); /* Texto secundário/link em fundo escuro #C9BBA6 */
+    --neutral-dark-border: oklch(0.46 0.01 80); /* Borda neutra escura em portaria #62605B */
 
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);

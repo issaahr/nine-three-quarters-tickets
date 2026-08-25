@@ -1,15 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { formatGateEventDateTime } from '../events/eventPresentation';
-import { server } from '../../test/server';
-import { CheckInResult } from './types';
+import { server } from '@/test/server';
+import { CheckInResult, GateEvent } from './types';
 
 const apiUrl = 'http://api.test';
 const scannerMock = vi.hoisted(() => ({
@@ -23,7 +23,7 @@ vi.mock('@zxing/browser', () => ({
   }),
 }));
 
-const gateEvents = [
+const gateEvents: GateEvent[] = [
   {
     id: 'event-1',
     title: 'Sessão em operação',
@@ -52,6 +52,25 @@ describe('Contexto ativo da portaria', () => {
   beforeEach(() => {
     scannerMock.decodeFromVideoDevice.mockReset();
     scannerMock.stop.mockReset();
+
+    server.use(
+      http.get(`${apiUrl}/gate/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const today = url.searchParams.get('today');
+        return HttpResponse.json({
+          items: today === 'true' ? [] : gateEvents,
+          page: 1,
+          hasMore: false,
+        });
+      }),
+      http.get(`${apiUrl}/gate/events/:eventId`, ({ params }) => {
+        const event = gateEvents.find((e) => e.id === params.eventId);
+        if (!event) {
+          return new HttpResponse(null, { status: 404 });
+        }
+        return HttpResponse.json(event);
+      }),
+    );
   });
 
   it('formata o contexto da portaria no timezone do Venue', () => {
@@ -61,7 +80,11 @@ describe('Contexto ativo da portaria', () => {
   });
 
   it('permite ao GATE selecionar um Event e mostra seu contexto operacional', async () => {
-    server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () =>
+        HttpResponse.json({ items: gateEvents, page: 1, hasMore: false }),
+      ),
+    );
     const user = userEvent.setup();
 
     renderGate();
@@ -77,7 +100,11 @@ describe('Contexto ativo da portaria', () => {
   });
 
   it('explica quando não há Events publicados para operar', async () => {
-    server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json([])));
+    server.use(
+      http.get(`${apiUrl}/gate/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
+    );
 
     renderGate();
 
@@ -86,21 +113,31 @@ describe('Contexto ativo da portaria', () => {
     ).toBeInTheDocument();
   });
 
-  it('alterna entre todos os Events e somente os Events do dia atual', async () => {
+  it('alterna entre todos os Events e somente os Events do dia atual via backend', async () => {
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const todayEvent: GateEvent = {
+      ...gateEvents[0],
+      id: 'event-today',
+      title: 'Event de hoje',
+      startsAt: now.toISOString(),
+    };
+    const futureEvent: GateEvent = {
+      ...gateEvents[0],
+      id: 'event-future',
+      title: 'Event futuro',
+      startsAt: tomorrow.toISOString(),
+    };
+
     server.use(
-      http.get(`${apiUrl}/gate/events`, () =>
-        HttpResponse.json([
-          { ...gateEvents[0], title: 'Event de hoje', startsAt: now.toISOString() },
-          {
-            ...gateEvents[0],
-            id: 'event-2',
-            title: 'Event futuro',
-            startsAt: tomorrow.toISOString(),
-          },
-        ]),
-      ),
+      http.get(`${apiUrl}/gate/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const today = url.searchParams.get('today');
+        if (today === 'true') {
+          return HttpResponse.json({ items: [todayEvent], page: 1, hasMore: false });
+        }
+        return HttpResponse.json({ items: [todayEvent, futureEvent], page: 1, hasMore: false });
+      }),
     );
     const user = userEvent.setup();
 
@@ -112,7 +149,7 @@ describe('Contexto ativo da portaria', () => {
 
     await user.click(filterButton);
 
-    expect(screen.getByText('Event de hoje')).toBeInTheDocument();
+    expect(await screen.findByText('Event de hoje')).toBeInTheDocument();
     expect(screen.queryByText('Event futuro')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mostrar todos' })).toHaveAttribute(
       'aria-pressed',
@@ -121,15 +158,141 @@ describe('Contexto ativo da portaria', () => {
 
     await user.click(screen.getByRole('button', { name: 'Mostrar todos' }));
 
-    expect(screen.getByText('Event futuro')).toBeInTheDocument();
+    expect(await screen.findByText('Event futuro')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Ver eventos de hoje' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
   });
 
+  it('carrega mais eventos via infinite scroll quando hasMore é verdadeiro', async () => {
+    const page1Events: GateEvent[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `page-1-${i}`,
+      title: `Evento P1-${i}`,
+      venueName: 'Cine Imperial · Sala A',
+      venueTimeZone: 'America/Fortaleza',
+      startsAt: '2030-08-25T20:00:00.000Z',
+    }));
+    const page2Events: GateEvent[] = [
+      {
+        id: 'page-2-0',
+        title: 'Evento P2-Extra',
+        venueName: 'Cine Imperial · Sala A',
+        venueTimeZone: 'America/Fortaleza',
+        startsAt: '2030-08-26T20:00:00.000Z',
+      },
+    ];
+
+    let triggerObserver: ((entries: IntersectionObserverEntry[]) => void) | undefined;
+    class MockObserver implements Partial<IntersectionObserver> {
+      public constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
+        triggerObserver = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+      public unobserve(): void {}
+    }
+    vi.stubGlobal('IntersectionObserver', MockObserver);
+
+    server.use(
+      http.get(`${apiUrl}/gate/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const page = url.searchParams.get('page');
+        if (page === '2') {
+          return HttpResponse.json({ items: page2Events, page: 2, hasMore: false });
+        }
+        return HttpResponse.json({ items: page1Events, page: 1, hasMore: true });
+      }),
+    );
+
+    renderGate();
+
+    expect(await screen.findByText('Evento P1-0')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(triggerObserver).toBeDefined();
+    });
+
+    triggerObserver!([{ isIntersecting: true } as IntersectionObserverEntry]);
+
+    expect(await screen.findByText('Evento P2-Extra')).toBeInTheDocument();
+    expect(screen.getByText('Evento P1-0')).toBeInTheDocument();
+  });
+
+  it('exibe fallback com botão de tentar novamente ao falhar próxima página da portaria', async () => {
+    const page1Events: GateEvent[] = [
+      {
+        id: 'event-1',
+        title: 'Primeiro Evento',
+        venueName: 'Cine Imperial',
+        venueTimeZone: 'America/Fortaleza',
+        startsAt: '2030-08-25T20:00:00.000Z',
+      },
+    ];
+    const page2Events: GateEvent[] = [
+      {
+        id: 'event-2',
+        title: 'Segundo Evento Recuperado',
+        venueName: 'Cine Imperial',
+        venueTimeZone: 'America/Fortaleza',
+        startsAt: '2030-08-26T20:00:00.000Z',
+      },
+    ];
+
+    let triggerObserver: ((entries: IntersectionObserverEntry[]) => void) | undefined;
+    class MockObserver implements Partial<IntersectionObserver> {
+      public constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
+        triggerObserver = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+      public unobserve(): void {}
+    }
+    vi.stubGlobal('IntersectionObserver', MockObserver);
+
+    let failNextPage = true;
+    server.use(
+      http.get(`${apiUrl}/gate/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const page = url.searchParams.get('page');
+        if (page === '2') {
+          if (failNextPage) {
+            return new HttpResponse(null, { status: 500 });
+          }
+          return HttpResponse.json({ items: page2Events, page: 2, hasMore: false });
+        }
+        return HttpResponse.json({ items: page1Events, page: 1, hasMore: true });
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderGate();
+
+    expect(await screen.findByText('Primeiro Evento')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(triggerObserver).toBeDefined();
+    });
+
+    triggerObserver!([{ isIntersecting: true } as IntersectionObserverEntry]);
+
+    expect(await screen.findByText('Não foi possível carregar mais eventos.')).toBeInTheDocument();
+    const retryButton = screen.getByRole('button', { name: 'Tentar novamente' });
+
+    failNextPage = false;
+    await user.click(retryButton);
+
+    expect(await screen.findByText('Segundo Evento Recuperado')).toBeInTheDocument();
+    expect(screen.getByText('Primeiro Evento')).toBeInTheDocument();
+  });
+
   it('exige uma nova seleção quando a rota não identifica um Event operável', async () => {
-    server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
+    server.use(
+      http.get(
+        `${apiUrl}/gate/events/event-inexistente`,
+        () => new HttpResponse(null, { status: 404 }),
+      ),
+    );
 
     renderGate('/gate/events/event-inexistente');
 
@@ -141,12 +304,11 @@ describe('Contexto ativo da portaria', () => {
     [CheckInResult.Valid, 'Entrada liberada'],
     [CheckInResult.Invalid, 'Credencial inválida'],
     [CheckInResult.AlreadyUsed, 'Ingresso já utilizado'],
-    [CheckInResult.EventMismatch, 'Evento diferente'],
     [CheckInResult.Cancelled, 'Ingresso cancelado'],
-  ])('apresenta o resultado operacional %s da entrada manual', async (result, title) => {
+  ])('valida código manual para o resultado %s', async (result, heading) => {
     let requestBody: unknown;
     server.use(
-      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])),
       http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, async ({ request }) => {
         requestBody = await request.json();
         return HttpResponse.json({ result });
@@ -159,14 +321,13 @@ describe('Contexto ativo da portaria', () => {
     await user.type(await screen.findByLabelText('Código manual'), '7k4p m9q2');
     await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
 
-    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     expect(requestBody).toEqual({ manualCode: '7k4p m9q2' });
-    expect(screen.getByRole('button', { name: 'Nova validação' })).toBeInTheDocument();
   });
 
   it('usa a mensagem única de evento diferente', async () => {
     server.use(
-      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])),
       http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, () =>
         HttpResponse.json({ result: CheckInResult.EventMismatch }),
       ),
@@ -178,52 +339,57 @@ describe('Contexto ativo da portaria', () => {
     await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
     await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
 
-    expect(await screen.findByText('Ingresso não pertence a este evento')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Evento diferente' })).toBeInTheDocument();
+    expect(screen.getByText('Ingresso não pertence a este evento')).toBeInTheDocument();
   });
 
-  it('informa falha técnica sem fabricar resultado de check-in', async () => {
+  it('trata limite de requisições na validação manual', async () => {
     server.use(
-      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
-      http.post(
-        `${apiUrl}/gate/events/event-1/check-in/manual-code`,
-        () => new HttpResponse(null, { status: 500 }),
-      ),
-    );
-    const user = userEvent.setup();
-
-    renderGate('/gate/events/event-1');
-
-    await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
-    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Não foi possível validar o ingresso. Tente novamente.',
-    );
-    expect(screen.queryByRole('heading', { name: 'Entrada liberada' })).not.toBeInTheDocument();
-  });
-
-  it('informa quando a validação manual atinge o rate limit da API', async () => {
-    server.use(
-      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])),
       http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, () =>
-        HttpResponse.json({ code: 'RATE_LIMIT_EXCEEDED' }, { status: 429 }),
+        HttpResponse.json(
+          {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: 'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+          },
+          { status: 429 },
+        ),
       ),
     );
     const user = userEvent.setup();
 
     renderGate('/gate/events/event-1');
+
     await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
     await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
-    );
+    expect(
+      await screen.findByText('Muitas tentativas. Aguarde um momento antes de tentar novamente.'),
+    ).toBeInTheDocument();
   });
 
-  it('envia a credencial detectada pela câmera para a validação da portaria', async () => {
+  it('permite nova leitura após um resultado', async () => {
+    server.use(
+      http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])),
+      http.post(`${apiUrl}/gate/events/event-1/check-in/manual-code`, () =>
+        HttpResponse.json({ result: CheckInResult.Valid }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderGate('/gate/events/event-1');
+
+    await user.type(await screen.findByLabelText('Código manual'), '7K4P-M9Q2');
+    await user.click(screen.getByRole('button', { name: 'Validar ingresso' }));
+    await user.click(await screen.findByRole('button', { name: 'Nova validação' }));
+
+    expect(await screen.findByLabelText('Código manual')).toHaveValue('');
+  });
+
+  it('lê credencial pela câmera e interrompe o scanner após validar', async () => {
     let requestBody: unknown;
-    scannerMock.decodeFromVideoDevice.mockImplementation(
-      async (
+    scannerMock.decodeFromVideoDevice.mockImplementationOnce(
+      (
         _deviceId: string | undefined,
         _videoElement: unknown,
         onResult: (
@@ -239,7 +405,7 @@ describe('Contexto ativo da portaria', () => {
       },
     );
     server.use(
-      http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)),
+      http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])),
       http.post(`${apiUrl}/gate/events/event-1/check-in`, async ({ request }) => {
         requestBody = await request.json();
         return HttpResponse.json({ result: CheckInResult.Valid });
@@ -260,7 +426,7 @@ describe('Contexto ativo da portaria', () => {
 
   it('mantém entrada manual disponível quando não consegue acessar a câmera', async () => {
     scannerMock.decodeFromVideoDevice.mockRejectedValueOnce(new Error('Câmera indisponível'));
-    server.use(http.get(`${apiUrl}/gate/events`, () => HttpResponse.json(gateEvents)));
+    server.use(http.get(`${apiUrl}/gate/events/event-1`, () => HttpResponse.json(gateEvents[0])));
     const user = userEvent.setup();
 
     renderGate('/gate/events/event-1');

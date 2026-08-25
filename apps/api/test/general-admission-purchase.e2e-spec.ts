@@ -198,14 +198,14 @@ describe('compra GENERAL_ADMISSION', () => {
       .query({ reservationId })
       .set('Cookie', customerOneCookie)
       .expect(200);
-    expect(purchases.body).toHaveLength(1);
-    expect(purchases.body[0]).toMatchObject({
+    expect(purchases.body.items).toHaveLength(1);
+    expect(purchases.body.items[0]).toMatchObject({
       reservationId,
       event: { admissionMode: AdmissionMode.GeneralAdmission, category: EventCategory.Show },
     });
-    expect(purchases.body[0].tickets).toHaveLength(3);
+    expect(purchases.body.items[0].tickets).toHaveLength(3);
     expect(
-      purchases.body[0].tickets.every(
+      purchases.body.items[0].tickets.every(
         (ticket: { seatLabel: string | null }) => ticket.seatLabel === null,
       ),
     ).toBe(true);
@@ -213,7 +213,7 @@ describe('compra GENERAL_ADMISSION', () => {
     const checkIn = await request(app.getHttpServer())
       .post(`/gate/events/${event.id}/check-in`)
       .set('Cookie', gateCookie)
-      .send({ credential: purchases.body[0].tickets[0].credential })
+      .send({ credential: purchases.body.items[0].tickets[0].credential })
       .expect(200);
     expect(checkIn.body).toEqual({ result: 'VALID' });
   });

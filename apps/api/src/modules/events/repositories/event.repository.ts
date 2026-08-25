@@ -18,12 +18,18 @@ import { EventNotFoundError } from '../errors/eventNotFound.error';
 import {
   EventDiscoveryFilters,
   EventDiscoveryPage,
+  GateEventsFilters,
+  GateEventsPage,
+  OrganizerEventsFilters,
+  OrganizerEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
   EventCancellationResult,
 } from './eventRepository.interfaces';
 
 const eventDiscoveryPageSize = 12;
+const gateEventsPageSize = 10;
+const organizerEventsPageSize = 10;
 
 /**
  * Concentra consultas semânticas de Event que exigem QueryBuilder ou valores calculados pelo PostgreSQL.
@@ -255,9 +261,11 @@ export class EventRepository {
       );
     }
 
+    const direction = filters.sort === 'recent' ? 'DESC' : 'ASC';
+
     const offset = (filters.page - 1) * eventDiscoveryPageSize;
     const events = await queryBuilder
-      .orderBy('event.startsAt', 'ASC')
+      .orderBy('event.startsAt', direction)
       .addOrderBy('event.id', 'ASC')
       .skip(offset)
       .take(eventDiscoveryPageSize + 1)
@@ -272,19 +280,120 @@ export class EventRepository {
   }
 
   /**
-   * Carrega os Events do organizador com agregados de vendas calculados no PostgreSQL.
+   * Consulta paginada dos Events publicados operáveis pela portaria com filtro opcional por data atual.
    *
-   * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
-   * @returns Ocorrências do organizador e métricas derivadas exclusivamente de Reservations confirmadas.
+   * @param filters - Critérios de paginação e filtro temporal no fuso do Venue.
+   * @returns Página de ocorrências operáveis e indicador determinístico de hasMore.
    */
-  public async findForOrganizerWithStats(organizerId: string): Promise<OrganizerEventWithStats[]> {
-    const result = await this.repository
+  public async findOperableForGate(filters: GateEventsFilters): Promise<GateEventsPage> {
+    const page = Math.max(1, filters.page || 1);
+    const offset = (page - 1) * gateEventsPageSize;
+
+    const queryBuilder = this.repository
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
-      .addSelect(
-        '"event"."status" = :publishedStatus AND "event"."startsAt" > CURRENT_TIMESTAMP',
-        'eventIsActive',
-      )
+      .where('event.status = :publishedStatus', { publishedStatus: EventStatus.Published });
+
+    if (filters.today) {
+      queryBuilder.andWhere(
+        `("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date = (CURRENT_TIMESTAMP AT TIME ZONE "venue"."timeZone")::date`,
+      );
+    }
+
+    const events = await queryBuilder
+      .orderBy('event.startsAt', 'ASC')
+      .addOrderBy('event.id', 'ASC')
+      .skip(offset)
+      .take(gateEventsPageSize + 1)
+      .getMany();
+
+    const hasMore = events.length > gateEventsPageSize;
+
+    return {
+      events: hasMore ? events.slice(0, gateEventsPageSize) : events,
+      page,
+      hasMore,
+    };
+  }
+
+  /**
+   * Carrega o contexto de um Event publicado específico para operação direta na portaria.
+   *
+   * @param eventId - Identificador único do evento.
+   * @returns Entidade do evento publicada com Venue, ou null se não encontrada/não publicada.
+   */
+  public async findOperableGateEventById(eventId: string): Promise<Event | null> {
+    return this.repository.findOne({
+      where: {
+        id: eventId,
+        status: EventStatus.Published,
+      },
+      relations: { venue: true },
+    });
+  }
+
+  /**
+   * Carrega os Events do organizador com agregados de vendas calculados no PostgreSQL e paginação server-side.
+   *
+   * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
+   * @param filters - Parâmetros de paginação.
+   * @returns Página de ocorrências do organizador com métricas derivadas de Reservations confirmadas e hasMore.
+   */
+  public async findForOrganizerWithStats(
+    organizerId: string,
+    filters: OrganizerEventsFilters,
+  ): Promise<OrganizerEventsPage> {
+    const page = filters.page > 0 ? filters.page : 1;
+    const direction = filters.sort === 'oldest' ? 'ASC' : 'DESC';
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId, filters)
+      .orderBy('event.createdAt', direction)
+      .addOrderBy('event.id', 'ASC')
+      .skip((page - 1) * organizerEventsPageSize)
+      .take(organizerEventsPageSize + 1)
+      .getRawAndEntities();
+
+    const hasMore = result.entities.length > organizerEventsPageSize;
+    const events = hasMore ? result.entities.slice(0, organizerEventsPageSize) : result.entities;
+
+    const items = events.map((event, index) =>
+      this.mapOrganizerEventWithStats(event, result.raw[index]),
+    );
+
+    return {
+      items,
+      page,
+      hasMore,
+    };
+  }
+
+  /**
+   * Carrega um único Event do organizador com agregados de vendas calculados no PostgreSQL.
+   *
+   * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
+   * @param eventId - Identificador único do Event.
+   * @returns Ocorrência do organizador com métricas derivadas ou null se não encontrada.
+   */
+  public async findOneForOrganizerWithStats(
+    organizerId: string,
+    eventId: string,
+  ): Promise<OrganizerEventWithStats | null> {
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId, { page: 1 })
+      .andWhere('"event"."id" = :eventId', { eventId })
+      .getRawAndEntities();
+
+    const event = result.entities[0];
+    if (!event) {
+      return null;
+    }
+
+    return this.mapOrganizerEventWithStats(event, result.raw[0]);
+  }
+
+  private buildOrganizerEventsQueryBuilder(organizerId: string, filters: OrganizerEventsFilters) {
+    const queryBuilder = this.repository
+      .createQueryBuilder('event')
+      .innerJoinAndSelect('event.venue', 'venue')
+      .addSelect('"event"."status" = :publishedStatus', 'eventIsActive')
       .addSelect(
         (subquery) =>
           subquery
@@ -350,25 +459,73 @@ export class EventRepository {
       )
       .where('"event"."organizerId" = :organizerId', { organizerId })
       .setParameter('publishedStatus', EventStatus.Published)
-      .setParameter('completedRefundStatus', RefundStatus.Completed)
-      .orderBy('event.startsAt', 'DESC')
-      .getRawAndEntities();
+      .setParameter('completedRefundStatus', RefundStatus.Completed);
 
-    return result.entities.map((event, index) => {
-      const raw = result.raw[index];
+    if (filters.query) {
+      const searchPattern = `%${this.escapeLikePattern(filters.query)}%`;
+      queryBuilder.andWhere('"event"."title" ILIKE :organizerSearchPattern', {
+        organizerSearchPattern: searchPattern,
+      });
+    }
 
-      return {
-        event,
-        isActive: raw.eventIsActive === true || raw.eventIsActive === 'true',
-        soldTickets: Number(raw.eventSoldTickets),
-        inventoryTotal: raw.eventInventoryTotal === null ? null : Number(raw.eventInventoryTotal),
-        availableTickets:
-          raw.eventInventoryTotal === null
-            ? null
-            : Number(raw.eventInventoryTotal) - Number(raw.eventOccupiedTickets),
-        revenueCents: Number(raw.eventRevenueCents) - Number(raw.eventRefundedCents),
-      };
-    });
+    if (filters.category) {
+      queryBuilder.andWhere('"event"."category" = :organizerCategory', {
+        organizerCategory: filters.category,
+      });
+    }
+
+    if (filters.status) {
+      queryBuilder.andWhere('"event"."status" = :organizerStatus', {
+        organizerStatus: filters.status,
+      });
+    }
+
+    if (filters.dateFrom) {
+      queryBuilder.andWhere(
+        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date >= CAST(:organizerDateFrom AS date)',
+        { organizerDateFrom: filters.dateFrom },
+      );
+    }
+
+    if (filters.dateTo) {
+      queryBuilder.andWhere(
+        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date <= CAST(:organizerDateTo AS date)',
+        { organizerDateTo: filters.dateTo },
+      );
+    }
+
+    return queryBuilder;
+  }
+
+  private mapOrganizerEventWithStats(
+    event: Event,
+    raw: {
+      eventIsActive?: boolean | string;
+      eventSoldTickets?: string | number;
+      eventOccupiedTickets?: string | number;
+      eventInventoryTotal?: string | number | null;
+      eventRevenueCents?: string | number;
+      eventRefundedCents?: string | number;
+    },
+  ): OrganizerEventWithStats {
+    const soldTickets = Number(raw.eventSoldTickets);
+    const occupiedTickets = Number(raw.eventOccupiedTickets);
+    const inventoryTotal =
+      raw.eventInventoryTotal === null || raw.eventInventoryTotal === undefined
+        ? null
+        : Number(raw.eventInventoryTotal);
+    const availableTickets =
+      inventoryTotal === null ? null : Math.max(0, inventoryTotal - occupiedTickets);
+    const revenueCents = Number(raw.eventRevenueCents) - Number(raw.eventRefundedCents);
+
+    return {
+      event,
+      isActive: raw.eventIsActive === true || raw.eventIsActive === 'true',
+      soldTickets,
+      inventoryTotal,
+      availableTickets,
+      revenueCents,
+    };
   }
 
   /**

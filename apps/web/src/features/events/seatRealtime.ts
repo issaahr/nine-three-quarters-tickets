@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 
-import { environment } from '../../config/environment';
+import { environment } from '@/config/environment';
 import {
   EventRoomJoined,
   EventSeatMapItem,

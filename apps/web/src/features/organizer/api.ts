@@ -1,16 +1,30 @@
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 import {
   CatalogPage,
   CreatedEvent,
   CreateMovieEventRequest,
   CreateShowEventRequest,
   OrganizerEvent,
+  OrganizerEventsFilters,
+  OrganizerEventsPage,
   Venue,
 } from './types';
 import { AdmissionMode } from '../events/types';
 
-export async function fetchOrganizerEvents(): Promise<OrganizerEvent[]> {
-  const response = await api.get<OrganizerEvent[]>('/organizer/me/events');
+export async function fetchOrganizerEvents(
+  filters?: OrganizerEventsFilters,
+): Promise<OrganizerEventsPage> {
+  const response = await api.get<OrganizerEventsPage>('/organizer/me/events', {
+    params: {
+      page: filters?.page,
+      query: filters?.query,
+      category: filters?.category,
+      status: filters?.status,
+      dateFrom: filters?.dateFrom,
+      dateTo: filters?.dateTo,
+      sort: filters?.sort,
+    },
+  });
   return response.data;
 }
 
@@ -36,8 +50,8 @@ export async function searchCatalogAttractions(query: string, page: number): Pro
   return response.data;
 }
 
-export async function fetchRelevantAttractions(page: number): Promise<CatalogPage> {
-  const response = await api.get<CatalogPage>('/catalog/attractions/relevant', {
+export async function fetchPopularAttractions(page: number): Promise<CatalogPage> {
+  const response = await api.get<CatalogPage>('/catalog/attractions/popular', {
     params: { page },
   });
   return response.data;

@@ -11,6 +11,8 @@ import { AdmissionMode } from './admissionMode.enum';
 import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
+import { GateEventsQueryDto } from './dto/gateEventsQuery.dto';
+import { OrganizerEventsQueryDto } from './dto/organizerEventsQuery.dto';
 import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
 import { EventSeat } from './eventSeat.entity';
@@ -28,6 +30,8 @@ import { EventRepository } from './repositories/event.repository';
 import { EventSeatRepository } from './repositories/eventSeat.repository';
 import {
   EventDiscoveryPage,
+  GateEventsPage,
+  OrganizerEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
 } from './repositories/eventRepository.interfaces';
@@ -155,26 +159,73 @@ export class EventsService {
   }
 
   /**
-   * Recupera as ocorrências do organizador com o Venue necessário para apresentação canônica.
+   * Recupera as ocorrências do organizador com o Venue e métricas calculadas em paginação server-side.
    *
    * @param organizerId - Identidade obtida da sessão autenticada.
-   * @returns Events do organizador, ordenados da ocorrência mais recente para a mais antiga.
+   * @param query - Parâmetros opcionais e de paginação.
+   * @returns Página de Events do organizador e indicador determinístico de hasMore.
    */
-  public findByOrganizerId(organizerId: string): Promise<OrganizerEventWithStats[]> {
-    return this.eventRepository.findForOrganizerWithStats(organizerId);
+  public findByOrganizerId(
+    organizerId: string,
+    query?: OrganizerEventsQueryDto,
+  ): Promise<OrganizerEventsPage> {
+    return this.eventRepository.findForOrganizerWithStats(organizerId, {
+      page: query?.page ?? 1,
+      query: query?.query,
+      category: query?.category,
+      status: query?.status,
+      dateFrom: query?.dateFrom,
+      dateTo: query?.dateTo,
+      sort: query?.sort ?? 'recent',
+    });
   }
 
   /**
-   * Lista Events publicados para seleção da portaria sem inferir um fechamento temporal.
+   * Obtém um único Event do organizador com agregados de vendas calculados no PostgreSQL.
    *
-   * @returns Ocorrências operáveis, carregadas com o Venue necessário ao contexto visual.
+   * @param organizerId - Identidade obtida da sessão autenticada.
+   * @param eventId - Identificador único do evento.
+   * @returns Event com estatísticas agregadas.
    */
-  public findOperableForGate(): Promise<Event[]> {
-    return this.eventsRepository.find({
-      where: { status: EventStatus.Published },
-      relations: { venue: true },
-      order: { startsAt: 'ASC', id: 'ASC' },
+  public async findOrganizerEventById(
+    organizerId: string,
+    eventId: string,
+  ): Promise<OrganizerEventWithStats> {
+    const eventWithStats = await this.eventRepository.findOneForOrganizerWithStats(
+      organizerId,
+      eventId,
+    );
+    if (!eventWithStats) {
+      throw new EventNotFoundError();
+    }
+    return eventWithStats;
+  }
+
+  /**
+   * Lista Events publicados para seleção da portaria com paginação server-side e filtro temporal opcional.
+   *
+   * @param query - Parâmetros de paginação e filtro temporal de hoje.
+   * @returns Página de ocorrências operáveis e indicador determinístico de hasMore.
+   */
+  public findOperableForGate(query: GateEventsQueryDto): Promise<GateEventsPage> {
+    return this.eventRepository.findOperableForGate({
+      page: query.page ?? 1,
+      today: query.today,
     });
+  }
+
+  /**
+   * Obtém o contexto operacional de um Event publicado específico para uso direto da portaria.
+   *
+   * @param eventId - Identificador único do evento.
+   * @returns Event publicado carregado com seu Venue.
+   */
+  public async findOperableGateEventById(eventId: string): Promise<Event> {
+    const event = await this.eventRepository.findOperableGateEventById(eventId);
+    if (!event) {
+      throw new EventNotFoundError();
+    }
+    return event;
   }
 
   /**

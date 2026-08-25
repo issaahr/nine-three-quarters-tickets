@@ -42,3 +42,9 @@ export interface TicketPurchase {
   eligibleUntil: Date | null;
   paymentMethod: PaymentMethod | null;
 }
+
+export interface TicketPurchasesPage {
+  items: TicketPurchase[];
+  page: number;
+  hasMore: boolean;
+}

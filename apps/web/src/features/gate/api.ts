@@ -1,9 +1,19 @@
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 
-import { CheckInResponse, GateEvent } from './types';
+import { CheckInResponse, GateEvent, GateEventsFilters, GateEventsPage } from './types';
 
-export async function fetchGateEvents(): Promise<GateEvent[]> {
-  const response = await api.get<GateEvent[]>('/gate/events');
+export async function fetchGateEvents(filters?: GateEventsFilters): Promise<GateEventsPage> {
+  const response = await api.get<GateEventsPage>('/gate/events', {
+    params: {
+      page: filters?.page,
+      today: filters?.today ? 'true' : undefined,
+    },
+  });
+  return response.data;
+}
+
+export async function fetchGateEvent(eventId: string): Promise<GateEvent> {
+  const response = await api.get<GateEvent>(`/gate/events/${encodeURIComponent(eventId)}`);
   return response.data;
 }
 

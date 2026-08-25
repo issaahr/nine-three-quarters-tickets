@@ -3,8 +3,8 @@ import { useState } from 'react';
 import { NumericFormat } from 'react-number-format';
 import { Link, useParams } from 'react-router-dom';
 
-import { Button } from '../../../components/ui/button';
-import { Input } from '../../../components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
 import { useCancelOrganizerEvent, useOrganizerEvents, useUpdateEventPrice } from '../hooks';
 import { EventStatus } from '../types';
@@ -17,7 +17,9 @@ export function OrganizerEventDetailPage() {
   const eventsQuery = useOrganizerEvents();
   const updatePriceMutation = useUpdateEventPrice();
   const cancelMutation = useCancelOrganizerEvent();
-  const event = eventsQuery.data?.find((item) => item.id === eventId);
+  const event = eventsQuery.data?.pages
+    .flatMap((page) => (Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : []))
+    .find((item) => item.id === eventId);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceCents, setPriceCents] = useState<number | undefined>();
   const [confirmCancel, setConfirmCancel] = useState(false);
@@ -48,7 +50,7 @@ export function OrganizerEventDetailPage() {
         <ArrowLeft className="size-4" />
         Voltar aos eventos
       </Link>
-      <section className="grid gap-8 border border-[#DED6C7] bg-white p-5 sm:grid-cols-[180px_1fr] sm:p-8">
+      <section className="grid gap-8 border border-border-panel bg-white p-5 sm:grid-cols-[180px_1fr] sm:p-8">
         {event.imageUrl ? (
           <img src={event.imageUrl} alt="" className="w-full max-w-[180px] object-cover" />
         ) : (
@@ -92,7 +94,7 @@ export function OrganizerEventDetailPage() {
                   fixedDecimalScale
                   allowNegative={false}
                   inputMode="decimal"
-                  className="h-9 w-40 rounded-[4px] border-[#B8AEA0] font-mono"
+                  className="h-9 w-40 rounded-[4px] border-border-input font-mono"
                 />
               ) : (
                 <p className="m-0 font-mono text-xl font-semibold">

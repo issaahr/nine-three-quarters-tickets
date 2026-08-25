@@ -86,13 +86,13 @@ export function ApiSearchAttractions() {
   );
 }
 
-/** Agrupa a documentação da descoberta regional inicial de atrações musicais. */
-export function ApiListRelevantAttractions() {
+/** Agrupa a documentação da descoberta inicial de atrações musicais em alta. */
+export function ApiListPopularAttractions() {
   return applyDecorators(
-    ApiOperation({ summary: 'Lista atrações de eventos musicais relevantes no Brasil' }),
+    ApiOperation({ summary: 'Lista atrações musicais em alta da Ticketmaster' }),
     ApiOkResponse({
       type: CatalogPageResponseDto,
-      description: 'Atrações principais normalizadas a partir de eventos relevantes no Brasil.',
+      description: 'Página de atrações musicais normalizadas para seleção pelo organizador.',
     }),
     ApiBadRequestResponse({
       type: ValidationErrorResponseDto,

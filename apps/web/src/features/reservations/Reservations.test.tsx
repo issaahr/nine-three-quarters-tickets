@@ -5,10 +5,10 @@ import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory, EventStatus } from '../events/types';
-import { server } from '../../test/server';
+import { server } from '@/test/server';
 
 const apiUrl = 'http://api.test';
 const reservationId = 'reservation-checkout';

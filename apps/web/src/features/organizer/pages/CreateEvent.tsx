@@ -2,7 +2,7 @@ import { ArrowLeft, Clapperboard, Music2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { cn } from '../../../lib/utils';
+import { cn } from '@/lib/utils';
 import { EventCategory } from '../../events/types';
 import { CatalogPicker } from '../components/CatalogPicker';
 import { EventForm } from '../components/EventForm';

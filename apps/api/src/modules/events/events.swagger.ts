@@ -17,7 +17,8 @@ import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.
 import { EventMutationResponseDto } from './dto/eventMutationResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import { GateEventResponseDto } from './dto/gateEventResponse.dto';
-import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
+import { GateEventsPageResponseDto } from './dto/gateEventsPageResponse.dto';
+import { OrganizerEventsPageResponseDto } from './dto/organizerEventsPageResponse.dto';
 
 /**
  * Agrupa a documentação HTTP da descoberta pública de ocorrências.
@@ -170,11 +171,14 @@ export function ApiPublishEvent() {
  */
 export function ApiListOrganizerEvents() {
   return applyDecorators(
-    ApiOperation({ summary: 'Lista os Events do organizador autenticado' }),
+    ApiOperation({ summary: 'Lista os Events do organizador autenticado com paginação' }),
     ApiOkResponse({
-      type: OrganizerEventResponseDto,
-      isArray: true,
-      description: 'Rascunhos, Events publicados e históricos do próprio organizador.',
+      type: OrganizerEventsPageResponseDto,
+      description: 'Página de rascunhos, Events publicados e históricos do próprio organizador.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Parâmetros de paginação inválidos.',
     }),
   );
 }
@@ -182,11 +186,34 @@ export function ApiListOrganizerEvents() {
 /** Agrupa a documentação HTTP da seleção de contexto pela portaria. */
 export function ApiListGateEvents() {
   return applyDecorators(
-    ApiOperation({ summary: 'Lista Events publicados operáveis pela portaria' }),
+    ApiOperation({ summary: 'Lista Events publicados operáveis pela portaria com paginação' }),
+    ApiOkResponse({
+      type: GateEventsPageResponseDto,
+      description:
+        'Página de ocorrências publicadas, com indicador determinístico de mais páginas.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Parâmetros de paginação inválidos.',
+    }),
+  );
+}
+
+/** Agrupa a documentação HTTP da consulta contextual de um evento pela portaria. */
+export function ApiGetGateEvent() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Obtém dados contextuais de um Event publicado para a portaria' }),
     ApiOkResponse({
       type: GateEventResponseDto,
-      isArray: true,
-      description: 'Ocorrências publicadas, sem fechamento temporal inferido pelo sistema.',
+      description: 'Ocorrência publicada carregada com seu local para operação.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Identificador de evento inválido.',
+    }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event inexistente ou não publicado.',
     }),
   );
 }

@@ -43,12 +43,29 @@ export interface OrganizerEvent {
   admissionMode: AdmissionMode;
   status: EventStatus;
   startsAt: string;
+  createdAt: string;
   priceCents: number;
   isActive: boolean;
   soldTickets: number;
   availableTickets: number | null;
   inventoryTotal: number | null;
   revenueCents: number;
+}
+
+export interface OrganizerEventsFilters {
+  page?: number;
+  query?: string;
+  category?: EventCategory;
+  status?: EventStatus;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'recent' | 'oldest';
+}
+
+export interface OrganizerEventsPage {
+  items: OrganizerEvent[];
+  page: number;
+  hasMore: boolean;
 }
 
 export interface CreateMovieEventRequest {

@@ -48,7 +48,10 @@ export class OrganizerEventResponseDto {
   @ApiProperty({ minimum: 0 })
   public priceCents!: number;
 
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'Indica se o evento está publicado e contabiliza no painel de eventos ativos, independentemente de já ter iniciado ou não.',
+  })
   public isActive!: boolean;
 
   @ApiProperty({ minimum: 0 })
@@ -62,6 +65,9 @@ export class OrganizerEventResponseDto {
 
   @ApiProperty({ minimum: 0 })
   public revenueCents!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  public createdAt!: Date;
 
   /**
    * Constrói o contrato do painel sem expor relações ou metadados internos da entidade.
@@ -91,6 +97,7 @@ export class OrganizerEventResponseDto {
       admissionMode: event.admissionMode,
       status: event.status,
       startsAt: event.startsAt,
+      createdAt: event.createdAt,
       priceCents: event.priceCents,
       isActive,
       soldTickets,

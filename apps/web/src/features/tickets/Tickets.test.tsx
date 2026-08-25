@@ -3,12 +3,12 @@ import { render, screen } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { App } from '../../App';
+import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory } from '../events/types';
-import { server } from '../../test/server';
+import { server } from '@/test/server';
 import { TicketStatus } from './types';
 
 const apiUrl = 'http://api.test';
@@ -49,64 +49,68 @@ describe('Meus ingressos', () => {
   it('agrupa os Tickets por compra e mantém cada credencial como item independente', async () => {
     server.use(
       http.get(`${apiUrl}/tickets`, () =>
-        HttpResponse.json([
-          {
-            reservationId: 'reservation-1',
-            confirmedAt: '2030-08-01T12:00:00.000Z',
-            event: {
-              id: 'event-1',
-              title: 'Sessão de cinema',
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              startsAt: '2030-08-25T22:30:00.000Z',
-              venueName: 'Cine Imperial',
-              venueCity: 'Fortaleza',
-              venueTimeZone: 'America/Fortaleza',
+        HttpResponse.json({
+          items: [
+            {
+              reservationId: 'reservation-1',
+              confirmedAt: '2030-08-01T12:00:00.000Z',
+              event: {
+                id: 'event-1',
+                title: 'Sessão de cinema',
+                category: EventCategory.Movie,
+                admissionMode: AdmissionMode.Seated,
+                startsAt: '2030-08-25T22:30:00.000Z',
+                venueName: 'Cine Imperial',
+                venueCity: 'Fortaleza',
+                venueTimeZone: 'America/Fortaleza',
+              },
+              tickets: [
+                {
+                  publicId: 'ticket-1',
+                  credential: 'v1.ticket-1.signature',
+                  manualCode: 'ABCD-EFGH',
+                  status: TicketStatus.Valid,
+                  issuedAt: '2030-08-01T12:00:00.000Z',
+                  seatLabel: 'B2',
+                },
+                {
+                  publicId: 'ticket-2',
+                  credential: 'v1.ticket-2.signature',
+                  manualCode: 'JKLM-NPQR',
+                  status: TicketStatus.Used,
+                  issuedAt: '2030-08-01T12:00:00.000Z',
+                  seatLabel: 'B3',
+                },
+              ],
             },
-            tickets: [
-              {
-                publicId: 'ticket-1',
-                credential: 'v1.ticket-1.signature',
-                manualCode: 'ABCD-EFGH',
-                status: TicketStatus.Valid,
-                issuedAt: '2030-08-01T12:00:00.000Z',
-                seatLabel: 'B2',
+            {
+              reservationId: 'reservation-2',
+              confirmedAt: '2030-08-02T12:00:00.000Z',
+              event: {
+                id: 'event-2',
+                title: 'Show ao vivo',
+                category: EventCategory.Show,
+                admissionMode: AdmissionMode.GeneralAdmission,
+                startsAt: '2030-09-01T22:30:00.000Z',
+                venueName: 'Teatro Margem',
+                venueCity: 'Recife',
+                venueTimeZone: 'America/Recife',
               },
-              {
-                publicId: 'ticket-2',
-                credential: 'v1.ticket-2.signature',
-                manualCode: 'JKLM-NPQR',
-                status: TicketStatus.Used,
-                issuedAt: '2030-08-01T12:00:00.000Z',
-                seatLabel: 'B3',
-              },
-            ],
-          },
-          {
-            reservationId: 'reservation-2',
-            confirmedAt: '2030-08-02T12:00:00.000Z',
-            event: {
-              id: 'event-2',
-              title: 'Show ao vivo',
-              category: EventCategory.Show,
-              admissionMode: AdmissionMode.GeneralAdmission,
-              startsAt: '2030-09-01T22:30:00.000Z',
-              venueName: 'Teatro Margem',
-              venueCity: 'Recife',
-              venueTimeZone: 'America/Recife',
+              tickets: [
+                {
+                  publicId: 'ticket-3',
+                  credential: 'v1.ticket-3.signature',
+                  manualCode: 'STUV-WXYZ',
+                  status: TicketStatus.Cancelled,
+                  issuedAt: '2030-08-02T12:00:00.000Z',
+                  seatLabel: null,
+                },
+              ],
             },
-            tickets: [
-              {
-                publicId: 'ticket-3',
-                credential: 'v1.ticket-3.signature',
-                manualCode: 'STUV-WXYZ',
-                status: TicketStatus.Cancelled,
-                issuedAt: '2030-08-02T12:00:00.000Z',
-                seatLabel: null,
-              },
-            ],
-          },
-        ]),
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
     );
 
@@ -131,7 +135,11 @@ describe('Meus ingressos', () => {
   });
 
   it('explica quando o cliente ainda não possui compras confirmadas', async () => {
-    server.use(http.get(`${apiUrl}/tickets`, () => HttpResponse.json([])));
+    server.use(
+      http.get(`${apiUrl}/tickets`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
+    );
 
     renderTickets();
 
@@ -153,33 +161,37 @@ describe('Meus ingressos', () => {
   it('informa a falha concorrente ao confirmar o cancelamento da compra', async () => {
     server.use(
       http.get(`${apiUrl}/tickets`, () =>
-        HttpResponse.json([
-          {
-            reservationId: 'reservation-cancel',
-            confirmedAt: '2030-08-01T12:00:00.000Z',
-            canCancel: true,
-            event: {
-              id: 'event-cancel',
-              title: 'Sessão cancelável',
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              startsAt: '2030-08-25T22:30:00.000Z',
-              venueName: 'Cine Imperial',
-              venueCity: 'Fortaleza',
-              venueTimeZone: 'America/Fortaleza',
-            },
-            tickets: [
-              {
-                publicId: 'ticket-cancel',
-                credential: 'v1.ticket-cancel.signature',
-                manualCode: 'ABCD-EFGH',
-                status: TicketStatus.Valid,
-                issuedAt: '2030-08-01T12:00:00.000Z',
-                seatLabel: 'B2',
+        HttpResponse.json({
+          items: [
+            {
+              reservationId: 'reservation-cancel',
+              confirmedAt: '2030-08-01T12:00:00.000Z',
+              canCancel: true,
+              event: {
+                id: 'event-cancel',
+                title: 'Sessão cancelável',
+                category: EventCategory.Movie,
+                admissionMode: AdmissionMode.Seated,
+                startsAt: '2030-08-25T22:30:00.000Z',
+                venueName: 'Cine Imperial',
+                venueCity: 'Fortaleza',
+                venueTimeZone: 'America/Fortaleza',
               },
-            ],
-          },
-        ]),
+              tickets: [
+                {
+                  publicId: 'ticket-cancel',
+                  credential: 'v1.ticket-cancel.signature',
+                  manualCode: 'ABCD-EFGH',
+                  status: TicketStatus.Valid,
+                  issuedAt: '2030-08-01T12:00:00.000Z',
+                  seatLabel: 'B2',
+                },
+              ],
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
       http.post(`${apiUrl}/reservations/reservation-cancel/cancel`, () =>
         HttpResponse.json({ code: 'CANCELLATION_NOT_ALLOWED' }, { status: 409 }),
@@ -188,7 +200,13 @@ describe('Meus ingressos', () => {
     const user = userEvent.setup();
 
     renderTickets();
-    await user.click(await screen.findByRole('button', { name: 'Cancelar compra' }));
+    const cancelButton = await screen.findByRole('button', { name: 'Cancelar compra' });
+    expect(cancelButton).toHaveAttribute('aria-label', 'Cancelar compra');
+    expect(cancelButton.querySelector('span')).toHaveClass('hidden', 'sm:inline');
+    expect(cancelButton.querySelector('span')).toHaveTextContent('compra');
+    expect(cancelButton.parentElement).toHaveClass('flex', 'items-start', 'justify-between');
+    expect(cancelButton).toHaveClass('shrink-0');
+    await user.click(cancelButton);
     await user.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
 
     expect(
@@ -198,6 +216,117 @@ describe('Meus ingressos', () => {
       screen.getByText('Não foi possível cancelar — atualize a página e tente novamente.'),
     ).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Cancelar compra?' })).not.toBeInTheDocument();
+  });
+
+  it('carrega compras subsequentes com scroll infinito em meus ingressos e suporta retry em falhas', async () => {
+    let observerCallback: IntersectionObserverCallback = () => {};
+
+    class IntersectionObserverMock implements Partial<IntersectionObserver> {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+
+    let page2Requests = 0;
+    server.use(
+      http.get(`${apiUrl}/tickets`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        if (page === 1) {
+          return HttpResponse.json({
+            items: [
+              {
+                reservationId: 'reservation-p1',
+                confirmedAt: '2030-08-01T12:00:00.000Z',
+                event: {
+                  id: 'event-p1',
+                  title: 'Compra Página 1',
+                  category: EventCategory.Movie,
+                  admissionMode: AdmissionMode.Seated,
+                  startsAt: '2030-08-25T22:30:00.000Z',
+                  venueName: 'Cine Imperial',
+                  venueCity: 'Fortaleza',
+                  venueTimeZone: 'America/Fortaleza',
+                },
+                tickets: [
+                  {
+                    publicId: 'ticket-p1',
+                    credential: 'v1.ticket-p1.signature',
+                    manualCode: 'PAGE-ONE-1',
+                    status: TicketStatus.Valid,
+                    issuedAt: '2030-08-01T12:00:00.000Z',
+                    seatLabel: 'A1',
+                  },
+                ],
+              },
+            ],
+            page: 1,
+            hasMore: true,
+          });
+        }
+        page2Requests++;
+        if (page2Requests === 1) {
+          return new HttpResponse(null, { status: 500 });
+        }
+        return HttpResponse.json({
+          items: [
+            {
+              reservationId: 'reservation-p2',
+              confirmedAt: '2030-08-02T12:00:00.000Z',
+              event: {
+                id: 'event-p2',
+                title: 'Compra Página 2',
+                category: EventCategory.Movie,
+                admissionMode: AdmissionMode.Seated,
+                startsAt: '2030-08-26T22:30:00.000Z',
+                venueName: 'Cine Imperial',
+                venueCity: 'Fortaleza',
+                venueTimeZone: 'America/Fortaleza',
+              },
+              tickets: [
+                {
+                  publicId: 'ticket-p2',
+                  credential: 'v1.ticket-p2.signature',
+                  manualCode: 'PAGE-TWO-1',
+                  status: TicketStatus.Valid,
+                  issuedAt: '2030-08-02T12:00:00.000Z',
+                  seatLabel: 'A2',
+                },
+              ],
+            },
+          ],
+          page: 2,
+          hasMore: false,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderTickets();
+
+    expect(await screen.findByRole('heading', { name: 'Compra Página 1' })).toBeInTheDocument();
+
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais ingressos.',
+    );
+    expect(screen.getByRole('heading', { name: 'Compra Página 1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('heading', { name: 'Compra Página 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Compra Página 1' })).toBeInTheDocument();
   });
 
   it('apresenta pelo link público um único Ticket com QR da credencial e estado atual', async () => {

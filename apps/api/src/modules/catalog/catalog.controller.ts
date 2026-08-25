@@ -7,14 +7,14 @@ import { UserRole } from '../users/userRole.enum';
 import { movieCatalogProviderToken, showCatalogProviderToken } from './catalog.constants';
 import {
   ApiListPopularMovies,
-  ApiListRelevantAttractions,
+  ApiListPopularAttractions,
   ApiSearchAttractions,
   ApiSearchMovies,
 } from './catalog.swagger';
 import { MovieCatalogProvider, ShowCatalogProvider } from './catalogProvider';
 import { CatalogPageResponseDto } from './dto/catalogPageResponse.dto';
 import { ListPopularMoviesQueryDto } from './dto/listPopularMoviesQuery.dto';
-import { ListRelevantAttractionsQueryDto } from './dto/listRelevantAttractionsQuery.dto';
+import { ListPopularAttractionsQueryDto } from './dto/listPopularAttractionsQuery.dto';
 import { SearchAttractionsQueryDto } from './dto/searchAttractionsQuery.dto';
 import { SearchMoviesQueryDto } from './dto/searchMoviesQuery.dto';
 
@@ -52,14 +52,14 @@ export class CatalogController {
     return CatalogPageResponseDto.fromCatalogPage(page);
   }
 
-  /** Fornece a descoberta inicial sem confundir ocorrências externas com inventário local. */
-  @Get('attractions/relevant')
+  /** Fornece atrações musicais em alta sem confundir conteúdo externo com inventário local. */
+  @Get('attractions/popular')
   @RateLimitedRoles(RateLimitPolicy.Catalog, UserRole.Organizer)
-  @ApiListRelevantAttractions()
-  public async listRelevantAttractions(
-    @Query() query: ListRelevantAttractionsQueryDto,
+  @ApiListPopularAttractions()
+  public async listPopularAttractions(
+    @Query() query: ListPopularAttractionsQueryDto,
   ): Promise<CatalogPageResponseDto> {
-    const page = await this.showCatalogProvider.listRelevantInBrazil(query.page);
+    const page = await this.showCatalogProvider.listPopular(query.page);
     return CatalogPageResponseDto.fromCatalogPage(page);
   }
 

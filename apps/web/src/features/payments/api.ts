@@ -1,4 +1,4 @@
-import { api } from '../../lib/api';
+import { api } from '@/lib/api';
 import { CardPaymentRequest, Payment } from './types';
 
 export async function createCardPayment(

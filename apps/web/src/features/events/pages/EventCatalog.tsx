@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 
-import { Button } from '../../../components/ui/button';
+import { Button } from '@/components/ui/button';
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { EventCard } from '../components/EventCard';
 import { allCategoriesValue, EventCategoryControl } from '../components/EventCategoryControl';
 import { EventFilters } from '../components/EventFilters';
@@ -10,9 +12,11 @@ import { EventCategory, EventDiscoveryFilters, EventDiscoveryItem } from '../typ
 /** Exibe a descoberta pública e carrega novas páginas quando o fim da grade se aproxima. */
 export function EventCatalog() {
   const [filters, setFilters] = useState<EventDiscoveryFilters>({});
-  const loadMoreRef = useRef<HTMLDivElement>(null);
   const query = useEventDiscovery(filters);
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = query;
+  const isNextPageError = Boolean(
+    query.isFetchNextPageError || (query.isError && (query.data?.pages.length ?? 0) > 0),
+  );
 
   const events = useMemo(() => {
     const byId = new Map<string, EventDiscoveryItem>();
@@ -47,25 +51,13 @@ export function EventCatalog() {
     }));
   }
 
-  useEffect(() => {
-    const target = loadMoreRef.current;
-
-    if (!target || !hasNextPage) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting && !isFetchingNextPage) {
-          void fetchNextPage();
-        }
-      },
-      { rootMargin: '320px 0px' },
-    );
-
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: fetchNextPage,
+    hasMore: Boolean(hasNextPage),
+    isLoading: isFetchingNextPage,
+    isError: isNextPageError,
+    rootMargin: '320px 0px',
+  });
 
   const hasFilters = Object.values(filters).some(Boolean);
 
@@ -95,7 +87,7 @@ export function EventCatalog() {
             Carregando eventos...
           </p>
         ) : query.isError && events.length === 0 ? (
-          <div className="border border-[#D8CEBE] bg-white px-6 py-12 text-center">
+          <div className="border border-border-clip bg-white px-6 py-12 text-center">
             <h2 className="m-0 font-heading text-2xl">Não foi possível carregar os eventos</h2>
             <p className="mb-5 mt-2 text-sm text-muted-foreground">Tente novamente em instantes.</p>
             <Button type="button" onClick={() => void query.refetch()} className="rounded-[4px]">
@@ -103,7 +95,7 @@ export function EventCatalog() {
             </Button>
           </div>
         ) : events.length === 0 ? (
-          <div className="border border-[#D8CEBE] bg-white px-6 py-12 text-center">
+          <div className="border border-border-clip bg-white px-6 py-12 text-center">
             <h2 className="m-0 font-heading text-2xl">
               {hasFilters ? 'Nenhum evento corresponde aos filtros' : 'Nenhum evento disponível'}
             </h2>
@@ -120,17 +112,15 @@ export function EventCatalog() {
                 <EventCard key={event.id} event={event} />
               ))}
             </div>
-            <div ref={loadMoreRef} className="h-px" aria-hidden="true" />
-            {query.isFetchingNextPage && (
-              <p role="status" className="py-8 text-center text-sm text-muted-foreground">
-                Carregando mais eventos...
-              </p>
-            )}
-            {query.isError && (
-              <div role="alert" className="py-8 text-center text-sm text-destructive">
-                Não foi possível carregar mais eventos.
-              </div>
-            )}
+            {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
+            <InfiniteScrollStatus
+              isLoading={isFetchingNextPage}
+              isError={isNextPageError}
+              onRetry={() => void fetchNextPage()}
+              loadingText="Carregando mais eventos..."
+              errorText="Não foi possível carregar mais eventos."
+              retryText="Tentar novamente"
+            />
           </>
         )}
       </section>

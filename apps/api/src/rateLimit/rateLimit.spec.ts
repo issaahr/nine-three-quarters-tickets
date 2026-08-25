@@ -158,7 +158,7 @@ describe('rate limiting', () => {
       [CatalogController.prototype.searchMovies, RateLimitPolicy.Catalog],
       [CatalogController.prototype.listPopularMovies, RateLimitPolicy.Catalog],
       [CatalogController.prototype.searchAttractions, RateLimitPolicy.Catalog],
-      [CatalogController.prototype.listRelevantAttractions, RateLimitPolicy.Catalog],
+      [CatalogController.prototype.listPopularAttractions, RateLimitPolicy.Catalog],
       [EventsController.prototype.createMovie, RateLimitPolicy.Catalog],
       [EventsController.prototype.createShow, RateLimitPolicy.Catalog],
       [GateTicketsController.prototype.checkInManualCode, RateLimitPolicy.ManualCheckIn],

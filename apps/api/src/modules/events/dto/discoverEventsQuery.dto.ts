@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsISO8601,
   IsInt,
   IsOptional,
@@ -68,6 +69,11 @@ export class DiscoverEventsQueryDto {
   )
   @Matches(localDatePattern, { message: 'Data final deve usar o formato YYYY-MM-DD' })
   public dateTo?: string;
+
+  @Transform(normalizeOptionalText)
+  @IsOptional()
+  @IsIn(['recent', 'oldest'], { message: 'Ordenação deve ser "recent" ou "oldest"' })
+  public sort?: 'recent' | 'oldest';
 
   @Type(() => Number)
   @IsInt({ message: 'Página deve ser um inteiro' })
