@@ -113,7 +113,7 @@ describe('Events operáveis pela portaria', () => {
 
     const cookie = await authenticate('gate.demo@ntq.local');
 
-    const foundEvents: typeof response.body.items = [];
+    const foundEvents: Array<Record<string, unknown>> = [];
     let page = 1;
     let hasMore = true;
 
