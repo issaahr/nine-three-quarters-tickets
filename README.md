@@ -469,7 +469,7 @@ Todos utilizam **a mesma senha definida em `DEMO_USERS_PASSWORD`**.
 Para a avaliação do projeto publicado, a senha é:
 
 ```text
-[ PREENCHER MANUALMENTE A SENHA DE DEMONSTRAÇÃO ]
+ypurp7Mkhb350taZij
 ```
 
 Essa senha é compartilhada entre as contas demonstrativas apenas para facilitar a avaliação do projeto e permitir que o avaliador entre rapidamente nos diferentes perfis.
