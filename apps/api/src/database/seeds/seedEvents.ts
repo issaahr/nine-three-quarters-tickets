@@ -4,8 +4,10 @@ import { CatalogSource } from '../../modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../../modules/events/admissionMode.enum';
 import { Event } from '../../modules/events/event.entity';
 import { EventCategory } from '../../modules/events/eventCategory.enum';
+import { EventSeat } from '../../modules/events/eventSeat.entity';
 import { EventStatus } from '../../modules/events/eventStatus.enum';
 import { User } from '../../modules/users/user.entity';
+import { VenueSeat } from '../../modules/venues/venueSeat.entity';
 import AppDataSource from '../dataSource';
 
 const logger = new Logger('EventsSeed');
@@ -156,6 +158,9 @@ async function seed() {
       },
     ];
 
+    const eventSeatRepository = AppDataSource.getRepository(EventSeat);
+    const venueSeatRepository = AppDataSource.getRepository(VenueSeat);
+
     for (const event of events) {
       const existingEvent = await eventRepository.findOne({
         where: {
@@ -169,12 +174,35 @@ async function seed() {
         continue;
       }
 
-      await eventRepository.save(
+      const createdEvent = await eventRepository.save(
         eventRepository.create({
           ...event,
           organizerId: organizer.id,
         }),
       );
+
+      if (event.admissionMode === AdmissionMode.Seated) {
+        const venueSeats = await venueSeatRepository.find({
+          where: { venueId: event.venueId },
+          order: { y: 'ASC', x: 'ASC' },
+        });
+
+        if (venueSeats.length === 0) {
+          logger.warn(
+            `Venue ${event.venueId} não possui assentos cadastrados; ${event.title} ficará sem EventSeats.`,
+          );
+        } else {
+          await eventSeatRepository.insert(
+            venueSeats.map((venueSeat) => ({
+              eventId: createdEvent.id,
+              venueSeatId: venueSeat.id,
+              holdReservationId: null,
+              holdExpiresAt: null,
+              soldAt: null,
+            })),
+          );
+        }
+      }
 
       logger.log(`Evento criado: ${event.title}`);
     }
