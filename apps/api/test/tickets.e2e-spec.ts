@@ -285,7 +285,9 @@ describe('Tickets', () => {
     const { tickets } = await createConfirmedPurchase(customerOne, 1);
     const ticket = tickets[0];
     const credential = ticketCredentialService.createCredential(ticket.publicId);
-    const invalidCredential = `${credential.slice(0, -1)}${credential.endsWith('a') ? 'b' : 'a'}`;
+    const [version, publicId, signature] = credential.split('.');
+    const invalidSignature = `${signature[0] === 'a' ? 'b' : 'a'}${signature.slice(1)}`;
+    const invalidCredential = `${version}.${publicId}.${invalidSignature}`;
 
     await request(app.getHttpServer()).get(`/tickets/shared/${ticket.publicId}`).expect(404);
     await request(app.getHttpServer()).get(`/tickets/shared/${invalidCredential}`).expect(404);
