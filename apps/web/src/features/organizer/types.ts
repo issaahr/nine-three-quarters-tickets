@@ -52,6 +52,16 @@ export interface OrganizerEvent {
   revenueCents: number;
 }
 
+export interface OrganizerEventsFilters {
+  page?: number;
+}
+
+export interface OrganizerEventsPage {
+  items: OrganizerEvent[];
+  page: number;
+  hasMore: boolean;
+}
+
 export interface CreateMovieEventRequest {
   externalId: string;
   venueId: string;

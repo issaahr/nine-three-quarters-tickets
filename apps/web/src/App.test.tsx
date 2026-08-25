@@ -36,12 +36,14 @@ function renderApp(initialPath = '/', sessionUser?: SessionUser, publicSignupEna
 
 beforeEach(() => {
   server.use(
-    http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/organizer/me/events`, () =>
+      HttpResponse.json({ items: [], page: 1, hasMore: false }),
+    ),
     http.get(`${apiUrl}/events`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
     http.get(`${apiUrl}/gate/events`, () =>
       HttpResponse.json({ items: [], page: 1, hasMore: false }),
     ),
-    http.get(`${apiUrl}/tickets`, () => HttpResponse.json([])),
+    http.get(`${apiUrl}/tickets`, () => HttpResponse.json({ items: [], page: 1, hasMore: false })),
   );
 });
 

@@ -1,10 +1,11 @@
 import axios from 'axios';
 import { ArrowLeft, CalendarDays, MapPin, Ticket } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
 import { Button } from '@/components/ui/button';
-import { useProgressiveList } from '@/hooks/useInfiniteScroll';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { formatEventDateTime } from '../../events/eventPresentation';
 import { useCancelTicketPurchase, useTickets } from '../hooks';
 import { getTicketLocationLabel, getTicketStatusLabel } from '../ticketPresentation';
@@ -23,12 +24,30 @@ export function MyTicketsPage() {
   const [showRefundNotice, setShowRefundNotice] = useState(false);
   const [showCancellationError, setShowCancellationError] = useState(false);
 
-  const purchases = ticketsQuery.data ?? [];
-  const {
-    visibleItems: visiblePurchases,
-    hasMore,
-    sentinelRef,
-  } = useProgressiveList(purchases, 10);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = ticketsQuery;
+  const isNextPageError = Boolean(
+    ticketsQuery.isFetchNextPageError ||
+    (ticketsQuery.isError && (ticketsQuery.data?.pages.length ?? 0) > 0),
+  );
+
+  const purchases = useMemo(() => {
+    const byId = new Map<string, TicketPurchase>();
+    for (const page of ticketsQuery.data?.pages ?? []) {
+      const items = Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : [];
+      for (const purchase of items) {
+        byId.set(purchase.reservationId, purchase);
+      }
+    }
+    return Array.from(byId.values());
+  }, [ticketsQuery.data]);
+
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: fetchNextPage,
+    hasMore: Boolean(hasNextPage),
+    isLoading: isFetchingNextPage,
+    isError: isNextPageError,
+    rootMargin: '240px',
+  });
 
   if (ticketsQuery.isPending) {
     return (
@@ -40,7 +59,7 @@ export function MyTicketsPage() {
     );
   }
 
-  if (ticketsQuery.isError) {
+  if (ticketsQuery.isError && purchases.length === 0) {
     const forbidden =
       axios.isAxiosError(ticketsQuery.error) && ticketsQuery.error.response?.status === 403;
 
@@ -89,7 +108,7 @@ export function MyTicketsPage() {
         </section>
       ) : (
         <div className="mt-8 space-y-8">
-          {visiblePurchases.map((purchase) => (
+          {purchases.map((purchase) => (
             <section key={purchase.reservationId} className="bg-white p-5 sm:p-7">
               <header className="flex items-start justify-between gap-4 border-b border-border pb-5">
                 <div className="min-w-0 flex-1">
@@ -151,7 +170,15 @@ export function MyTicketsPage() {
               </ul>
             </section>
           ))}
-          {hasMore && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+          {hasNextPage && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+          <InfiniteScrollStatus
+            isLoading={isFetchingNextPage}
+            isError={isNextPageError}
+            onRetry={() => void fetchNextPage()}
+            loadingText="Carregando mais compras..."
+            errorText="Não foi possível carregar mais ingressos."
+            retryText="Tentar novamente"
+          />
         </div>
       )}
       {purchaseToCancel && (

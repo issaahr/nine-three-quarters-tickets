@@ -37,6 +37,17 @@ export interface TicketPurchase {
   paymentMethod?: 'CARD' | null;
 }
 
+export interface TicketsFilters {
+  page?: number;
+  reservationId?: string;
+}
+
+export interface TicketPurchasesPage {
+  items: TicketPurchase[];
+  page: number;
+  hasMore: boolean;
+}
+
 export interface SharedTicket extends TicketItem {
   event: TicketEvent;
 }

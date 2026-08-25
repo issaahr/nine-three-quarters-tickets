@@ -24,6 +24,16 @@ export interface PublicEventDetail {
   availableQuantity: number | null;
 }
 
+export interface OrganizerEventsFilters {
+  page: number;
+}
+
+export interface OrganizerEventsPage {
+  items: OrganizerEventWithStats[];
+  page: number;
+  hasMore: boolean;
+}
+
 export interface OrganizerEventWithStats {
   event: Event;
   isActive: boolean;

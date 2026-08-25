@@ -17,7 +17,9 @@ export function OrganizerEventDetailPage() {
   const eventsQuery = useOrganizerEvents();
   const updatePriceMutation = useUpdateEventPrice();
   const cancelMutation = useCancelOrganizerEvent();
-  const event = eventsQuery.data?.find((item) => item.id === eventId);
+  const event = eventsQuery.data?.pages
+    .flatMap((page) => (Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : []))
+    .find((item) => item.id === eventId);
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceCents, setPriceCents] = useState<number | undefined>();
   const [confirmCancel, setConfirmCancel] = useState(false);

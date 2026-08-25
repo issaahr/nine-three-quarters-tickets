@@ -7,8 +7,9 @@ import { Ticket } from './ticket.entity';
 import { TicketCredentialService } from './ticketCredential.service';
 import { TicketCredentialGenerationError } from './errors/ticketCredentialGeneration.error';
 import { TicketNotFoundError } from './errors/ticketNotFound.error';
+import { ListTicketsQueryDto } from './dto/listTicketsQuery.dto';
 import { TicketRepository } from './repositories/ticket.repository';
-import { TicketDetails, TicketPurchase } from './tickets.interfaces';
+import { TicketDetails, TicketPurchase, TicketPurchasesPage } from './tickets.interfaces';
 import { TicketStatus } from './ticketStatus.enum';
 import { Payment } from '../payments/payment.entity';
 import { PaymentStatus } from '../payments/paymentStatus.enum';
@@ -46,27 +47,50 @@ export class TicketsService {
   }
 
   /**
-   * Agrupa os Tickets confirmados do CUSTOMER por Reservation, mantendo cada unidade independente.
+   * Agrupa os Tickets confirmados do CUSTOMER por Reservation com paginação server-side por compra.
    *
    * @param customerId - Identidade do CUSTOMER autenticado.
-   * @param reservationId - Compra opcional selecionada pelo CUSTOMER.
-   * @returns Compras confirmadas com seus Tickets individuais.
+   * @param query - Parâmetros opcionais de paginação e reservationId.
+   * @returns Página de compras confirmadas com seus Tickets individuais e hasMore.
    */
-  public async listOwned(customerId: string, reservationId?: string): Promise<TicketPurchase[]> {
-    const tickets = await this.ticketRepository.findConfirmedByCustomer(customerId, reservationId);
+  public async listOwned(
+    customerId: string,
+    query?: ListTicketsQueryDto,
+  ): Promise<TicketPurchasesPage> {
+    const page = query?.page ?? 1;
+    const { reservationIds, hasMore } =
+      await this.ticketRepository.findConfirmedPurchasesByCustomer(customerId, {
+        page,
+        reservationId: query?.reservationId,
+      });
+
+    if (reservationIds.length === 0) {
+      return {
+        items: [],
+        page,
+        hasMore: false,
+      };
+    }
+
+    const tickets = await this.ticketRepository.findTicketsByReservationIds(reservationIds);
     const purchases = new Map<string, TicketPurchase>();
+
+    for (const reservationId of reservationIds) {
+      purchases.set(reservationId, null as unknown as TicketPurchase);
+    }
 
     for (const ticket of tickets) {
       const details = this.toDetails(ticket);
-      const existingPurchase = purchases.get(ticket.reservationItem.reservationId);
+      const resId = ticket.reservationItem.reservationId;
+      const existingPurchase = purchases.get(resId);
 
       if (existingPurchase) {
         existingPurchase.tickets.push(details);
         continue;
       }
 
-      purchases.set(ticket.reservationItem.reservationId, {
-        reservationId: ticket.reservationItem.reservationId,
+      purchases.set(resId, {
+        reservationId: resId,
         confirmedAt: ticket.reservationItem.reservation.confirmedAt!,
         event: details.event,
         tickets: [details],
@@ -76,10 +100,12 @@ export class TicketsService {
       });
     }
 
+    const validPurchases = [...purchases.values()].filter(Boolean);
+
     // A elegibilidade termina no menor instante entre sete dias da aprovação e o início do evento.
     const now = new Date();
-    return Promise.all(
-      [...purchases.values()].map(async (purchase) => {
+    const items = await Promise.all(
+      validPurchases.map(async (purchase) => {
         const payment = await this.paymentsRepository.findOneBy({
           reservationId: purchase.reservationId,
           status: PaymentStatus.Approved,
@@ -103,6 +129,12 @@ export class TicketsService {
         };
       }),
     );
+
+    return {
+      items,
+      page,
+      hasMore,
+    };
   }
 
   /**

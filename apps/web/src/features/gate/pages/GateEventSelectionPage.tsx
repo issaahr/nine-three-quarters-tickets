@@ -19,7 +19,8 @@ export function GateEventSelectionPage() {
   const events = useMemo(() => {
     const byId = new Map<string, GateEvent>();
     for (const page of eventsQuery.data?.pages ?? []) {
-      for (const event of page.items) {
+      const items = Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : [];
+      for (const event of items) {
         byId.set(event.id, event);
       }
     }

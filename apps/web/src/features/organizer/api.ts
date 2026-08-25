@@ -5,12 +5,20 @@ import {
   CreateMovieEventRequest,
   CreateShowEventRequest,
   OrganizerEvent,
+  OrganizerEventsFilters,
+  OrganizerEventsPage,
   Venue,
 } from './types';
 import { AdmissionMode } from '../events/types';
 
-export async function fetchOrganizerEvents(): Promise<OrganizerEvent[]> {
-  const response = await api.get<OrganizerEvent[]>('/organizer/me/events');
+export async function fetchOrganizerEvents(
+  filters?: OrganizerEventsFilters,
+): Promise<OrganizerEventsPage> {
+  const response = await api.get<OrganizerEventsPage>('/organizer/me/events', {
+    params: {
+      page: filters?.page,
+    },
+  });
   return response.data;
 }
 

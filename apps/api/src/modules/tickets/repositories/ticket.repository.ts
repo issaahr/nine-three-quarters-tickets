@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { EntityManager, Repository, SelectQueryBuilder } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 
+import { Reservation } from '../../reservations/reservation.entity';
 import { Ticket } from '../ticket.entity';
+
+const ticketPurchasesPageSize = 10;
 
 /** Operações de persistência que preservam a unicidade das credenciais de Ticket. */
 @Injectable()
@@ -53,6 +56,68 @@ export class TicketRepository {
       .execute();
 
     return result.identifiers.length === 1;
+  }
+
+  /**
+   * Obtém a lista paginada de IDs de reservas confirmadas do CUSTOMER.
+   *
+   * @param customerId - Identidade do CUSTOMER proprietário das compras.
+   * @param filters - Página e filtro opcional de reservationId.
+   * @returns IDs de reservas da página atual e indicador determinístico de hasMore.
+   */
+  public async findConfirmedPurchasesByCustomer(
+    customerId: string,
+    filters: { page: number; reservationId?: string },
+  ): Promise<{ reservationIds: string[]; page: number; hasMore: boolean }> {
+    const page = filters.page > 0 ? filters.page : 1;
+    const queryBuilder = this.ticketsRepository.manager
+      .getRepository(Reservation)
+      .createQueryBuilder('reservation')
+      .select('reservation.id', 'id')
+      .where('reservation.customerId = :customerId', { customerId })
+      .andWhere('reservation.confirmedAt IS NOT NULL')
+      .orderBy('reservation.confirmedAt', 'DESC')
+      .addOrderBy('reservation.id', 'DESC');
+
+    if (filters.reservationId) {
+      queryBuilder.andWhere('reservation.id = :reservationId', {
+        reservationId: filters.reservationId,
+      });
+    }
+
+    const rows = await queryBuilder
+      .skip((page - 1) * ticketPurchasesPageSize)
+      .take(ticketPurchasesPageSize + 1)
+      .getRawMany<{ id: string }>();
+
+    const hasMore = rows.length > ticketPurchasesPageSize;
+    const pagedRows = hasMore ? rows.slice(0, ticketPurchasesPageSize) : rows;
+    const reservationIds = pagedRows.map((row) => row.id);
+
+    return {
+      reservationIds,
+      page,
+      hasMore,
+    };
+  }
+
+  /**
+   * Carrega os Tickets pertencentes a um conjunto de reservas confirmadas com relações completas.
+   *
+   * @param reservationIds - IDs de reservas confirmadas.
+   * @returns Tickets ordenados por compra e emissão.
+   */
+  public async findTicketsByReservationIds(reservationIds: string[]): Promise<Ticket[]> {
+    if (reservationIds.length === 0) {
+      return [];
+    }
+
+    return this.createPresentationQuery()
+      .where('"reservation"."id" IN (:...reservationIds)', { reservationIds })
+      .orderBy('"reservation"."confirmedAt"', 'DESC')
+      .addOrderBy('"reservation"."id"', 'DESC')
+      .addOrderBy('"ticket"."createdAt"', 'ASC')
+      .getMany();
   }
 
   /**

@@ -20,6 +20,8 @@ import {
   EventDiscoveryPage,
   GateEventsFilters,
   GateEventsPage,
+  OrganizerEventsFilters,
+  OrganizerEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
   EventCancellationResult,
@@ -27,6 +29,7 @@ import {
 
 const eventDiscoveryPageSize = 12;
 const gateEventsPageSize = 10;
+const organizerEventsPageSize = 10;
 
 /**
  * Concentra consultas semânticas de Event que exigem QueryBuilder ou valores calculados pelo PostgreSQL.
@@ -330,13 +333,62 @@ export class EventRepository {
   }
 
   /**
-   * Carrega os Events do organizador com agregados de vendas calculados no PostgreSQL.
+   * Carrega os Events do organizador com agregados de vendas calculados no PostgreSQL e paginação server-side.
    *
    * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
-   * @returns Ocorrências do organizador e métricas derivadas exclusivamente de Reservations confirmadas.
+   * @param filters - Parâmetros de paginação.
+   * @returns Página de ocorrências do organizador com métricas derivadas de Reservations confirmadas e hasMore.
    */
-  public async findForOrganizerWithStats(organizerId: string): Promise<OrganizerEventWithStats[]> {
-    const result = await this.repository
+  public async findForOrganizerWithStats(
+    organizerId: string,
+    filters: OrganizerEventsFilters,
+  ): Promise<OrganizerEventsPage> {
+    const page = filters.page > 0 ? filters.page : 1;
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId)
+      .orderBy('event.createdAt', 'DESC')
+      .skip((page - 1) * organizerEventsPageSize)
+      .take(organizerEventsPageSize + 1)
+      .getRawAndEntities();
+
+    const hasMore = result.entities.length > organizerEventsPageSize;
+    const events = hasMore ? result.entities.slice(0, organizerEventsPageSize) : result.entities;
+
+    const items = events.map((event, index) =>
+      this.mapOrganizerEventWithStats(event, result.raw[index]),
+    );
+
+    return {
+      items,
+      page,
+      hasMore,
+    };
+  }
+
+  /**
+   * Carrega um único Event do organizador com agregados de vendas calculados no PostgreSQL.
+   *
+   * @param organizerId - Identidade autenticada que delimita a propriedade dos Events.
+   * @param eventId - Identificador único do Event.
+   * @returns Ocorrência do organizador com métricas derivadas ou null se não encontrada.
+   */
+  public async findOneForOrganizerWithStats(
+    organizerId: string,
+    eventId: string,
+  ): Promise<OrganizerEventWithStats | null> {
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId)
+      .andWhere('"event"."id" = :eventId', { eventId })
+      .getRawAndEntities();
+
+    const event = result.entities[0];
+    if (!event) {
+      return null;
+    }
+
+    return this.mapOrganizerEventWithStats(event, result.raw[0]);
+  }
+
+  private buildOrganizerEventsQueryBuilder(organizerId: string) {
+    return this.repository
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
       .addSelect('"event"."status" = :publishedStatus', 'eventIsActive')
@@ -405,25 +457,38 @@ export class EventRepository {
       )
       .where('"event"."organizerId" = :organizerId', { organizerId })
       .setParameter('publishedStatus', EventStatus.Published)
-      .setParameter('completedRefundStatus', RefundStatus.Completed)
-      .orderBy('event.createdAt', 'DESC')
-      .getRawAndEntities();
+      .setParameter('completedRefundStatus', RefundStatus.Completed);
+  }
 
-    return result.entities.map((event, index) => {
-      const raw = result.raw[index];
+  private mapOrganizerEventWithStats(
+    event: Event,
+    raw: {
+      eventIsActive?: boolean | string;
+      eventSoldTickets?: string | number;
+      eventOccupiedTickets?: string | number;
+      eventInventoryTotal?: string | number | null;
+      eventRevenueCents?: string | number;
+      eventRefundedCents?: string | number;
+    },
+  ): OrganizerEventWithStats {
+    const soldTickets = Number(raw.eventSoldTickets);
+    const occupiedTickets = Number(raw.eventOccupiedTickets);
+    const inventoryTotal =
+      raw.eventInventoryTotal === null || raw.eventInventoryTotal === undefined
+        ? null
+        : Number(raw.eventInventoryTotal);
+    const availableTickets =
+      inventoryTotal === null ? null : Math.max(0, inventoryTotal - occupiedTickets);
+    const revenueCents = Number(raw.eventRevenueCents) - Number(raw.eventRefundedCents);
 
-      return {
-        event,
-        isActive: raw.eventIsActive === true || raw.eventIsActive === 'true',
-        soldTickets: Number(raw.eventSoldTickets),
-        inventoryTotal: raw.eventInventoryTotal === null ? null : Number(raw.eventInventoryTotal),
-        availableTickets:
-          raw.eventInventoryTotal === null
-            ? null
-            : Number(raw.eventInventoryTotal) - Number(raw.eventOccupiedTickets),
-        revenueCents: Number(raw.eventRevenueCents) - Number(raw.eventRefundedCents),
-      };
-    });
+    return {
+      event,
+      isActive: raw.eventIsActive === true || raw.eventIsActive === 'true',
+      soldTickets,
+      inventoryTotal,
+      availableTickets,
+      revenueCents,
+    };
   }
 
   /**

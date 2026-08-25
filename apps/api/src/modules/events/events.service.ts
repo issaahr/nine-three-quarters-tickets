@@ -12,6 +12,7 @@ import { CreateMovieEventRequestDto } from './dto/createMovieEventRequest.dto';
 import { CreateShowEventRequestDto } from './dto/createShowEventRequest.dto';
 import { DiscoverEventsQueryDto } from './dto/discoverEventsQuery.dto';
 import { GateEventsQueryDto } from './dto/gateEventsQuery.dto';
+import { OrganizerEventsQueryDto } from './dto/organizerEventsQuery.dto';
 import { Event } from './event.entity';
 import { EventCategory } from './eventCategory.enum';
 import { EventSeat } from './eventSeat.entity';
@@ -30,6 +31,7 @@ import { EventSeatRepository } from './repositories/eventSeat.repository';
 import {
   EventDiscoveryPage,
   GateEventsPage,
+  OrganizerEventsPage,
   OrganizerEventWithStats,
   PublicEventDetail,
 } from './repositories/eventRepository.interfaces';
@@ -157,13 +159,40 @@ export class EventsService {
   }
 
   /**
-   * Recupera as ocorrências do organizador com o Venue necessário para apresentação canônica.
+   * Recupera as ocorrências do organizador com o Venue e métricas calculadas em paginação server-side.
    *
    * @param organizerId - Identidade obtida da sessão autenticada.
-   * @returns Events do organizador, ordenados da ocorrência mais recente para a mais antiga.
+   * @param query - Parâmetros opcionais de paginação.
+   * @returns Página de Events do organizador e indicador determinístico de hasMore.
    */
-  public findByOrganizerId(organizerId: string): Promise<OrganizerEventWithStats[]> {
-    return this.eventRepository.findForOrganizerWithStats(organizerId);
+  public findByOrganizerId(
+    organizerId: string,
+    query?: OrganizerEventsQueryDto,
+  ): Promise<OrganizerEventsPage> {
+    return this.eventRepository.findForOrganizerWithStats(organizerId, {
+      page: query?.page ?? 1,
+    });
+  }
+
+  /**
+   * Obtém um único Event do organizador com agregados de vendas calculados no PostgreSQL.
+   *
+   * @param organizerId - Identidade obtida da sessão autenticada.
+   * @param eventId - Identificador único do evento.
+   * @returns Event com estatísticas agregadas.
+   */
+  public async findOrganizerEventById(
+    organizerId: string,
+    eventId: string,
+  ): Promise<OrganizerEventWithStats> {
+    const eventWithStats = await this.eventRepository.findOneForOrganizerWithStats(
+      organizerId,
+      eventId,
+    );
+    if (!eventWithStats) {
+      throw new EventNotFoundError();
+    }
+    return eventWithStats;
   }
 
   /**

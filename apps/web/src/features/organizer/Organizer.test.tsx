@@ -89,27 +89,31 @@ describe('gestão inicial de Events pelo organizador', () => {
     const publishHandler = vi.fn();
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-1',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: movie.title,
-            imageUrl: movie.imageUrl,
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: published ? EventStatus.Published : EventStatus.Draft,
-            startsAt: '2030-09-01T23:30:00.000Z',
-            priceCents: 2500,
-            isActive: false,
-            soldTickets: 12,
-            inventoryTotal: 60,
-            revenueCents: 30000,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-1',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: movie.title,
+              imageUrl: movie.imageUrl,
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: published ? EventStatus.Published : EventStatus.Draft,
+              startsAt: '2030-09-01T23:30:00.000Z',
+              priceCents: 2500,
+              isActive: false,
+              soldTickets: 12,
+              inventoryTotal: 60,
+              revenueCents: 30000,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
       http.post(`${apiUrl}/events/event-1/publish`, () => {
         publishHandler();
@@ -134,65 +138,69 @@ describe('gestão inicial de Events pelo organizador', () => {
   it('filtra localmente por título, tipo, status e período sem alterar os indicadores globais', async () => {
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-movie',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Duna: Parte Dois',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Published,
-            startsAt: '2030-09-01T23:30:00.000Z',
-            priceCents: 2500,
-            isActive: true,
-            soldTickets: 12,
-            availableTickets: 48,
-            inventoryTotal: 60,
-            revenueCents: 30000,
-          },
-          {
-            id: 'event-show',
-            venueId: generalAdmissionVenue.id,
-            venueName: generalAdmissionVenue.name,
-            venueCity: generalAdmissionVenue.city,
-            venueTimeZone: generalAdmissionVenue.timeZone,
-            title: 'Coldplay',
-            genres: attraction.genres,
-            category: EventCategory.Show,
-            admissionMode: AdmissionMode.GeneralAdmission,
-            status: EventStatus.Draft,
-            startsAt: '2030-10-02T01:00:00.000Z',
-            priceCents: 15000,
-            isActive: false,
-            soldTickets: 3,
-            availableTickets: 497,
-            inventoryTotal: 500,
-            revenueCents: 45000,
-          },
-          {
-            id: 'event-cancelled',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Sessão cancelada',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Cancelled,
-            startsAt: '2030-11-01T23:30:00.000Z',
-            priceCents: 3000,
-            isActive: false,
-            soldTickets: 1,
-            availableTickets: null,
-            inventoryTotal: null,
-            revenueCents: 0,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-movie',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Duna: Parte Dois',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              startsAt: '2030-09-01T23:30:00.000Z',
+              priceCents: 2500,
+              isActive: true,
+              soldTickets: 12,
+              availableTickets: 48,
+              inventoryTotal: 60,
+              revenueCents: 30000,
+            },
+            {
+              id: 'event-show',
+              venueId: generalAdmissionVenue.id,
+              venueName: generalAdmissionVenue.name,
+              venueCity: generalAdmissionVenue.city,
+              venueTimeZone: generalAdmissionVenue.timeZone,
+              title: 'Coldplay',
+              genres: attraction.genres,
+              category: EventCategory.Show,
+              admissionMode: AdmissionMode.GeneralAdmission,
+              status: EventStatus.Draft,
+              startsAt: '2030-10-02T01:00:00.000Z',
+              priceCents: 15000,
+              isActive: false,
+              soldTickets: 3,
+              availableTickets: 497,
+              inventoryTotal: 500,
+              revenueCents: 45000,
+            },
+            {
+              id: 'event-cancelled',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Sessão cancelada',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Cancelled,
+              startsAt: '2030-11-01T23:30:00.000Z',
+              priceCents: 3000,
+              isActive: false,
+              soldTickets: 1,
+              availableTickets: null,
+              inventoryTotal: null,
+              revenueCents: 0,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
     );
     const user = userEvent.setup();
@@ -246,48 +254,52 @@ describe('gestão inicial de Events pelo organizador', () => {
   it('ordena localmente os eventos entre mais recentes e mais antigos', async () => {
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-1',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Evento Antigo',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Published,
-            createdAt: '2030-01-01T10:00:00.000Z',
-            startsAt: '2030-12-01T20:00:00.000Z',
-            priceCents: 2000,
-            isActive: true,
-            soldTickets: 0,
-            availableTickets: 50,
-            inventoryTotal: 50,
-            revenueCents: 0,
-          },
-          {
-            id: 'event-2',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title: 'Evento Recente',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Published,
-            createdAt: '2030-02-01T10:00:00.000Z',
-            startsAt: '2030-01-01T20:00:00.000Z',
-            priceCents: 2000,
-            isActive: true,
-            soldTickets: 0,
-            availableTickets: 50,
-            inventoryTotal: 50,
-            revenueCents: 0,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-1',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Evento Antigo',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              createdAt: '2030-01-01T10:00:00.000Z',
+              startsAt: '2030-12-01T20:00:00.000Z',
+              priceCents: 2000,
+              isActive: true,
+              soldTickets: 0,
+              availableTickets: 50,
+              inventoryTotal: 50,
+              revenueCents: 0,
+            },
+            {
+              id: 'event-2',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Evento Recente',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              createdAt: '2030-02-01T10:00:00.000Z',
+              startsAt: '2030-01-01T20:00:00.000Z',
+              priceCents: 2000,
+              isActive: true,
+              soldTickets: 0,
+              availableTickets: 50,
+              inventoryTotal: 50,
+              revenueCents: 0,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
     );
 
@@ -307,28 +319,32 @@ describe('gestão inicial de Events pelo organizador', () => {
   it('aplica espaçamento lateral no título do card no mobile para quebra de linha antes do badge de status', async () => {
     server.use(
       http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json([
-          {
-            id: 'event-long',
-            venueId: venue.id,
-            venueName: venue.name,
-            venueCity: venue.city,
-            venueTimeZone: venue.timeZone,
-            title:
-              'Um Título Muito Longo Para Ocorrência Que Deveria Quebrar Linha Sem Invadir o Status',
-            genres: movie.genres,
-            category: EventCategory.Movie,
-            admissionMode: AdmissionMode.Seated,
-            status: EventStatus.Published,
-            startsAt: '2030-09-01T20:00:00.000Z',
-            priceCents: 2000,
-            isActive: true,
-            soldTickets: 0,
-            availableTickets: 50,
-            inventoryTotal: 50,
-            revenueCents: 0,
-          },
-        ]),
+        HttpResponse.json({
+          items: [
+            {
+              id: 'event-long',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title:
+                'Um Título Muito Longo Para Ocorrência Que Deveria Quebrar Linha Sem Invadir o Status',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              startsAt: '2030-09-01T20:00:00.000Z',
+              priceCents: 2000,
+              isActive: true,
+              soldTickets: 0,
+              availableTickets: 50,
+              inventoryTotal: 50,
+              revenueCents: 0,
+            },
+          ],
+          page: 1,
+          hasMore: false,
+        }),
       ),
     );
 
@@ -340,8 +356,115 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(titleHeading.parentElement).toHaveClass('pr-24', 'sm:pr-0');
   });
 
+  it('carrega páginas subsequentes com scroll infinito no painel do organizador e suporta retry em falhas', async () => {
+    let observerCallback: IntersectionObserverCallback = () => {};
+
+    class IntersectionObserverMock implements Partial<IntersectionObserver> {
+      public constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+      public observe(): void {}
+      public disconnect(): void {}
+    }
+
+    function triggerObserver(): void {
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverMock);
+
+    let page2Requests = 0;
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') || '1');
+        if (page === 1) {
+          return HttpResponse.json({
+            items: [
+              {
+                id: 'event-page1',
+                venueId: venue.id,
+                venueName: venue.name,
+                venueCity: venue.city,
+                venueTimeZone: venue.timeZone,
+                title: 'Evento Página 1',
+                genres: movie.genres,
+                category: EventCategory.Movie,
+                admissionMode: AdmissionMode.Seated,
+                status: EventStatus.Published,
+                createdAt: '2030-01-01T10:00:00.000Z',
+                startsAt: '2030-12-01T20:00:00.000Z',
+                priceCents: 2000,
+                isActive: true,
+                soldTickets: 5,
+                availableTickets: 45,
+                inventoryTotal: 50,
+                revenueCents: 10000,
+              },
+            ],
+            page: 1,
+            hasMore: true,
+          });
+        }
+        page2Requests++;
+        if (page2Requests === 1) {
+          return new HttpResponse(null, { status: 500 });
+        }
+        return HttpResponse.json({
+          items: [
+            {
+              id: 'event-page2',
+              venueId: venue.id,
+              venueName: venue.name,
+              venueCity: venue.city,
+              venueTimeZone: venue.timeZone,
+              title: 'Evento Página 2',
+              genres: movie.genres,
+              category: EventCategory.Movie,
+              admissionMode: AdmissionMode.Seated,
+              status: EventStatus.Published,
+              createdAt: '2030-01-02T10:00:00.000Z',
+              startsAt: '2030-12-02T20:00:00.000Z',
+              priceCents: 2500,
+              isActive: true,
+              soldTickets: 2,
+              availableTickets: 48,
+              inventoryTotal: 50,
+              revenueCents: 5000,
+            },
+          ],
+          page: 2,
+          hasMore: false,
+        });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderOrganizer();
+
+    expect(await screen.findByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+
+    triggerObserver();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Não foi possível carregar mais eventos.',
+    );
+    expect(screen.getByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tentar novamente' }));
+
+    expect(await screen.findByRole('heading', { name: 'Evento Página 2' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Evento Página 1' })).toBeInTheDocument();
+  });
+
   it('apresenta empty state com "Crie seu primeiro evento" quando o organizador não possui eventos', async () => {
-    server.use(http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])));
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
+    );
 
     renderOrganizer();
 
@@ -372,7 +495,9 @@ describe('gestão inicial de Events pelo organizador', () => {
           hasMore: false,
         }),
       ),
-      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
     );
     const user = userEvent.setup();
 
@@ -412,7 +537,9 @@ describe('gestão inicial de Events pelo organizador', () => {
         publishHandler();
         return HttpResponse.json({ id: 'event-created', status: EventStatus.Published });
       }),
-      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
     );
     const user = userEvent.setup();
 
@@ -479,7 +606,9 @@ describe('gestão inicial de Events pelo organizador', () => {
         publishHandler();
         return HttpResponse.json({ id: 'show-created', status: EventStatus.Published });
       }),
-      http.get(`${apiUrl}/organizer/me/events`, () => HttpResponse.json([])),
+      http.get(`${apiUrl}/organizer/me/events`, () =>
+        HttpResponse.json({ items: [], page: 1, hasMore: false }),
+      ),
     );
     const user = userEvent.setup();
 

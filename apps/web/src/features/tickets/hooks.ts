@@ -1,12 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { cancelTicketPurchase, fetchSharedTicket, fetchTickets } from './api';
+import { TicketsFilters } from './types';
 
-/** Mantém a listagem de Tickets no cache por compra quando há um filtro explícito. */
-export function useTickets(reservationId?: string) {
-  return useQuery({
-    queryKey: ['tickets', 'owned', reservationId],
-    queryFn: () => fetchTickets(reservationId),
+/** Mantém a listagem paginada de Tickets no cache por compra. */
+export function useTickets(filters?: TicketsFilters) {
+  return useInfiniteQuery({
+    queryKey: ['tickets', 'owned', filters],
+    queryFn: ({ pageParam }) => fetchTickets({ ...filters, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     retry: false,
   });
 }

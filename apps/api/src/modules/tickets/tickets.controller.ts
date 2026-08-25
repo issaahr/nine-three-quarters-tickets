@@ -5,7 +5,8 @@ import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
 import { ListTicketsQueryDto } from './dto/listTicketsQuery.dto';
-import { SharedTicketResponseDto, TicketPurchaseResponseDto } from './dto/ticketResponse.dto';
+import { TicketPurchasesPageResponseDto } from './dto/ticketPurchasesPageResponse.dto';
+import { SharedTicketResponseDto } from './dto/ticketResponse.dto';
 import { ApiGetSharedTicket, ApiListTickets } from './tickets.swagger';
 import { TicketsService } from './tickets.service';
 
@@ -14,16 +15,16 @@ import { TicketsService } from './tickets.service';
 export class TicketsController {
   public constructor(private readonly ticketsService: TicketsService) {}
 
-  /** Lista compras confirmadas do CUSTOMER sem expor Tickets de outras contas. */
+  /** Lista compras confirmadas do CUSTOMER sem expor Tickets de outras contas com paginação server-side. */
   @Get()
   @Roles(UserRole.Customer)
   @ApiListTickets()
   public async listOwned(
     @Req() request: AuthenticatedRequest,
     @Query() query: ListTicketsQueryDto,
-  ): Promise<TicketPurchaseResponseDto[]> {
-    const purchases = await this.ticketsService.listOwned(request.user.id, query.reservationId);
-    return purchases.map(TicketPurchaseResponseDto.fromPurchase);
+  ): Promise<TicketPurchasesPageResponseDto> {
+    const page = await this.ticketsService.listOwned(request.user.id, query);
+    return TicketPurchasesPageResponseDto.fromPurchases(page.items, page.page, page.hasMore);
   }
 
   /** Apresenta um único Ticket ao portador de uma credencial HMAC válida. */

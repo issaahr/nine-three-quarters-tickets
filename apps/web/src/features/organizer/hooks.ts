@@ -14,14 +14,18 @@ import {
   searchCatalogAttractions,
 } from './api';
 import { AdmissionMode, EventCategory } from '../events/types';
+import { OrganizerEventsFilters } from './types';
 
 export const organizerEventsQueryKey = ['organizer', 'events'] as const;
 const venuesQueryKey = ['venues'] as const;
 
-export function useOrganizerEvents() {
-  return useQuery({
-    queryKey: organizerEventsQueryKey,
-    queryFn: fetchOrganizerEvents,
+export function useOrganizerEvents(filters?: OrganizerEventsFilters) {
+  return useInfiniteQuery({
+    queryKey: ['organizer', 'events', filters],
+    queryFn: ({ pageParam }) => fetchOrganizerEvents({ ...filters, page: pageParam }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
+    retry: false,
   });
 }
 

@@ -1,10 +1,11 @@
 import { Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
+import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
 import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useProgressiveList } from '@/hooks/useInfiniteScroll';
+import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { cn } from '@/lib/utils';
 import { EventCategory, EventStatus } from '../../events/types';
 import { formatEventPrice } from '../../events/eventPresentation';
@@ -46,7 +47,31 @@ export function OrganizerHome() {
   const [sortOrder, setSortOrder] = useState<'recent' | 'oldest'>('recent');
   const eventsQuery = useOrganizerEvents();
   const publishMutation = usePublishEvent();
-  const organizerEvents = eventsQuery.data ?? [];
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = eventsQuery;
+  const isNextPageError = Boolean(
+    eventsQuery.isFetchNextPageError ||
+    (eventsQuery.isError && (eventsQuery.data?.pages.length ?? 0) > 0),
+  );
+
+  const organizerEvents = useMemo(() => {
+    const byId = new Map<string, OrganizerEvent>();
+    for (const page of eventsQuery.data?.pages ?? []) {
+      const items = Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : [];
+      for (const event of items) {
+        byId.set(event.id, event);
+      }
+    }
+    return Array.from(byId.values());
+  }, [eventsQuery.data]);
+
+  const sentinelRef = useInfiniteScroll({
+    onLoadMore: fetchNextPage,
+    hasMore: Boolean(hasNextPage),
+    isLoading: isFetchingNextPage,
+    isError: isNextPageError,
+    rootMargin: '240px',
+  });
+
   const activeEvents = organizerEvents.filter((event) => event.isActive).length;
   const soldTickets = organizerEvents.reduce((total, event) => total + event.soldTickets, 0);
   const revenueCents = organizerEvents.reduce((total, event) => total + event.revenueCents, 0);
@@ -69,12 +94,6 @@ export function OrganizerHome() {
 
     return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
   });
-  const filterKey = `${titleQuery}|${categoryFilter}|${statusFilter}|${dateFrom}|${dateTo}|${sortOrder}`;
-  const {
-    visibleItems: visibleEvents,
-    hasMore,
-    sentinelRef,
-  } = useProgressiveList(sortedFilteredEvents, 10, filterKey);
   const hasActiveFilters = Boolean(
     titleQuery ||
     categoryFilter !== 'ALL' ||
@@ -156,13 +175,13 @@ export function OrganizerHome() {
 
       {eventsQuery.isLoading && <p role="status">Carregando seus eventos...</p>}
 
-      {eventsQuery.isError && (
+      {eventsQuery.isError && organizerEvents.length === 0 && (
         <div role="alert" className="border-l-2 border-destructive py-2 pl-4 text-destructive">
           Não foi possível carregar seus eventos. Tente novamente em instantes.
         </div>
       )}
 
-      {eventsQuery.data?.length === 0 && (
+      {eventsQuery.data && organizerEvents.length === 0 && !eventsQuery.isError && (
         <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
           <h2 className="font-heading text-2xl font-semibold">Crie seu primeiro evento</h2>
           <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
@@ -171,7 +190,7 @@ export function OrganizerHome() {
         </section>
       )}
 
-      {eventsQuery.data && eventsQuery.data.length > 0 && (
+      {eventsQuery.data && organizerEvents.length > 0 && (
         <>
           <section
             aria-label="Filtros de eventos"
@@ -312,7 +331,7 @@ export function OrganizerHome() {
           ) : (
             <>
               <section aria-label="Eventos do organizador" className="grid gap-3">
-                {visibleEvents.map((event) => (
+                {sortedFilteredEvents.map((event) => (
                   <OrganizerEventCard
                     key={event.id}
                     event={event}
@@ -323,7 +342,15 @@ export function OrganizerHome() {
                   />
                 ))}
               </section>
-              {hasMore && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+              {hasNextPage && <div ref={sentinelRef} className="h-8" aria-hidden="true" />}
+              <InfiniteScrollStatus
+                isLoading={isFetchingNextPage}
+                isError={isNextPageError}
+                onRetry={() => void fetchNextPage()}
+                loadingText="Carregando mais eventos..."
+                errorText="Não foi possível carregar mais eventos."
+                retryText="Tentar novamente"
+              />
             </>
           )}
         </>

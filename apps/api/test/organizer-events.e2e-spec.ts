@@ -77,14 +77,18 @@ describe('painel de Events do organizador', () => {
     return cookie.split(';', 1)[0];
   }
 
-  it('lista somente o contrato necessário ao organizador autenticado', async () => {
+  it('lista somente o contrato necessário ao organizador autenticado com paginação server-side', async () => {
     const cookie = await authenticate(organizer.email);
     const response = await request(app.getHttpServer())
       .get('/organizer/me/events')
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(response.body).toEqual(
+    expect(response.body).toHaveProperty('items');
+    expect(response.body).toHaveProperty('page', 1);
+    expect(response.body).toHaveProperty('hasMore');
+
+    expect(response.body.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: event.id,
@@ -99,9 +103,50 @@ describe('painel de Events do organizador', () => {
         }),
       ]),
     );
-    const listedEvent = response.body.find(({ id }: { id: string }) => id === event.id);
+    const listedEvent = response.body.items.find(({ id }: { id: string }) => id === event.id);
     expect(listedEvent).not.toHaveProperty('organizerId');
     expect(listedEvent).not.toHaveProperty('externalId');
+  });
+
+  it('suporta paginação server-side e cálculo de hasMore no painel do organizador', async () => {
+    for (let i = 0; i < 11; i++) {
+      const pad = String(i).padStart(2, '0');
+      await eventsRepository.save({
+        organizerId: organizer.id,
+        venueId: venue.id,
+        title: `Evento Paginado Organizer ${pad}`,
+        description: null,
+        imageUrl: null,
+        genres: ['Drama'],
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Draft,
+        startsAt: new Date(`2036-02-01T${pad}:00:00.000Z`),
+        priceCents: 2000,
+        capacity: null,
+        catalogSource: CatalogSource.Tmdb,
+        externalId: `tmdb-org-${pad}-${randomUUID()}`,
+      });
+    }
+
+    const cookie = await authenticate(organizer.email);
+
+    const page1 = await request(app.getHttpServer())
+      .get('/organizer/me/events?page=1')
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(page1.body.page).toBe(1);
+    expect(page1.body.items.length).toBe(10);
+    expect(page1.body.hasMore).toBe(true);
+
+    const page2 = await request(app.getHttpServer())
+      .get('/organizer/me/events?page=2')
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(page2.body.page).toBe(2);
+    expect(page2.body.items.length).toBeGreaterThanOrEqual(1);
   });
 
   it('restringe o painel ao papel ORGANIZER', async () => {

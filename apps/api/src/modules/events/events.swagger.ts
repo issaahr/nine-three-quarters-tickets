@@ -18,7 +18,7 @@ import { EventMutationResponseDto } from './dto/eventMutationResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import { GateEventResponseDto } from './dto/gateEventResponse.dto';
 import { GateEventsPageResponseDto } from './dto/gateEventsPageResponse.dto';
-import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
+import { OrganizerEventsPageResponseDto } from './dto/organizerEventsPageResponse.dto';
 
 /**
  * Agrupa a documentação HTTP da descoberta pública de ocorrências.
@@ -171,11 +171,14 @@ export function ApiPublishEvent() {
  */
 export function ApiListOrganizerEvents() {
   return applyDecorators(
-    ApiOperation({ summary: 'Lista os Events do organizador autenticado' }),
+    ApiOperation({ summary: 'Lista os Events do organizador autenticado com paginação' }),
     ApiOkResponse({
-      type: OrganizerEventResponseDto,
-      isArray: true,
-      description: 'Rascunhos, Events publicados e históricos do próprio organizador.',
+      type: OrganizerEventsPageResponseDto,
+      description: 'Página de rascunhos, Events publicados e históricos do próprio organizador.',
+    }),
+    ApiBadRequestResponse({
+      type: ValidationErrorResponseDto,
+      description: 'Parâmetros de paginação inválidos.',
     }),
   );
 }
