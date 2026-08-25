@@ -15,6 +15,14 @@ import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { User } from '../src/modules/users/user.entity';
 import { Venue } from '../src/modules/venues/venue.entity';
 
+interface GateEventResponse {
+  id: string;
+  title: string;
+  venueName: string;
+  venueTimeZone: string;
+  startsAt: string;
+}
+
 describe('Events operáveis pela portaria', () => {
   let app: INestApplication;
   let eventsRepository: Repository<Event>;
@@ -57,6 +65,10 @@ describe('Events operáveis pela portaria', () => {
 
     const setCookie = response.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+
+    if (!cookie) {
+      throw new Error('Authentication did not return a session cookie');
+    }
 
     return cookie.split(';', 1)[0];
   }
@@ -113,7 +125,7 @@ describe('Events operáveis pela portaria', () => {
 
     const cookie = await authenticate('gate.demo@ntq.local');
 
-    const foundEvents: Array<Record<string, unknown>> = [];
+    const foundEvents: GateEventResponse[] = [];
     let page = 1;
     let hasMore = true;
 
@@ -123,8 +135,13 @@ describe('Events operáveis pela portaria', () => {
         .set('Cookie', cookie)
         .expect(200);
 
-      foundEvents.push(...response.body.items);
-      hasMore = response.body.hasMore;
+      const body = response.body as {
+        items: GateEventResponse[];
+        hasMore: boolean;
+      };
+
+      foundEvents.push(...body.items);
+      hasMore = body.hasMore;
       page += 1;
     }
 
@@ -147,13 +164,13 @@ describe('Events operáveis pela portaria', () => {
       ]),
     );
 
-    const eventIds = foundEvents.map(({ id }: { id: string }) => id);
+    const eventIds = foundEvents.map(({ id }) => id);
 
     expect(eventIds).not.toContain(draft.id);
     expect(eventIds).not.toContain(cancelled.id);
 
     expect(
-      foundEvents.find(({ id }: { id: string }) => id === publishedPast.id),
+      foundEvents.find(({ id }) => id === publishedPast.id),
     ).not.toHaveProperty('organizerId');
   });
 
