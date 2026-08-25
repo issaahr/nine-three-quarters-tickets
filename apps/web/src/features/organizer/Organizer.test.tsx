@@ -135,77 +135,100 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(await screen.findByText('Publicado')).toBeInTheDocument();
   });
 
-  it('filtra localmente por título, tipo, status e período sem alterar os indicadores globais', async () => {
-    server.use(
-      http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json({
-          items: [
-            {
-              id: 'event-movie',
-              venueId: venue.id,
-              venueName: venue.name,
-              venueCity: venue.city,
-              venueTimeZone: venue.timeZone,
-              title: 'Duna: Parte Dois',
-              genres: movie.genres,
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              status: EventStatus.Published,
-              startsAt: '2030-09-01T23:30:00.000Z',
-              priceCents: 2500,
-              isActive: true,
-              soldTickets: 12,
-              availableTickets: 48,
-              inventoryTotal: 60,
-              revenueCents: 30000,
-            },
-            {
-              id: 'event-show',
-              venueId: generalAdmissionVenue.id,
-              venueName: generalAdmissionVenue.name,
-              venueCity: generalAdmissionVenue.city,
-              venueTimeZone: generalAdmissionVenue.timeZone,
-              title: 'Coldplay',
-              genres: attraction.genres,
-              category: EventCategory.Show,
-              admissionMode: AdmissionMode.GeneralAdmission,
-              status: EventStatus.Draft,
-              startsAt: '2030-10-02T01:00:00.000Z',
-              priceCents: 15000,
-              isActive: false,
-              soldTickets: 3,
-              availableTickets: 497,
-              inventoryTotal: 500,
-              revenueCents: 45000,
-            },
-            {
-              id: 'event-cancelled',
-              venueId: venue.id,
-              venueName: venue.name,
-              venueCity: venue.city,
-              venueTimeZone: venue.timeZone,
-              title: 'Sessão cancelada',
-              genres: movie.genres,
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              status: EventStatus.Cancelled,
-              startsAt: '2030-11-01T23:30:00.000Z',
-              priceCents: 3000,
-              isActive: false,
-              soldTickets: 1,
-              availableTickets: null,
-              inventoryTotal: null,
-              revenueCents: 0,
-            },
-          ],
-          page: 1,
-          hasMore: false,
-        }),
-      ),
-    );
-    const user = userEvent.setup();
+  it('atualiza a busca via backend ao filtrar por título, tipo, status e período', async () => {
+    const allItems = [
+      {
+        id: 'event-movie',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Duna: Parte Dois',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        startsAt: '2030-09-01T23:30:00.000Z',
+        priceCents: 2500,
+        isActive: true,
+        soldTickets: 12,
+        availableTickets: 48,
+        inventoryTotal: 60,
+        revenueCents: 30000,
+      },
+      {
+        id: 'event-show',
+        venueId: generalAdmissionVenue.id,
+        venueName: generalAdmissionVenue.name,
+        venueCity: generalAdmissionVenue.city,
+        venueTimeZone: generalAdmissionVenue.timeZone,
+        title: 'Coldplay',
+        genres: attraction.genres,
+        category: EventCategory.Show,
+        admissionMode: AdmissionMode.GeneralAdmission,
+        status: EventStatus.Draft,
+        startsAt: '2030-10-02T01:00:00.000Z',
+        priceCents: 15000,
+        isActive: false,
+        soldTickets: 3,
+        availableTickets: 497,
+        inventoryTotal: 500,
+        revenueCents: 45000,
+      },
+      {
+        id: 'event-cancelled',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Sessão cancelada',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Cancelled,
+        startsAt: '2030-11-01T23:30:00.000Z',
+        priceCents: 3000,
+        isActive: false,
+        soldTickets: 1,
+        availableTickets: null,
+        inventoryTotal: null,
+        revenueCents: 0,
+      },
+    ];
 
+    function eventVenueDate(item: (typeof allItems)[number]): string {
+      return new Intl.DateTimeFormat('en-CA', { timeZone: item.venueTimeZone }).format(
+        new Date(item.startsAt),
+      );
+    }
+
+    server.use(
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const query = url.searchParams.get('query')?.toLowerCase() ?? '';
+        const category = url.searchParams.get('category');
+        const status = url.searchParams.get('status');
+        const dateFrom = url.searchParams.get('dateFrom');
+        const dateTo = url.searchParams.get('dateTo');
+
+        const filtered = allItems.filter((item) => {
+          const eventDate = eventVenueDate(item);
+          return (
+            (!query || item.title.toLowerCase().includes(query)) &&
+            (!category || item.category === category) &&
+            (!status || item.status === status) &&
+            (!dateFrom || eventDate >= dateFrom) &&
+            (!dateTo || eventDate <= dateTo)
+          );
+        });
+
+        return HttpResponse.json({ items: filtered, page: 1, hasMore: false });
+      }),
+    );
+
+    const user = userEvent.setup();
     renderOrganizer();
+
     expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
     expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
@@ -215,105 +238,112 @@ describe('gestão inicial de Events pelo organizador', () => {
     expect(screen.getByText('A partir de dd/mm/aaaa')).toBeInTheDocument();
     expect(screen.getByText('Até dd/mm/aaaa')).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText('Pesquisar por título'), 'cold');
-    expect(screen.getByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'cold{enter}');
+    expect(await screen.findByRole('heading', { name: 'Coldplay' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
-    expect(screen.getByText('16')).toBeInTheDocument();
-    expect(screen.getByText('R$ 750,00')).toBeInTheDocument();
 
     await user.clear(screen.getByLabelText('Pesquisar por título'));
+    await user.keyboard('{enter}');
     await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Movie);
     await user.selectOptions(screen.getByLabelText('Filtrar por status'), EventStatus.Cancelled);
-    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText('Filtrar por status'), 'ALL');
     fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), {
       target: { value: '2030-11-01' },
     });
-    expect(screen.getByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Sessão cancelada' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Duna: Parte Dois' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('A partir de dd/mm/aaaa'), { target: { value: '' } });
-    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), {
-      target: { value: '2030-09-30' },
-    });
-    expect(screen.getByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), { target: { value: '2030-09-30' } });
+    expect(await screen.findByRole('heading', { name: 'Duna: Parte Dois' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Coldplay' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Sessão cancelada' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Até dd/mm/aaaa'), { target: { value: '' } });
-    await user.clear(screen.getByLabelText('Pesquisar por título'));
     await user.selectOptions(screen.getByLabelText('Filtrar por tipo'), EventCategory.Show);
-    await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado');
+    await user.type(screen.getByLabelText('Pesquisar por título'), 'não encontrado{enter}');
     expect(
       await screen.findByRole('heading', { name: 'Nenhum evento encontrado' }),
     ).toBeInTheDocument();
   });
 
-  it('ordena localmente os eventos entre mais recentes e mais antigos', async () => {
+  it('reordena via backend entre mais recentes e mais antigos', async () => {
+    const items = [
+      {
+        id: 'event-1',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Evento Antigo',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        createdAt: '2030-01-01T10:00:00.000Z',
+        startsAt: '2030-12-01T20:00:00.000Z',
+        priceCents: 2000,
+        isActive: true,
+        soldTickets: 0,
+        availableTickets: 50,
+        inventoryTotal: 50,
+        revenueCents: 0,
+      },
+      {
+        id: 'event-2',
+        venueId: venue.id,
+        venueName: venue.name,
+        venueCity: venue.city,
+        venueTimeZone: venue.timeZone,
+        title: 'Evento Recente',
+        genres: movie.genres,
+        category: EventCategory.Movie,
+        admissionMode: AdmissionMode.Seated,
+        status: EventStatus.Published,
+        createdAt: '2030-02-01T10:00:00.000Z',
+        startsAt: '2030-01-01T20:00:00.000Z',
+        priceCents: 2000,
+        isActive: true,
+        soldTickets: 0,
+        availableTickets: 50,
+        inventoryTotal: 50,
+        revenueCents: 0,
+      },
+    ];
+
     server.use(
-      http.get(`${apiUrl}/organizer/me/events`, () =>
-        HttpResponse.json({
-          items: [
-            {
-              id: 'event-1',
-              venueId: venue.id,
-              venueName: venue.name,
-              venueCity: venue.city,
-              venueTimeZone: venue.timeZone,
-              title: 'Evento Antigo',
-              genres: movie.genres,
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              status: EventStatus.Published,
-              createdAt: '2030-01-01T10:00:00.000Z',
-              startsAt: '2030-12-01T20:00:00.000Z',
-              priceCents: 2000,
-              isActive: true,
-              soldTickets: 0,
-              availableTickets: 50,
-              inventoryTotal: 50,
-              revenueCents: 0,
-            },
-            {
-              id: 'event-2',
-              venueId: venue.id,
-              venueName: venue.name,
-              venueCity: venue.city,
-              venueTimeZone: venue.timeZone,
-              title: 'Evento Recente',
-              genres: movie.genres,
-              category: EventCategory.Movie,
-              admissionMode: AdmissionMode.Seated,
-              status: EventStatus.Published,
-              createdAt: '2030-02-01T10:00:00.000Z',
-              startsAt: '2030-01-01T20:00:00.000Z',
-              priceCents: 2000,
-              isActive: true,
-              soldTickets: 0,
-              availableTickets: 50,
-              inventoryTotal: 50,
-              revenueCents: 0,
-            },
-          ],
-          page: 1,
-          hasMore: false,
-        }),
-      ),
+      http.get(`${apiUrl}/organizer/me/events`, ({ request }) => {
+        const url = new URL(request.url);
+        const sort = url.searchParams.get('sort') ?? 'recent';
+        const sorted = [...items].sort((a, b) => {
+          const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          return sort === 'oldest' ? diff : -diff;
+        });
+        return HttpResponse.json({ items: sorted, page: 1, hasMore: false });
+      }),
     );
 
     const user = userEvent.setup();
     renderOrganizer();
+
     expect(await screen.findByRole('heading', { name: 'Evento Recente' })).toBeInTheDocument();
     const headingsDefault = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
     expect(headingsDefault).toEqual(['Evento Recente', 'Evento Antigo']);
+
     await user.selectOptions(screen.getByLabelText('Ordenar por'), 'oldest');
-    const headingsOldest = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headingsOldest).toEqual(['Evento Antigo', 'Evento Recente']);
+    await waitFor(() => {
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Evento Antigo', 'Evento Recente']);
+    });
+
     await user.selectOptions(screen.getByLabelText('Ordenar por'), 'recent');
-    const headingsRecent = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-    expect(headingsRecent).toEqual(['Evento Recente', 'Evento Antigo']);
+    await waitFor(() => {
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual(['Evento Recente', 'Evento Antigo']);
+    });
   });
 
   it('aplica espaçamento lateral no título do card no mobile para quebra de linha antes do badge de status', async () => {

@@ -17,6 +17,12 @@ export async function fetchOrganizerEvents(
   const response = await api.get<OrganizerEventsPage>('/organizer/me/events', {
     params: {
       page: filters?.page,
+      query: filters?.query,
+      category: filters?.category,
+      status: filters?.status,
+      dateFrom: filters?.dateFrom,
+      dateTo: filters?.dateTo,
+      sort: filters?.sort,
     },
   });
   return response.data;

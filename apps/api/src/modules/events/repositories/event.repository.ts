@@ -344,8 +344,10 @@ export class EventRepository {
     filters: OrganizerEventsFilters,
   ): Promise<OrganizerEventsPage> {
     const page = filters.page > 0 ? filters.page : 1;
-    const result = await this.buildOrganizerEventsQueryBuilder(organizerId)
-      .orderBy('event.createdAt', 'DESC')
+    const direction = filters.sort === 'oldest' ? 'ASC' : 'DESC';
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId, filters)
+      .orderBy('event.createdAt', direction)
+      .addOrderBy('event.id', 'ASC')
       .skip((page - 1) * organizerEventsPageSize)
       .take(organizerEventsPageSize + 1)
       .getRawAndEntities();
@@ -375,7 +377,7 @@ export class EventRepository {
     organizerId: string,
     eventId: string,
   ): Promise<OrganizerEventWithStats | null> {
-    const result = await this.buildOrganizerEventsQueryBuilder(organizerId)
+    const result = await this.buildOrganizerEventsQueryBuilder(organizerId, { page: 1 })
       .andWhere('"event"."id" = :eventId', { eventId })
       .getRawAndEntities();
 
@@ -387,8 +389,8 @@ export class EventRepository {
     return this.mapOrganizerEventWithStats(event, result.raw[0]);
   }
 
-  private buildOrganizerEventsQueryBuilder(organizerId: string) {
-    return this.repository
+  private buildOrganizerEventsQueryBuilder(organizerId: string, filters: OrganizerEventsFilters) {
+    const queryBuilder = this.repository
       .createQueryBuilder('event')
       .innerJoinAndSelect('event.venue', 'venue')
       .addSelect('"event"."status" = :publishedStatus', 'eventIsActive')
@@ -458,6 +460,41 @@ export class EventRepository {
       .where('"event"."organizerId" = :organizerId', { organizerId })
       .setParameter('publishedStatus', EventStatus.Published)
       .setParameter('completedRefundStatus', RefundStatus.Completed);
+
+    if (filters.query) {
+      const searchPattern = `%${this.escapeLikePattern(filters.query)}%`;
+      queryBuilder.andWhere('"event"."title" ILIKE :organizerSearchPattern', {
+        organizerSearchPattern: searchPattern,
+      });
+    }
+
+    if (filters.category) {
+      queryBuilder.andWhere('"event"."category" = :organizerCategory', {
+        organizerCategory: filters.category,
+      });
+    }
+
+    if (filters.status) {
+      queryBuilder.andWhere('"event"."status" = :organizerStatus', {
+        organizerStatus: filters.status,
+      });
+    }
+
+    if (filters.dateFrom) {
+      queryBuilder.andWhere(
+        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date >= CAST(:organizerDateFrom AS date)',
+        { organizerDateFrom: filters.dateFrom },
+      );
+    }
+
+    if (filters.dateTo) {
+      queryBuilder.andWhere(
+        '("event"."startsAt" AT TIME ZONE "venue"."timeZone")::date <= CAST(:organizerDateTo AS date)',
+        { organizerDateTo: filters.dateTo },
+      );
+    }
+
+    return queryBuilder;
   }
 
   private mapOrganizerEventWithStats(

@@ -1,5 +1,6 @@
 import { Event } from '../event.entity';
 import { EventCategory } from '../eventCategory.enum';
+import { EventStatus } from '../eventStatus.enum';
 
 export interface EventDiscoveryFilters {
   query?: string;
@@ -26,6 +27,12 @@ export interface PublicEventDetail {
 
 export interface OrganizerEventsFilters {
   page: number;
+  query?: string;
+  category?: EventCategory;
+  status?: EventStatus;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: 'recent' | 'oldest';
 }
 
 export interface OrganizerEventsPage {

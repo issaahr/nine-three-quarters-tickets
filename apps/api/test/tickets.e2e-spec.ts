@@ -208,18 +208,18 @@ describe('Tickets', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(response.body).toEqual(
+    expect(response.body.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ reservationId: ownedPurchase.reservation.id }),
       ]),
     );
-    expect(response.body).not.toEqual(
+    expect(response.body.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ reservationId: otherPurchase.reservation.id }),
       ]),
     );
-    expect(ownedPurchaseResponse.body).toHaveLength(1);
-    expect(ownedPurchaseResponse.body[0]).toMatchObject({
+    expect(ownedPurchaseResponse.body.items).toHaveLength(1);
+    expect(ownedPurchaseResponse.body.items[0]).toMatchObject({
       reservationId: ownedPurchase.reservation.id,
       event: {
         title: 'Tickets compartilháveis',
@@ -227,20 +227,20 @@ describe('Tickets', () => {
         venueTimeZone: venue.timeZone,
       },
     });
-    expect(ownedPurchaseResponse.body[0].tickets).toHaveLength(2);
+    expect(ownedPurchaseResponse.body.items[0].tickets).toHaveLength(2);
     expect(
       new Set(
-        ownedPurchaseResponse.body[0].tickets.map(
+        ownedPurchaseResponse.body.items[0].tickets.map(
           (ticket: { publicId: string }) => ticket.publicId,
         ),
       ).size,
     ).toBe(2);
-    expect(ownedPurchaseResponse.body[0].tickets).toEqual(
+    expect(ownedPurchaseResponse.body.items[0].tickets).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ status: TicketStatus.Valid, seatLabel: expect.any(String) }),
       ]),
     );
-    expect(filteredResponse.body).toEqual([]);
+    expect(filteredResponse.body.items).toEqual([]);
   });
 
   it('exige CUSTOMER para consultar Tickets próprios', async () => {

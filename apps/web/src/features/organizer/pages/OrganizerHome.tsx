@@ -17,20 +17,6 @@ interface OrganizerNavigationState {
   eventPublished?: boolean;
 }
 
-function getEventVenueDate(event: OrganizerEvent): string {
-  const dateParts = new Intl.DateTimeFormat('en-US', {
-    timeZone: event.venueTimeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date(event.startsAt));
-  const parts = Object.fromEntries(
-    dateParts.filter(({ type }) => type !== 'literal').map(({ type, value }) => [type, value]),
-  );
-
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 /**
  * Exibe a gestão inicial das sessões pertencentes ao organizador autenticado.
  */
@@ -39,13 +25,27 @@ export function OrganizerHome() {
   const navigate = useNavigate();
   const navigationState = location.state as OrganizerNavigationState | null;
   const [eventPublished] = useState(() => navigationState?.eventPublished === true);
-  const [titleQuery, setTitleQuery] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [appliedQuery, setAppliedQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'ALL'>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'recent' | 'oldest'>('recent');
-  const eventsQuery = useOrganizerEvents();
+
+  const filters = useMemo(
+    () => ({
+      query: appliedQuery || undefined,
+      category: categoryFilter === 'ALL' ? undefined : categoryFilter,
+      status: statusFilter === 'ALL' ? undefined : statusFilter,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      sort: sortOrder,
+    }),
+    [appliedQuery, categoryFilter, statusFilter, dateFrom, dateTo, sortOrder],
+  );
+
+  const eventsQuery = useOrganizerEvents(filters);
   const publishMutation = usePublishEvent();
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = eventsQuery;
   const isNextPageError = Boolean(
@@ -75,27 +75,8 @@ export function OrganizerHome() {
   const activeEvents = organizerEvents.filter((event) => event.isActive).length;
   const soldTickets = organizerEvents.reduce((total, event) => total + event.soldTickets, 0);
   const revenueCents = organizerEvents.reduce((total, event) => total + event.revenueCents, 0);
-  const normalizedTitleQuery = titleQuery.trim().toLocaleLowerCase('pt-BR');
-  const filteredEvents = organizerEvents.filter((event) => {
-    const eventDate = getEventVenueDate(event);
-
-    return (
-      (!normalizedTitleQuery ||
-        event.title.toLocaleLowerCase('pt-BR').includes(normalizedTitleQuery)) &&
-      (categoryFilter === 'ALL' || event.category === categoryFilter) &&
-      (statusFilter === 'ALL' || event.status === statusFilter) &&
-      (!dateFrom || eventDate >= dateFrom) &&
-      (!dateTo || eventDate <= dateTo)
-    );
-  });
-  const sortedFilteredEvents = [...filteredEvents].sort((a, b) => {
-    const timeA = new Date(a.createdAt).getTime();
-    const timeB = new Date(b.createdAt).getTime();
-
-    return sortOrder === 'oldest' ? timeA - timeB : timeB - timeA;
-  });
   const hasActiveFilters = Boolean(
-    titleQuery ||
+    appliedQuery ||
     categoryFilter !== 'ALL' ||
     statusFilter !== 'ALL' ||
     dateFrom ||
@@ -119,6 +100,16 @@ export function OrganizerHome() {
     } catch {
       // A mensagem é renderizada a partir do estado da mutation.
     }
+  }
+
+  function handleClearFilters(): void {
+    setSearchDraft('');
+    setAppliedQuery('');
+    setCategoryFilter('ALL');
+    setStatusFilter('ALL');
+    setDateFrom('');
+    setDateTo('');
+    setSortOrder('recent');
   }
 
   return (
@@ -181,16 +172,19 @@ export function OrganizerHome() {
         </div>
       )}
 
-      {eventsQuery.data && organizerEvents.length === 0 && !eventsQuery.isError && (
-        <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
-          <h2 className="font-heading text-2xl font-semibold">Crie seu primeiro evento</h2>
-          <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-            Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.
-          </p>
-        </section>
-      )}
+      {eventsQuery.data &&
+        organizerEvents.length === 0 &&
+        !hasActiveFilters &&
+        !eventsQuery.isError && (
+          <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
+            <h2 className="font-heading text-2xl font-semibold">Crie seu primeiro evento</h2>
+            <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
+              Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.
+            </p>
+          </section>
+        )}
 
-      {eventsQuery.data && organizerEvents.length > 0 && (
+      {eventsQuery.data && (organizerEvents.length > 0 || hasActiveFilters) && (
         <>
           <section
             aria-label="Filtros de eventos"
@@ -207,9 +201,15 @@ export function OrganizerHome() {
                 id="organizer-title"
                 type="search"
                 aria-label="Pesquisar por título"
-                value={titleQuery}
-                onChange={(event) => setTitleQuery(event.target.value)}
-                placeholder="Pesquisar por título"
+                value={searchDraft}
+                onChange={(event) => setSearchDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    setAppliedQuery(searchDraft.trim());
+                  }
+                }}
+                placeholder="Pesquisar por título (Enter para buscar)"
                 className="h-10 rounded-[4px] bg-white"
               />
             </div>
@@ -303,14 +303,7 @@ export function OrganizerHome() {
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => {
-                  setTitleQuery('');
-                  setCategoryFilter('ALL');
-                  setStatusFilter('ALL');
-                  setDateFrom('');
-                  setDateTo('');
-                  setSortOrder('recent');
-                }}
+                onClick={handleClearFilters}
                 className="text-left text-sm font-medium text-primary underline-offset-4 hover:underline sm:col-span-2 lg:col-span-6"
               >
                 Limpar filtros
@@ -318,7 +311,7 @@ export function OrganizerHome() {
             )}
           </section>
 
-          {filteredEvents.length === 0 ? (
+          {organizerEvents.length === 0 ? (
             <section
               aria-label="Nenhum evento encontrado"
               className="border border-dashed border-border bg-card px-6 py-12 text-center"
@@ -331,7 +324,7 @@ export function OrganizerHome() {
           ) : (
             <>
               <section aria-label="Eventos do organizador" className="grid gap-3">
-                {sortedFilteredEvents.map((event) => (
+                {organizerEvents.map((event) => (
                   <OrganizerEventCard
                     key={event.id}
                     event={event}

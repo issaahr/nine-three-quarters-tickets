@@ -66,6 +66,9 @@ export class OrganizerEventResponseDto {
   @ApiProperty({ minimum: 0 })
   public revenueCents!: number;
 
+  @ApiProperty({ type: String, format: 'date-time' })
+  public createdAt!: Date;
+
   /**
    * Constrói o contrato do painel sem expor relações ou metadados internos da entidade.
    *
@@ -94,6 +97,7 @@ export class OrganizerEventResponseDto {
       admissionMode: event.admissionMode,
       status: event.status,
       startsAt: event.startsAt,
+      createdAt: event.createdAt,
       priceCents: event.priceCents,
       isActive,
       soldTickets,

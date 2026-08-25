@@ -162,7 +162,7 @@ export class EventsService {
    * Recupera as ocorrências do organizador com o Venue e métricas calculadas em paginação server-side.
    *
    * @param organizerId - Identidade obtida da sessão autenticada.
-   * @param query - Parâmetros opcionais de paginação.
+   * @param query - Parâmetros opcionais e de paginação.
    * @returns Página de Events do organizador e indicador determinístico de hasMore.
    */
   public findByOrganizerId(
@@ -171,6 +171,12 @@ export class EventsService {
   ): Promise<OrganizerEventsPage> {
     return this.eventRepository.findForOrganizerWithStats(organizerId, {
       page: query?.page ?? 1,
+      query: query?.query,
+      category: query?.category,
+      status: query?.status,
+      dateFrom: query?.dateFrom,
+      dateTo: query?.dateTo,
+      sort: query?.sort ?? 'recent',
     });
   }
 
