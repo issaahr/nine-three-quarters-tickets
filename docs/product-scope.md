@@ -586,9 +586,9 @@ A tentativa pode falhar tecnicamente sem ser confundida com recusa do cartão.
 
 O usuário pode realizar nova tentativa quando a anterior estiver em estado terminal.
 
-### PIX simulado
+### PIX simulado (planejado, não implementado)
 
-PIX é uma evolução planejada da V1, implementada incrementalmente.
+PIX é uma evolução planejada, que foi despriorizada na V1 e implementada incrementalmente a partir de outras versões.
 
 Ele só deve aparecer na interface e no domínio executável depois que seu fluxo estiver efetivamente disponível.
 

@@ -1036,9 +1036,9 @@ Não é necessário introduzir job queue apenas para esse caso na V1.
 
 ---
 
-## 28. PIX simulado
+## 28. PIX simulado (planejado, não implementado)
 
-Quando implementado, PIX reutiliza a entidade Payment.
+O pagamento por PIX, atualmente no backlog despriorizado, reutiliza a entidade Payment.
 
 ```text
 method = PIX
@@ -1077,7 +1077,7 @@ Antes de aprovar:
 
 O frontend pode utilizar polling temporário via TanStack Query enquanto o Payment estiver PENDING.
 
-WebSocket não é necessário para PIX na V1.
+WebSocket não é necessário para PIX.
 
 ---
 
@@ -1551,7 +1551,7 @@ O único dado comercial editável é `priceCents`. A alteração afeta apenas no
 
 `priceCents` aceita `0` para eventos gratuitos e rejeita valores negativos. Um máximo alto protege a API contra payloads absurdos, não contra preços legítimos.
 
-No dashboard do organizador, “Ingressos vendidos” inclui Tickets válidos e cancelados. No card de cada Event, a capacidade é exibida como `disponíveis/total`: somente compras confirmadas ainda não canceladas ocupam inventário. “Eventos ativos” inclui todas as ocorrências publicadas cujo início ainda não chegou, inclusive gratuitas ou sem vendas. “Receita total” representa a receita efetiva: o valor das compras confirmadas menos os reembolsos concluídos.
+No dashboard do organizador, “Ingressos vendidos” inclui Tickets válidos e cancelados. No card de cada Event, a capacidade é exibida como `disponíveis/total`: somente compras confirmadas ainda não canceladas ocupam inventário. “Eventos ativos” inclui todas as ocorrências publicadas, inclusive as cujo início ainda não chegou, gratuitas ou sem vendas. “Receita total” representa a receita efetiva: o valor das compras confirmadas menos os reembolsos concluídos.
 
 ---
 

@@ -19,7 +19,7 @@
     "migration:run": "npm run typeorm -- migration:run -d src/database/dataSource.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/database/dataSource.ts",
     "migration:show": "npm run typeorm -- migration:show -d src/database/dataSource.ts",
-    "seed:events": "npm run typeorm -- --transpile-only -e src/database/seeds/seedEvents.ts"
+    "seed:events": "ts-node --transpile-only src/database/seeds/seedEvents.ts"
   },
   "dependencies": {
     "@js-temporal/polyfill": "0.5.1",
