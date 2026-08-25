@@ -169,9 +169,7 @@ describe('Events operáveis pela portaria', () => {
     expect(eventIds).not.toContain(draft.id);
     expect(eventIds).not.toContain(cancelled.id);
 
-    expect(
-      foundEvents.find(({ id }) => id === publishedPast.id),
-    ).not.toHaveProperty('organizerId');
+    expect(foundEvents.find(({ id }) => id === publishedPast.id)).not.toHaveProperty('organizerId');
   });
 
   it('suporta paginação server-side e cálculo de hasMore na listagem da portaria', async () => {
