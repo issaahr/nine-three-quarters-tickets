@@ -1,14 +1,20 @@
 <p align="center">
+
   <img src="docs/readme-banner.png" alt="9¾ Tickets" width="800" />
+
 </p>
 
 # 9¾ Tickets
 
-![React](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![TypeORM](https://img.shields.io/badge/TypeORM-0.3-E83524?logo=typeorm&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![React](https://img.shields.io/badge/React-19-149ECA?logo=react\&logoColor=white)
+
+![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs\&logoColor=white)
+
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql\&logoColor=white)
+
+![TypeORM](https://img.shields.io/badge/TypeORM-0.3-E83524?logo=typeorm\&logoColor=white)
+
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker\&logoColor=white)
 
 Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, reserva de assentos, entrada geral, checkout com pagamento simulado, emissão de Tickets com QR Code e validação na portaria.
 
@@ -20,50 +26,50 @@ Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, r
 | **API**                           | https://nine-three-quarters-tickets-1bf4ca494ed2.herokuapp.com/     |
 | **Documentação da API (Swagger)** | https://nine-three-quarters-tickets-1bf4ca494ed2.herokuapp.com/docs |
 
-O frontend está hospedado na Vercel e a API no Heroku. A separação permite deploy independente das aplicações e aproveita os créditos educacionais disponíveis.
+O frontend está hospedado na Vercel e a API no Heroku, permitindo deploy independente das aplicações.
 
 ## Funcionalidades
 
 ### CUSTOMER
 
-- descoberta de filmes e shows;
-- busca, filtros e ordenação de eventos;
-- eventos com assentos numerados;
-- eventos com entrada geral;
-- reserva temporária de inventário;
-- checkout com pagamento simulado;
-- emissão de Tickets individuais;
-- QR Code e credencial protegida contra adulteração;
-- consulta e cancelamento de compras;
-- visualização dos Tickets.
+* descoberta de filmes e shows;
+* busca, filtros e ordenação de eventos;
+* eventos com assentos numerados;
+* eventos com entrada geral;
+* reserva temporária de inventário;
+* checkout com pagamento simulado;
+* emissão de Tickets individuais;
+* QR Code e credencial protegida contra adulteração;
+* consulta e cancelamento de compras;
+* visualização dos Tickets.
 
 ### ORGANIZER
 
-- criação e publicação de Events;
-- configuração de inventário, capacidade e preços;
-- busca, filtros e ordenação dos próprios Events;
-- paginação server-side;
-- acompanhamento de inventário;
-- métricas agregadas de vendas e receita.
+* criação e publicação de Events;
+* configuração de inventário, capacidade e preços;
+* busca, filtros e ordenação dos próprios Events;
+* paginação server-side;
+* acompanhamento de inventário;
+* métricas agregadas de vendas e receita.
 
 ### GATE
 
-- operação vinculada a um Event;
-- leitura de QR Code;
-- validação manual por código;
-- confirmação de ingresso pertencente ao evento em operação;
-- controle de utilização do Ticket.
+* operação vinculada a um Event;
+* leitura de QR Code;
+* validação manual por código;
+* confirmação de ingresso pertencente ao evento em operação;
+* controle de utilização do Ticket.
 
 ### Integrações externas
 
-- TMDb para descoberta de filmes;
-- Ticketmaster Discovery API para descoberta de shows.
+* TMDb para descoberta de filmes;
+* Ticketmaster Discovery API para descoberta de shows.
 
 ## Principais decisões técnicas
 
 ### PostgreSQL como autoridade transacional
 
-O PostgreSQL é a autoridade de todo estado transacional do sistema. Reservas, inventário, pagamentos, check-in e cancelamentos não dependem de locks ou estado compartilhado em memória da aplicação.
+O PostgreSQL é a autoridade de todo estado transacional do sistema. Reservas, inventário, pagamentos, check-in e cancelamentos não dependem de estado ou locks mantidos em memória da aplicação.
 
 Operações críticas de concorrência utilizam transações, locks pessimistas e/ou escrita condicional no banco conforme a invariante protegida.
 
@@ -77,13 +83,13 @@ A aquisição de assentos é protegida no PostgreSQL para impedir que duas opera
 
 O backend é um monólito modular organizado por domínio. API e web são aplicações independentes dentro do mesmo repositório, cada uma com seu próprio `package.json`, lockfile, dependências e toolchain.
 
+Não existe um `package.json` compartilhado nem um workspace de package manager entre as aplicações. Essa independência foi mantida deliberadamente para evitar acoplamento desnecessário entre os ciclos de desenvolvimento e deploy.
+
 Microsserviços e pacotes compartilhados não foram introduzidos sem uma necessidade concreta: para a V1, a complexidade adicional não traria benefício proporcional ao escopo.
 
 ### Pagamento simulado
 
-A V1 utiliza `PaymentGateway` com `FakePaymentGateway`. O fluxo de pagamento é funcional para o domínio da aplicação, mas não movimenta dinheiro real.
-
-Não há integração financeira real, PIX, webhook ou Stripe na versão entregue. Essas possibilidades ficam como evolução futura.
+A V1 utiliza `PaymentGateway` com `FakePaymentGateway`. O fluxo de pagamento é funcional para o domínio da aplicação, mas não movimenta dinheiro real e não possui integração com PIX, Stripe ou webhooks financeiros.
 
 ### Providers externos isolados
 
@@ -93,12 +99,18 @@ As integrações com TMDb e Ticketmaster ficam atrás de providers próprios da 
 
 Os detalhes, invariantes e trade-offs estão documentados em:
 
-- [Escopo do produto](docs/product-scope.md)
-- [Escopo técnico e invariantes](docs/application-scope.md)
-- [Arquitetura](docs/architecture.md)
-- [Decisões técnicas](docs/technical-decisions.md)
-- [Registros de decisões arquiteturais (ADRs)](docs/adr/)
-- [Identidade visual](docs/ui-desicions.md)
+* [Escopo do produto](docs/product-scope.md)
+* [Escopo técnico e invariantes](docs/application-scope.md)
+* [Arquitetura](docs/architecture.md)
+* [Decisões técnicas](docs/technical-decisions.md)
+* [Registros de decisões arquiteturais (ADRs)](docs/adr/)
+* [Identidade visual](docs/ui-desicions.md)
+
+### Uso de IA
+
+A IA foi utilizada como ferramenta de apoio ao longo do desenvolvimento, incluindo análise, discussão de trade-offs, implementação assistida, revisão, testes e documentação.
+
+O processo, as ferramentas utilizadas e os artefatos produzidos estão detalhados em [docs/ai-usage.md](docs/ai-usage.md). As tasks e slices que orientaram a implementação também podem ser consultadas no [GitHub Projects](https://github.com/users/issaahr/projects/3).
 
 ## Stack
 
@@ -125,25 +137,33 @@ Há duas formas principais de executar o projeto:
 
 Para execução direta das aplicações:
 
-- Node.js 22.12 ou mais recente;
-- npm 10 ou mais recente.
+* Node.js 22.12 ou mais recente;
+* npm 10 ou mais recente.
 
 Para execução com Docker:
 
-- Docker;
-- Docker Compose.
+* Docker;
+* Docker Compose.
 
 ### 1. Configurar o ambiente
 
 Clone o repositório e crie o arquivo `.env` a partir do exemplo:
 
 ```bash
+git clone https://github.com/issaahr/nine-three-quarters-tickets.git
+
+cd nine-three-quarters-tickets
+
 cp .env.example .env
 ```
 
 No PowerShell:
 
 ```powershell
+git clone https://github.com/issaahr/nine-three-quarters-tickets.git
+
+cd nine-three-quarters-tickets
+
 Copy-Item .env.example .env
 ```
 
@@ -153,22 +173,21 @@ Configure todas as variáveis obrigatórias antes de iniciar a aplicação.
 
 ### 2. Instalar as dependências
 
-API e web são projetos independentes:
+API e web possuem instalações independentes:
 
 ```bash
 npm --prefix apps/api install
+
 npm --prefix apps/web install
 ```
-
-Cada aplicação possui seu próprio `package.json`, `package-lock.json`, dependências, configurações de TypeScript, ESLint e Prettier.
 
 ### 3. Executar com Docker
 
 O fluxo Docker completo sobe:
 
-- PostgreSQL;
-- API;
-- frontend.
+* PostgreSQL;
+* API;
+* frontend.
 
 ```bash
 docker compose up --build
@@ -176,20 +195,22 @@ docker compose up --build
 
 A aplicação ficará disponível em:
 
-- Web: http://localhost:5173
-- API: http://localhost:3000
-- Swagger: http://localhost:3000/docs
-- PostgreSQL: `localhost:5432`
+* Web: http://localhost:5173
+* API: http://localhost:3000
+* Swagger: http://localhost:3000/docs
+* PostgreSQL: `localhost:5432`
 
 A stack utiliza bind mounts e hot reload.
 
-O hot reload via Docker Compose é suportado em Linux e WSL2. No WSL2, mantenha o repositório no filesystem Linux, por exemplo:
+O hot reload via Docker Compose é validado em Linux e WSL2. No WSL2, mantenha o repositório no filesystem Linux, por exemplo:
 
 ```text
 /home/<usuario>/projetos/nine-three-quarters-tickets
 ```
 
 Evite manter o repositório em `/mnt/c`, pois isso pode prejudicar a propagação dos eventos de filesystem necessários ao hot reload dos containers.
+
+No Windows sem WSL2, o hot reload via bind mounts do Docker Compose não foi validado. Nesse ambiente, recomenda-se executar apenas o PostgreSQL via Docker e API/web nativamente com Node.js, conforme a opção abaixo.
 
 Para encerrar:
 
@@ -241,28 +262,6 @@ http://localhost:5173
 
 Nesse cenário, `DATABASE_URL` deve apontar para o PostgreSQL executado pelo Docker.
 
-### Windows sem WSL2
-
-O hot reload via bind mounts do Docker Compose **não é validado no Windows sem WSL2**.
-
-O fluxo recomendado nesse ambiente é:
-
-```bash
-docker compose up postgres
-```
-
-e, em seguida, executar API e web nativamente com Node.js:
-
-```bash
-npm --prefix apps/api run dev
-```
-
-```bash
-npm --prefix apps/web run dev
-```
-
-Esse fluxo não depende do hot reload dos containers.
-
 ## Configuração
 
 ### Variáveis obrigatórias
@@ -275,11 +274,13 @@ NODE_ENV=development
 DATABASE_URL=postgresql://...
 
 JWT_SECRET=...
+
 JWT_EXPIRES_IN_SECONDS=...
 
 TICKET_HMAC_SECRET=...
 
 RESERVATION_HOLD_DURATION_SECONDS=...
+
 PAYMENT_CARD_PENDING_TIMEOUT_SECONDS=...
 
 CORS_ORIGINS=http://localhost:5173
@@ -302,7 +303,7 @@ DEMO_USERS_PASSWORD=...
 
 `TICKET_HMAC_SECRET` é utilizado para proteger as credenciais dos Tickets.
 
-`TRUST_PROXY_HOPS` deve corresponder à quantidade de proxies confiáveis existente antes da API. Em execução direta, normalmente é `0`; no ambiente publicado no Heroku, é `1`.
+`TRUST_PROXY_HOPS` deve corresponder à quantidade de proxies confiáveis existente antes da API.
 
 As configurações de rate limiting definem as janelas e limites utilizados pela API para proteção contra abuso.
 
@@ -312,12 +313,17 @@ As credenciais de TMDb e Ticketmaster são utilizadas exclusivamente pelo backen
 
 ```env
 TMDB_API_READ_ACCESS_TOKEN=...
+
 TMDB_LANGUAGE=pt-BR
+
 TMDB_REQUEST_TIMEOUT_MS=...
+
 TMDB_POSTER_SIZE=w500
 
 TICKETMASTER_API_KEY=...
+
 TICKETMASTER_LOCALE=pt-BR
+
 TICKETMASTER_REQUEST_TIMEOUT_MS=...
 ```
 
@@ -327,6 +333,7 @@ As integrações externas não precisam ser utilizadas para executar a aplicaç�
 
 ```env
 VITE_API_URL=http://localhost:3000
+
 VITE_DEMO_USERS_PASSWORD=...
 ```
 
@@ -352,8 +359,8 @@ Alterações nessa configuração exigem reinicialização da API e atualizaçã
 
 O projeto utiliza duas APIs externas de catálogo:
 
-- TMDb para filmes;
-- Ticketmaster Discovery API para shows.
+* TMDb para filmes;
+* Ticketmaster Discovery API para shows.
 
 As credenciais ficam exclusivamente no backend.
 
@@ -375,7 +382,9 @@ Também podem ser configurados:
 
 ```env
 TMDB_LANGUAGE=pt-BR
+
 TMDB_REQUEST_TIMEOUT_MS=...
+
 TMDB_POSTER_SIZE=w500
 ```
 
@@ -395,6 +404,7 @@ Também podem ser configurados:
 
 ```env
 TICKETMASTER_LOCALE=pt-BR
+
 TICKETMASTER_REQUEST_TIMEOUT_MS=...
 ```
 
@@ -402,7 +412,9 @@ TICKETMASTER_REQUEST_TIMEOUT_MS=...
 
 Depois de iniciar a API, faça login com uma conta `ORGANIZER` e utilize os endpoints de catálogo pelo Swagger:
 
+```text
 http://localhost:3000/docs
+```
 
 Também é possível testar diretamente com `curl`:
 
@@ -455,6 +467,8 @@ Não utilize `synchronize` como substituto para migrations.
 
 ## Usuários de demonstração
 
+A aplicação publicada possui dados de demonstração preparados para facilitar a avaliação dos principais fluxos.
+
 A migration de seed cria quatro usuários demonstrativos:
 
 | E-mail                        | Role        |
@@ -476,19 +490,19 @@ Essa senha é compartilhada entre as contas demonstrativas apenas para facilitar
 
 **Essa é uma decisão deliberada de ambiente demonstrativo, não uma prática recomendada para uma aplicação real.** As contas possuem credenciais conhecidas e devem ser consideradas exclusivamente contas de avaliação. Não reutilize essa senha em contas reais ou ambientes que contenham dados sensíveis.
 
-Para que os atalhos de preenchimento rápido da tela de login funcionem, configure o frontend com a mesma senha:
+Para habilitar os atalhos de preenchimento rápido da tela de login, configure o frontend com a mesma senha:
 
 ```env
 VITE_DEMO_USERS_PASSWORD=mesma_senha_de_demo
 ```
 
-`VITE_DEMO_USERS_PASSWORD` é pública por fazer parte do bundle do frontend. Ela existe somente para facilitar a avaliação das contas demonstrativas.
+`VITE_DEMO_USERS_PASSWORD` é pública por fazer parte do bundle do frontend e existe somente para facilitar a avaliação das contas demonstrativas.
 
 ### Eventos de demonstração
 
 Eventos publicados de exemplo, incluindo filmes, shows e casos cancelados, são criados por uma seed separada das migrations.
 
-Com o organizador demo já existente:
+A seed deve ser executada manualmente após a criação do organizador demo:
 
 ```bash
 docker compose exec api npm run seed:events
@@ -497,6 +511,8 @@ docker compose exec api npm run seed:events
 A seed é idempotente: executar novamente não duplica eventos identificados pela combinação de fonte de catálogo e ID externo.
 
 A execução é bloqueada quando `NODE_ENV=production`.
+
+No ambiente publicado, os dados de demonstração utilizados para avaliação foram previamente provisionados.
 
 ## Autenticação
 
@@ -538,10 +554,15 @@ As aplicações são independentes.
 
 ```bash
 npm --prefix apps/api run dev
+
 npm --prefix apps/api run build
+
 npm --prefix apps/api run start
+
 npm --prefix apps/api run lint
+
 npm --prefix apps/api run format
+
 npm --prefix apps/api run format:check
 ```
 
@@ -549,10 +570,15 @@ npm --prefix apps/api run format:check
 
 ```bash
 npm --prefix apps/web run dev
+
 npm --prefix apps/web run build
+
 npm --prefix apps/web run start
+
 npm --prefix apps/web run lint
+
 npm --prefix apps/web run format
+
 npm --prefix apps/web run format:check
 ```
 
@@ -564,6 +590,7 @@ Não existe um script único de npm para iniciar web e API juntas. Essa coordena
 
 ```bash
 npm --prefix apps/api test
+
 npm --prefix apps/api run test:typecheck
 ```
 
@@ -589,12 +616,12 @@ Os testes do frontend exercitam autenticação, roteamento, cache do TanStack Qu
 
 O GitHub Actions valida:
 
-- frontend;
-- API;
-- PostgreSQL;
-- testes;
-- typecheck;
-- builds production dos containers.
+* frontend;
+* API;
+* PostgreSQL;
+* testes;
+* typecheck;
+* builds production dos containers.
 
 Os jobs utilizam os lockfiles independentes de cada aplicação e configuração determinística específica para testes.
 
@@ -630,27 +657,31 @@ O frontend é publicado na Vercel através da integração nativa da Vercel com 
 
 ## Limitações conhecidas
 
-- **Cancelamento em massa de Event:** o cancelamento processa as reservas do evento em uma única transação. Com volumes muito altos, essa operação pode se tornar longa;
-- **Atraso visual após expiração de hold:** a liberação do assento é refletida visualmente por reconciliação passiva, atualmente com polling de 15 segundos. O assento já está disponível para uma nova reserva antes da atualização visual;
-- **Cookies HttpOnly em contextos cross-site:** navegadores com bloqueio agressivo de cookies cross-site podem impedir a persistência da sessão quando web e API estão hospedadas em domínios diferentes;
-- **Locais sem CRUD:** não existe cadastro ou edição de Venues pela interface. Os locais utilizados na V1 são provisionados por seed/migration;
-- **Rate limiting não distribuído:** a proteção contra abuso funciona por instância da API e não possui coordenação entre múltiplas instâncias;
-- **Providers externos:** ainda não existe uma estratégia distribuída de retry, cache ou circuit breaker para as integrações externas.
+* **Cancelamento em massa de Event:** o cancelamento processa as reservas do evento em uma única transação. Com volumes muito altos, essa operação pode se tornar longa;
+
+* **Atraso visual após expiração de hold:** a liberação do assento é refletida visualmente por reconciliação passiva, atualmente com polling de 15 segundos. O assento já está disponível para uma nova reserva antes da atualização visual;
+
+* **Cookies HttpOnly em contextos cross-site:** navegadores com bloqueio agressivo de cookies cross-site podem impedir a persistência da sessão quando web e API estão hospedadas em domínios diferentes;
+
+* **Locais sem CRUD:** não existe cadastro ou edição de Venues pela interface. Os locais utilizados na V1 são provisionados por seed/migration;
+
+* **Rate limiting não distribuído:** a proteção contra abuso funciona por instância da API e não possui coordenação entre múltiplas instâncias;
+
+* **Providers externos:** ainda não existe uma estratégia distribuída de retry, cache ou circuit breaker para as integrações externas.
 
 ## Fora do escopo da V1
 
 Algumas possibilidades foram avaliadas, mas foram deixadas de fora deliberadamente para manter o escopo e a complexidade da V1 sob controle:
 
-- integração com gateway de pagamento real;
-- PIX e pagamentos financeiros reais;
-- webhooks financeiros;
-- envio de e-mails transacionais;
-- processamento assíncrono de cancelamentos e reembolsos;
-- processamento assíncrono de notificações;
-- cadastro e edição de Venues;
-- edição de dados cadastrais de usuários;
-- transferência de titularidade de Tickets;
-- arquitetura baseada em microsserviços.
+* integração com gateway de pagamento real;
+* PIX e pagamentos financeiros reais;
+* webhooks financeiros;
+* envio de e-mails transacionais;
+* processamento assíncrono de cancelamentos e reembolsos;
+* processamento assíncrono de notificações;
+* edição de dados cadastrais de usuários;
+* transferência de titularidade de Tickets;
+* arquitetura baseada em microsserviços.
 
 Esses itens podem ser considerados evoluções futuras caso requisitos reais justifiquem a complexidade adicional.
 
@@ -676,10 +707,10 @@ O notebook possui grounding restrito aos arquivos de `docs/` e a este README, se
 
 Perguntas de partida sugeridas:
 
-- Como o sistema garante que o mesmo assento nunca é vendido duas vezes?
-- Como funciona a credencial do ingresso e por que ela não pode ser forjada?
-- O que acontece se o pagamento falhar depois que o hold do assento já expirou?
-- Por que a portaria opera vinculada a um evento por sessão, e não globalmente?
+* Como o sistema garante que o mesmo assento nunca é vendido duas vezes?
+* Como funciona a credencial do ingresso e por que ela não pode ser forjada?
+* O que acontece se o pagamento falhar depois que o hold do assento já expirou?
+* Por que a portaria opera vinculada a um evento por sessão, e não globalmente?
 
 ## Credits
 
