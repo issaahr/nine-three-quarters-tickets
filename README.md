@@ -663,7 +663,9 @@ O frontend é publicado na Vercel através da integração nativa da Vercel com 
 
 * **Rate limiting não distribuído:** a proteção contra abuso funciona por instância da API e não possui coordenação entre múltiplas instâncias;
 
-* **Providers externos:** ainda não existe uma estratégia distribuída de retry, cache ou circuit breaker para as integrações externas.
+* **Providers externos:** ainda não existe uma estratégia distribuída de retry, cache ou circuit breaker para as integrações externas;
+
+* **Câmera em Firefox/Linux:** em determinados ambientes Linux, o Firefox pode rejeitar o acesso à câmera via `getUserMedia`; a validação manual por código permanece disponível.
 
 ## Fora do escopo da V1
 
