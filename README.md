@@ -1,20 +1,16 @@
 <p align="center">
-
   <img src="docs/readme-banner.png" alt="9¾ Tickets" width="800" />
-
 </p>
 
 # 9¾ Tickets
 
-![React](https://img.shields.io/badge/React-19-149ECA?logo=react\&logoColor=white)
-
-![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs\&logoColor=white)
-
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql\&logoColor=white)
-
-![TypeORM](https://img.shields.io/badge/TypeORM-0.3-E83524?logo=typeorm\&logoColor=white)
-
-![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker\&logoColor=white)
+<p align="center">
+  <img src="https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white" alt="React 19" />
+  <img src="https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white" alt="NestJS 11" />
+  <img src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL 17" />
+  <img src="https://img.shields.io/badge/TypeORM-0.3-E83524?logo=typeorm&logoColor=white" alt="TypeORM 0.3" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
+</p>
 
 Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, reserva de assentos, entrada geral, checkout com pagamento simulado, emissão de Tickets com QR Code e validação na portaria.
 
