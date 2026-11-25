@@ -16,6 +16,8 @@ Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, r
 
 ## Aplicação publicada
 
+[Experimentar 9¾ Tickets sem conta](https://nine-three-quarters-tickets.vercel.app/demo)
+
 |                                   |                                                                     |
 | --------------------------------- | ------------------------------------------------------------------- |
 | **Web**                           | https://nine-three-quarters-tickets.vercel.app/                     |
@@ -329,13 +331,9 @@ As integrações externas não precisam ser utilizadas para executar a aplicaç�
 
 ```env
 VITE_API_URL=http://localhost:3000
-
-VITE_DEMO_USERS_PASSWORD=...
 ```
 
 Variáveis com prefixo `VITE_` são incorporadas ao bundle e podem ser inspecionadas pelo navegador. **Nunca coloque segredos em variáveis `VITE_`.**
-
-`VITE_DEMO_USERS_PASSWORD` é intencionalmente pública porque serve apenas para preencher automaticamente a senha das contas demonstrativas na interface.
 
 A configuração do frontend também utiliza `PUBLIC_SIGNUP_ENABLED`, que não contém informação sensível e controla a apresentação do fluxo de cadastro. A API continua sendo a autoridade dessa configuração.
 
@@ -461,38 +459,15 @@ Não utilize `synchronize` como substituto para migrations.
 
 **Migrations não sofrem rollback automático em produção.** O rollback do deploy restaura a imagem da aplicação, mas não desfaz alterações já aplicadas ao banco. Consulte [Integração contínua e deploy](#integração-contínua-e-deploy) para o comportamento completo.
 
-## Usuários de demonstração
+## Demonstração pública
 
-A aplicação publicada possui dados de demonstração preparados para facilitar a avaliação dos principais fluxos.
+Em `/demo`, acesse o catálogo ou visite as telas do organizador e da portaria. As visitas funcionam sem conta e permitem consultar eventos publicados no catálogo. Criar ou gerenciar eventos, consultar catálogos externos e validar ingressos exige login com o papel correspondente.
 
-A migration de seed cria quatro usuários demonstrativos:
+O [catálogo público](https://nine-three-quarters-tickets.vercel.app/events) também pode ser consultado sem conta. Para testar a compra pelo fluxo completo da aplicação, use uma conta de cliente quando o cadastro público estiver habilitado.
 
-| E-mail                        | Role        |
-| ----------------------------- | ----------- |
-| `organizer.demo@ntq.local`    | `ORGANIZER` |
-| `customer.one.demo@ntq.local` | `CUSTOMER`  |
-| `customer.two.demo@ntq.local` | `CUSTOMER`  |
-| `gate.demo@ntq.local`         | `GATE`      |
+### Dados locais e testes
 
-Todos utilizam **a mesma senha definida em `DEMO_USERS_PASSWORD`**.
-
-Para a avaliação do projeto publicado, a senha é:
-
-```text
-ypurp7Mkhb350taZij
-```
-
-Essa senha é compartilhada entre as contas demonstrativas apenas para facilitar a avaliação do projeto e permitir que o avaliador entre rapidamente nos diferentes perfis.
-
-**Essa é uma decisão deliberada de ambiente demonstrativo, não uma prática recomendada para uma aplicação real.** As contas possuem credenciais conhecidas e devem ser consideradas exclusivamente contas de avaliação. Não reutilize essa senha em contas reais ou ambientes que contenham dados sensíveis.
-
-Para habilitar os atalhos de preenchimento rápido da tela de login, configure o frontend com a mesma senha:
-
-```env
-VITE_DEMO_USERS_PASSWORD=mesma_senha_de_demo
-```
-
-`VITE_DEMO_USERS_PASSWORD` é pública por fazer parte do bundle do frontend e existe somente para facilitar a avaliação das contas demonstrativas.
+A migration histórica cria usuários de desenvolvimento e teste a partir de `DEMO_USERS_PASSWORD`. Configure um valor privado para seu ambiente local. A rota `/demo` funciona independentemente desse seed.
 
 ### Eventos de demonstração
 

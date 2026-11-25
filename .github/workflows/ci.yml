@@ -25,7 +25,6 @@ jobs:
         working-directory: apps/web
     env:
       VITE_API_URL: http://localhost:3000
-      VITE_DEMO_USERS_PASSWORD: demo-password
       PUBLIC_SIGNUP_ENABLED: "false"
 
     steps:
@@ -158,7 +157,6 @@ jobs:
           docker build
           --target production
           --build-arg VITE_API_URL=http://localhost:3000
-          --build-arg VITE_DEMO_USERS_PASSWORD=demo-password
           --build-arg PUBLIC_SIGNUP_ENABLED=false
           --tag ntq-web:ci
           apps/web

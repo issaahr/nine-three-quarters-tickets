@@ -2,9 +2,14 @@ import { LogOut } from 'lucide-react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useAuth } from '../../auth/hooks';
 import { UserRole } from '../../auth/types';
-import { BrandLink } from '../../navigation/components/BrandLink';
+import {
+  SiteHeader,
+  SiteHeaderNavLink,
+  siteHeaderActionClassName,
+} from '../../navigation/components/SiteHeader';
 import { getRoleNavigation } from '../../navigation/roleNavigation';
 
 /** Mantém o catálogo público disponível enquanto a sessão opcional é restaurada em segundo plano. */
@@ -26,72 +31,61 @@ export function EventsLayout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="bg-secondary-foreground">
-        <div className="flex min-h-[68px] w-full flex-wrap items-center justify-between gap-x-5 gap-y-3 px-4 py-3 sm:px-6 lg:px-12 2xl:px-16">
-          <BrandLink to="/events" ariaLabel="9¾ Tickets — catálogo de eventos" />
-
-          <div className="flex items-center gap-2 sm:gap-5">
-            {user && user.role !== UserRole.Customer && (
-              <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-border sm:inline">
-                {navigation?.label}
-              </span>
+      <SiteHeader brandPath="/events" brandLabel="9¾ Tickets — catálogo de eventos">
+        {user && user.role !== UserRole.Customer && (
+          <span className="hidden text-[10px] font-medium uppercase tracking-[1.5px] text-border sm:inline">
+            {navigation?.label}
+          </span>
+        )}
+        {user && (
+          <nav aria-label="Navegação principal" className="flex items-center">
+            <SiteHeaderNavLink
+              to={areaPath}
+              end
+              className={hasDedicatedArea ? undefined : 'hidden sm:inline-flex'}
+            >
+              {hasDedicatedArea ? navigation?.homeLabel : 'Eventos'}
+            </SiteHeaderNavLink>
+            {user.role === UserRole.Customer && (
+              <SiteHeaderNavLink to="/customer/tickets">Meus ingressos</SiteHeaderNavLink>
             )}
-            <nav aria-label="Navegação principal">
-              {user && (
-                <NavLink
-                  to={hasDedicatedArea ? areaPath : '/events'}
-                  end
-                  className={({ isActive }) =>
-                    `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${!hasDedicatedArea ? 'hidden sm:inline-block ' : ''}${
-                      isActive
-                        ? 'text-primary-foreground'
-                        : 'text-surface-dark-subtle hover:text-primary-foreground'
-                    }`
-                  }
-                >
-                  {hasDedicatedArea ? navigation?.homeLabel : 'Eventos'}
-                </NavLink>
-              )}
-              {user?.role === UserRole.Customer && (
-                <NavLink
-                  to="/customer/tickets"
-                  className={({ isActive }) =>
-                    `rounded-[4px] px-2.5 py-2 text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary ${
-                      isActive
-                        ? 'text-primary-foreground'
-                        : 'text-surface-dark-subtle hover:text-primary-foreground'
-                    }`
-                  }
-                >
-                  Meus ingressos
-                </NavLink>
-              )}
-            </nav>
+          </nav>
+        )}
 
-            {user ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isLoggingOut}
-                onClick={() => void handleLogout()}
-                className="h-8 rounded-[4px] border-brass-border bg-transparent px-3 text-[12px] text-primary-foreground hover:bg-surface-dark-border hover:text-primary-foreground"
-              >
-                <LogOut aria-hidden="true" />
-                <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
-              </Button>
-            ) : isLoading ? (
-              <span className="block h-6 w-16 animate-pulse rounded-[4px] bg-border" />
-            ) : (
-              <NavLink
-                to="/login"
-                className="rounded-[4px] border border-brass-border px-3 py-2 text-[12px] text-primary-foreground transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
-              >
-                Entrar
-              </NavLink>
+        {user === null && !isLoading && (
+          <NavLink
+            to="/demo"
+            className={cn(
+              siteHeaderActionClassName,
+              'border-secondary bg-secondary font-semibold text-secondary-foreground hover:bg-primary-foreground hover:text-secondary-foreground',
             )}
-          </div>
-        </div>
-      </header>
+          >
+            Experimentar
+          </NavLink>
+        )}
+
+        {user ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isLoggingOut}
+            onClick={() => void handleLogout()}
+            className={siteHeaderActionClassName}
+          >
+            <LogOut aria-hidden="true" />
+            <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
+          </Button>
+        ) : isLoading ? (
+          <span
+            className="block h-9 w-16 animate-pulse rounded-[4px] bg-border"
+            aria-hidden="true"
+          />
+        ) : (
+          <NavLink to="/login" className={siteHeaderActionClassName}>
+            Entrar
+          </NavLink>
+        )}
+      </SiteHeader>
 
       {logoutError && (
         <div

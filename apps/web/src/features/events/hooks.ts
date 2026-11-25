@@ -8,11 +8,12 @@ const seatMapPassiveReconciliationIntervalMilliseconds = 15_000;
 /**
  * Mantém filtros e páginas na mesma chave remota para reiniciar o catálogo a cada nova consulta.
  */
-export function useEventDiscovery(filters: EventDiscoveryFilters) {
+export function useEventDiscovery(filters: EventDiscoveryFilters, enabled = true) {
   return useInfiniteQuery({
     queryKey: ['events', 'discovery', filters],
     queryFn: ({ pageParam }) => fetchEventDiscovery(filters, pageParam),
     initialPageParam: 1,
+    enabled,
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     retry: false,
   });

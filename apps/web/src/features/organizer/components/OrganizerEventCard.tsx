@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
+import { EventDiscoveryItem } from '../../events/types';
 import { EventStatus, OrganizerEvent } from '../types';
 
 const statusLabels: Record<EventStatus, string> = {
@@ -17,19 +18,25 @@ const statusClassNames: Record<EventStatus, string> = {
   [EventStatus.Cancelled]: 'bg-destructive/10 text-destructive',
 };
 interface OrganizerEventCardProps {
-  event: OrganizerEvent;
-  onPublish: (eventId: string) => void;
-  isPublishing: boolean;
+  event: EventDiscoveryItem | OrganizerEvent;
+  detailsPath?: string;
+  onPublish?: (eventId: string) => void;
+  isPublishing?: boolean;
 }
 
 /** Apresenta o resumo navegável de uma ocorrência do organizador. */
-export function OrganizerEventCard({ event, onPublish, isPublishing }: OrganizerEventCardProps) {
-  const isDraft = event.status === EventStatus.Draft;
-  const showSales = event.status !== EventStatus.Cancelled;
+export function OrganizerEventCard({
+  event,
+  detailsPath = '/organizer/events',
+  onPublish,
+  isPublishing,
+}: OrganizerEventCardProps) {
+  const operationalEvent = 'status' in event ? event : undefined;
+  const status = operationalEvent?.status ?? EventStatus.Published;
   return (
     <article className="relative border border-border-panel bg-white p-4 [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_10px),calc(100%_-_10px)_100%,0_100%)]">
       <Link
-        to={`/organizer/events/${event.id}`}
+        to={`${detailsPath}/${encodeURIComponent(event.id)}`}
         className="grid grid-cols-[64px_minmax(0,1fr)] gap-4 text-inherit no-underline sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:items-center"
       >
         {event.imageUrl ? (
@@ -57,12 +64,12 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
           </p>
         </div>
         <div className="col-span-2 flex items-center justify-end gap-5 border-t border-border-subtle pt-3 sm:col-span-1 sm:border-0 sm:pt-0">
-          {showSales && (
+          {operationalEvent && status !== EventStatus.Cancelled && (
             <div className="text-right">
               <p className="m-0 font-mono text-sm font-medium">
-                {event.availableTickets === null
+                {operationalEvent.availableTickets === null
                   ? '—'
-                  : `${event.availableTickets}/${event.inventoryTotal}`}
+                  : `${operationalEvent.availableTickets}/${operationalEvent.inventoryTotal}`}
               </p>
               <p className="m-0 text-[10px] text-muted-foreground">disponíveis</p>
             </div>
@@ -78,12 +85,12 @@ export function OrganizerEventCard({ event, onPublish, isPublishing }: Organizer
       <span
         className={cn(
           'absolute right-4 top-4 inline-flex rounded-[2px] px-2 py-1 text-[10px] font-semibold uppercase tracking-[1px]',
-          statusClassNames[event.status],
+          statusClassNames[status],
         )}
       >
-        {statusLabels[event.status]}
+        {statusLabels[status]}
       </span>
-      {isDraft && (
+      {onPublish && status === EventStatus.Draft && (
         <div className="mt-3 flex justify-end">
           <Button
             type="button"

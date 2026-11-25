@@ -4,11 +4,10 @@ interface AuthPageLayoutProps {
   title: string;
   description: string;
   children: ReactNode;
-  footer?: ReactNode;
 }
 
 /** Compartilha apenas a moldura visual estável das páginas públicas de autenticação. */
-export function AuthPageLayout({ title, description, children, footer }: AuthPageLayoutProps) {
+export function AuthPageLayout({ title, description, children }: AuthPageLayoutProps) {
   return (
     <div className="flex flex-col md:flex-row min-h-screen font-sans bg-secondary-foreground md:bg-transparent justify-center md:justify-start">
       <div className="md:flex-1 bg-secondary-foreground pt-[32px] md:pt-[48px] px-[24px] pb-[24px] md:p-[64px] flex flex-col justify-start md:justify-center relative overflow-hidden md:min-h-[300px] shrink-0">
@@ -56,7 +55,6 @@ export function AuthPageLayout({ title, description, children, footer }: AuthPag
             </p>
             {children}
           </div>
-          {footer}
         </div>
       </div>
     </div>

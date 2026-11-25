@@ -6,29 +6,36 @@ import { Link, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatEventDateTime, formatEventPrice } from '../../events/eventPresentation';
+import { useEventDetail } from '../../events/hooks';
 import { useCancelOrganizerEvent, useOrganizerEvents, useUpdateEventPrice } from '../hooks';
 import { EventStatus } from '../types';
 
 const maximumPriceCents = 100_000_000;
 
-/** Exibe a ocorrência para gestão, sem expor o mapa de assentos do cliente. */
-export function OrganizerEventDetailPage() {
+export function OrganizerEventDetailPage({ readOnly = false }: { readOnly?: boolean }) {
   const { eventId } = useParams();
-  const eventsQuery = useOrganizerEvents();
+  const eventsQuery = useOrganizerEvents(undefined, !readOnly);
+  const publicEventQuery = useEventDetail(readOnly ? eventId : undefined);
   const updatePriceMutation = useUpdateEventPrice();
   const cancelMutation = useCancelOrganizerEvent();
-  const event = eventsQuery.data?.pages
+  const operationalEvent = eventsQuery.data?.pages
     .flatMap((page) => (Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : []))
     .find((item) => item.id === eventId);
+  const event = readOnly ? publicEventQuery.data : operationalEvent;
   const [editingPrice, setEditingPrice] = useState(false);
   const [priceCents, setPriceCents] = useState<number | undefined>();
   const [confirmCancel, setConfirmCancel] = useState(false);
 
-  if (eventsQuery.isLoading)
+  if (readOnly ? publicEventQuery.isLoading : eventsQuery.isLoading)
     return <main className="mx-auto max-w-5xl px-4 py-12">Carregando evento...</main>;
-  if (!event) return <main className="mx-auto max-w-5xl px-4 py-12">Evento não encontrado.</main>;
+  if (
+    !event ||
+    (readOnly && (publicEventQuery.isError || event.status !== EventStatus.Published))
+  ) {
+    return <main className="mx-auto max-w-5xl px-4 py-12">Evento não encontrado.</main>;
+  }
 
-  const canEdit = event.status !== EventStatus.Cancelled;
+  const canEdit = !readOnly && event.status !== EventStatus.Cancelled;
   const startEditing = (): void => {
     setPriceCents(event.priceCents);
     setEditingPrice(true);
@@ -44,7 +51,7 @@ export function OrganizerEventDetailPage() {
   return (
     <main className="mx-auto min-h-[calc(100vh-68px)] w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
       <Link
-        to="/organizer"
+        to={readOnly ? '/demo/organizer' : '/organizer'}
         className="mb-7 inline-flex items-center gap-2 text-sm font-medium text-primary no-underline hover:underline"
       >
         <ArrowLeft className="size-4" />
@@ -76,7 +83,7 @@ export function OrganizerEventDetailPage() {
               Preço do ingresso
             </p>
             <div className="mt-1 flex items-center gap-3">
-              {editingPrice ? (
+              {canEdit && editingPrice ? (
                 <NumericFormat
                   aria-label="Preço do ingresso"
                   customInput={Input}
@@ -113,7 +120,7 @@ export function OrganizerEventDetailPage() {
                   <Pencil />
                 </Button>
               )}
-              {editingPrice && (
+              {canEdit && editingPrice && (
                 <Button
                   type="button"
                   disabled={
@@ -143,7 +150,7 @@ export function OrganizerEventDetailPage() {
           )}
         </div>
       </section>
-      {confirmCancel && (
+      {canEdit && confirmCancel && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           role="dialog"
