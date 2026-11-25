@@ -19,11 +19,12 @@ import { OrganizerEventsFilters } from './types';
 export const organizerEventsQueryKey = ['organizer', 'events'] as const;
 const venuesQueryKey = ['venues'] as const;
 
-export function useOrganizerEvents(filters?: OrganizerEventsFilters) {
+export function useOrganizerEvents(filters?: OrganizerEventsFilters, enabled = true) {
   return useInfiniteQuery({
     queryKey: ['organizer', 'events', filters],
     queryFn: ({ pageParam }) => fetchOrganizerEvents({ ...filters, page: pageParam }),
     initialPageParam: 1,
+    enabled,
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     retry: false,
   });

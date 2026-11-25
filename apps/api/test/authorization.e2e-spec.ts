@@ -8,6 +8,10 @@ import { Application } from '../src/application';
 import { applicationConfig } from '../src/config/applicationConfig';
 import { Auth } from '../src/modules/auth/decorators/auth.decorator';
 import { Roles } from '../src/modules/auth/decorators/roles.decorator';
+import {
+  movieCatalogProviderToken,
+  showCatalogProviderToken,
+} from '../src/modules/catalog/catalog.constants';
 import { UserRole } from '../src/modules/users/userRole.enum';
 
 @Controller('test/authorization')
@@ -39,7 +43,12 @@ describe('Autenticação e autorização', () => {
     const testingModule = await Test.createTestingModule({
       imports: [AppModule],
       controllers: [AuthorizationTestController],
-    }).compile();
+    })
+      .overrideProvider(movieCatalogProviderToken)
+      .useValue({})
+      .overrideProvider(showCatalogProviderToken)
+      .useValue({})
+      .compile();
 
     app = testingModule.createNestApplication();
     new Application().configure(app);
@@ -163,5 +172,55 @@ describe('Autenticação e autorização', () => {
       .get('/test/authorization/gate')
       .set('Cookie', cookie)
       .expect(200, { authorized: true });
+  });
+
+  describe('rotas reais de operações da demonstração', () => {
+    const eventId = '25c9813c-6909-4b7c-bd75-8bc0090a33a0';
+    const endpoints = [
+      { method: 'post', path: '/events/movies', role: UserRole.Organizer },
+      { method: 'post', path: '/events/shows', role: UserRole.Organizer },
+      { method: 'get', path: '/catalog/movies?query=Duna', role: UserRole.Organizer },
+      { method: 'get', path: '/catalog/movies/popular', role: UserRole.Organizer },
+      { method: 'get', path: '/catalog/attractions?query=Jazz', role: UserRole.Organizer },
+      { method: 'get', path: '/catalog/attractions/popular', role: UserRole.Organizer },
+      { method: 'post', path: `/gate/events/${eventId}/check-in`, role: UserRole.Gate },
+      { method: 'post', path: `/gate/events/${eventId}/check-in/manual-code`, role: UserRole.Gate },
+    ] as const;
+    const cookies = new Map<UserRole, string>();
+
+    beforeAll(async () => {
+      cookies.set(UserRole.Customer, await login('customer.one.demo@ntq.local'));
+      cookies.set(UserRole.Organizer, await login('organizer.demo@ntq.local'));
+      cookies.set(UserRole.Gate, await login('gate.demo@ntq.local'));
+    });
+
+    it.each(endpoints)(
+      '$method $path exige cookie válido e papel $role',
+      async ({ method, path, role }) => {
+        const send = () => request(app.getHttpServer())[method](path);
+        const tokenClaims = { sub: eventId, role };
+        const expiredToken = await jwtService.signAsync(tokenClaims, { expiresIn: -1 });
+        const invalidSignatureToken = await jwtService.signAsync(tokenClaims, {
+          secret: 'test-only-incorrect-signing-key',
+        });
+        const validCookie = cookies.get(role)!;
+        const tokenFromCookie = validCookie.slice(validCookie.indexOf('=') + 1);
+
+        const anonymousResponse = await send().expect(401);
+        expect(anonymousResponse.body.code).toBe('AUTHENTICATION_REQUIRED');
+        await send().set('Authorization', `Bearer ${tokenFromCookie}`).expect(401);
+
+        for (const token of ['invalid-token', expiredToken, invalidSignatureToken]) {
+          await send().set('Cookie', `${applicationConfig.auth.cookie.name}=${token}`).expect(401);
+        }
+
+        for (const [otherRole, cookie] of cookies) {
+          if (otherRole !== role) {
+            const forbiddenResponse = await send().set('Cookie', cookie).expect(403);
+            expect(forbiddenResponse.body.code).toBe('FORBIDDEN_ROLE');
+          }
+        }
+      },
+    );
   });
 });

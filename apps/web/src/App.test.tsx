@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { SessionUser, UserRole } from './features/auth/types';
+import { AdmissionMode, EventCategory, EventStatus } from './features/events/types';
 import { getRoleNavigation } from './features/navigation/roleNavigation';
 import { server } from './test/server';
 
@@ -47,6 +48,99 @@ beforeEach(() => {
   );
 });
 
+describe('demonstração pública', () => {
+  const publishedEvent = {
+    id: 'published-event',
+    title: 'Evento retornado pela API',
+    genres: [],
+    category: EventCategory.Movie,
+    admissionMode: AdmissionMode.Seated,
+    startsAt: '2099-11-25T20:00:00.000Z',
+    priceCents: 3000,
+    venueName: 'Cinema Central',
+    venueCity: 'Fortaleza',
+    venueTimeZone: 'America/Fortaleza',
+  };
+
+  it('reaproveita as telas de organizador e portaria com os endpoints públicos', async () => {
+    server.use(
+      http.get(`${apiUrl}/events`, () =>
+        HttpResponse.json({ items: [publishedEvent], page: 1, hasMore: false }),
+      ),
+      http.get(`${apiUrl}/events/${publishedEvent.id}`, () =>
+        HttpResponse.json({ ...publishedEvent, status: EventStatus.Published, isPast: false }),
+      ),
+    );
+    const user = userEvent.setup();
+    const requests: string[] = [];
+    const onRequest = ({ request }: { request: Request }) => {
+      requests.push(`${request.method} ${new URL(request.url).pathname}`);
+    };
+    server.events.on('request:start', onRequest);
+
+    try {
+      renderApp('/demo');
+      expect(screen.getByRole('link', { name: /^Cliente/ })).toHaveAttribute('href', '/events');
+
+      await user.click(screen.getByRole('link', { name: /^Organizador/ }));
+      expect(
+        await screen.findByRole('heading', { name: 'Eventos publicados' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Criar evento' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Receita total')).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('link', { name: /Evento retornado pela API/ }));
+      expect(
+        await screen.findByRole('heading', { name: publishedEvent.title }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Editar preço' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Cancelar evento' })).not.toBeInTheDocument();
+
+      await user.click(screen.getByRole('link', { name: 'Voltar à demonstração' }));
+      await user.click(screen.getByRole('link', { name: /^Portaria/ }));
+      await user.click(await screen.findByRole('link', { name: /Evento retornado pela API/ }));
+      expect(
+        await screen.findByRole('heading', { name: publishedEvent.title }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Entrar na operação' })).toHaveAttribute(
+        'href',
+        '/login',
+      );
+      expect(screen.queryByLabelText('Código manual')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Validar ingresso' })).not.toBeInTheDocument();
+
+      expect(new Set(requests)).toEqual(
+        new Set(['GET /events', `GET /events/${publishedEvent.id}`]),
+      );
+    } finally {
+      server.events.removeListener('request:start', onRequest);
+    }
+  });
+
+  it.each([
+    ['/demo/organizer/events', 'Evento não encontrado.'],
+    ['/demo/gate/events', 'Evento indisponível'],
+  ])('omite eventos cancelados ao abrir um detalhe em %s', async (path, message) => {
+    server.use(
+      http.get(`${apiUrl}/events/${publishedEvent.id}`, () =>
+        HttpResponse.json({ ...publishedEvent, status: EventStatus.Cancelled, isPast: false }),
+      ),
+    );
+
+    renderApp(`${path}/${publishedEvent.id}`);
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: publishedEvent.title })).not.toBeInTheDocument();
+  });
+
+  it('leva ao login ao abrir a criação de eventos diretamente sem sessão', async () => {
+    server.use(http.get(`${apiUrl}/auth/session`, () => new HttpResponse(null, { status: 204 })));
+
+    renderApp('/organizer/events/new');
+
+    expect(await screen.findByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+  });
+});
+
 describe('fluxo de autenticação', () => {
   it('mantém a tela atual sob o modal e só abre o login após confirmação', async () => {
     const user = userEvent.setup();
@@ -85,7 +179,7 @@ describe('fluxo de autenticação', () => {
     renderApp('/customer/tickets', { id: 'customer-1', role: UserRole.Customer });
 
     expect(await screen.findByRole('heading', { name: 'Meus ingressos' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Eventos' })).toHaveClass('hidden', 'sm:inline-block');
+    expect(screen.getByRole('link', { name: 'Eventos' })).toHaveClass('hidden', 'sm:inline-flex');
     expect(screen.getByRole('link', { name: 'Meus ingressos' })).toBeInTheDocument();
   });
 
@@ -98,7 +192,18 @@ describe('fluxo de autenticação', () => {
       await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
     ).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Entrar' })).toHaveAttribute('href', '/login');
+    expect(screen.getByRole('link', { name: 'Experimentar' })).toHaveAttribute('href', '/demo');
   });
+
+  it.each([UserRole.Customer, UserRole.Organizer, UserRole.Gate])(
+    'oculta Experimentar no catálogo para uma sessão %s',
+    async (role) => {
+      renderApp('/events', { id: 'active-user', role });
+
+      expect(await screen.findByRole('button', { name: 'Sair' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Experimentar' })).not.toBeInTheDocument();
+    },
+  );
 
   it('exibe placeholder de carregamento no header enquanto a sessão é verificada', () => {
     server.use(http.get(`${apiUrl}/auth/session`, () => new Promise(() => {})));
@@ -107,6 +212,7 @@ describe('fluxo de autenticação', () => {
 
     expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Entrar' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Experimentar' })).not.toBeInTheDocument();
   });
 
   it('não bloqueia a home pública quando a restauração da sessão falha', async () => {
@@ -189,7 +295,7 @@ describe('fluxo de autenticação', () => {
       http.post(`${apiUrl}/auth/login`, () =>
         HttpResponse.json({
           id: 'user-2',
-          email: 'customer.one.demo@ntq.local',
+          email: 'customer@example.com',
           role: UserRole.Customer,
         }),
       ),
@@ -197,32 +303,30 @@ describe('fluxo de autenticação', () => {
     const user = userEvent.setup();
 
     renderApp('/login');
-    await user.type(await screen.findByLabelText('E-mail'), 'customer.one.demo@ntq.local');
-    await user.type(screen.getByLabelText('Senha'), 'demo-password');
+    await user.type(await screen.findByLabelText('E-mail'), 'customer@example.com');
+    await user.type(screen.getByLabelText('Senha'), 'valid-password');
     await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
     expect(
       await screen.findByRole('heading', { name: 'Encontre sua próxima experiência' }),
     ).toBeInTheDocument();
     expect(screen.queryByText('user-2')).not.toBeInTheDocument();
-    expect(screen.queryByText('customer.one.demo@ntq.local')).not.toBeInTheDocument();
+    expect(screen.queryByText('customer@example.com')).not.toBeInTheDocument();
     expect(localStorageSpy).not.toHaveBeenCalled();
     expect(sessionStorageSpy).not.toHaveBeenCalled();
   });
 
-  it('preenche as credenciais públicas pelo acesso rápido', async () => {
-    const user = userEvent.setup();
-
+  it('abre o login com os campos vazios e usa as sugestões de preenchimento do navegador', () => {
     renderApp('/login');
-    await user.click(await screen.findByRole('button', { name: 'Cliente' }));
 
-    expect(screen.getByLabelText('E-mail')).toHaveValue('customer.one.demo@ntq.local');
-    expect(screen.getByLabelText('Senha')).toHaveValue('demo-password');
+    expect(screen.queryByText(/acesso rápido para teste/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText('E-mail')).toHaveValue('');
+    expect(screen.getByLabelText('Senha')).toHaveValue('');
     expect(screen.getByLabelText('E-mail')).toHaveAttribute('autocomplete', 'email');
     expect(screen.getByLabelText('Senha')).toHaveAttribute('autocomplete', 'current-password');
     expect(screen.getByLabelText('E-mail')).toHaveAttribute('aria-required', 'true');
     expect(screen.getByLabelText('Senha')).toHaveAttribute('aria-required', 'true');
-    expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled();
   });
 
   it('não consulta a sessão ao acessar diretamente a página pública de login', async () => {

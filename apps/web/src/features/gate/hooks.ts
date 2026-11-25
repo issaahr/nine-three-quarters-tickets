@@ -3,11 +3,12 @@ import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { checkInCredential, checkInManualCode, fetchGateEvent, fetchGateEvents } from './api';
 import { GateEventsFilters } from './types';
 
-export function useGateEvents(filters?: GateEventsFilters) {
+export function useGateEvents(filters?: GateEventsFilters, enabled = true) {
   return useInfiniteQuery({
     queryKey: ['gate', 'events', filters],
     queryFn: ({ pageParam }) => fetchGateEvents({ ...filters, page: pageParam }),
     initialPageParam: 1,
+    enabled,
     getNextPageParam: (lastPage) => (lastPage.hasMore ? lastPage.page + 1 : undefined),
     retry: false,
   });

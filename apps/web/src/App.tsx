@@ -6,6 +6,7 @@ import { SessionExpiredDialog } from './features/auth/components/SessionExpiredD
 import { Login } from './features/auth/pages/Login';
 import { Signup } from './features/auth/pages/Signup';
 import { UserRole } from './features/auth/types';
+import { DemoLayout, DemoPage } from './features/demo/DemoPage';
 import { EventsLayout } from './features/events/components/EventsLayout';
 import { EventCatalog } from './features/events/pages/EventCatalog';
 import { EventDetailPage } from './features/events/pages/EventDetailPage';
@@ -31,6 +32,13 @@ export function App({ publicSignupEnabled = environment.publicSignupEnabled }: A
       <SessionExpiredDialog />
       <Routes>
         <Route path="/" element={<Navigate replace to="/events" />} />
+        <Route path="/demo" element={<DemoLayout />}>
+          <Route index element={<DemoPage />} />
+          <Route path="organizer" element={<OrganizerHome readOnly />} />
+          <Route path="organizer/events/:eventId" element={<OrganizerEventDetailPage readOnly />} />
+          <Route path="gate" element={<GateEventSelectionPage readOnly />} />
+          <Route path="gate/events/:eventId" element={<GateEventContextPage readOnly />} />
+        </Route>
 
         <Route path="/login" element={<Login publicSignupEnabled={publicSignupEnabled} />} />
 

@@ -4,12 +4,18 @@ import { Link } from 'react-router-dom';
 import { InfiniteScrollStatus } from '@/components/common/InfiniteScrollStatus';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { formatEventDetailDateTime } from '../../events/eventPresentation';
+import { useEventDiscovery } from '../../events/hooks';
 import { useGateEvents } from '../hooks';
 import { GateEvent } from '../types';
 
-export function GateEventSelectionPage() {
+const pageClassName = 'mx-auto w-full max-w-5xl px-6 py-12 lg:px-8';
+
+export function GateEventSelectionPage({ readOnly = false }: { readOnly?: boolean }) {
   const [showOnlyToday, setShowOnlyToday] = useState(false);
-  const eventsQuery = useGateEvents({ today: showOnlyToday || undefined });
+  const gateEventsQuery = useGateEvents({ today: showOnlyToday || undefined }, !readOnly);
+  const publicEventsQuery = useEventDiscovery({}, readOnly);
+  const eventsQuery = readOnly ? publicEventsQuery : gateEventsQuery;
+  const eventPath = readOnly ? '/demo/gate/events' : '/gate/events';
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = eventsQuery;
   const isNextPageError = Boolean(
     eventsQuery.isFetchNextPageError ||
@@ -36,12 +42,12 @@ export function GateEventSelectionPage() {
   });
 
   if (eventsQuery.isPending) {
-    return <main className="px-6 py-12 lg:px-8">Carregando Events para operação...</main>;
+    return <main className={pageClassName}>Carregando Events para operação...</main>;
   }
 
   if (eventsQuery.isError && events.length === 0) {
     return (
-      <main className="px-6 py-12 lg:px-8">
+      <main className={pageClassName}>
         <h1 className="font-heading text-3xl font-semibold">
           Não foi possível carregar a portaria
         </h1>
@@ -52,9 +58,9 @@ export function GateEventSelectionPage() {
 
   if (events.length === 0 && !showOnlyToday) {
     return (
-      <main className="px-6 py-12 lg:px-8">
+      <main className={pageClassName}>
         <p className="text-[11px] font-medium uppercase tracking-[2px] text-brass-dark">
-          Operação de portaria
+          {readOnly ? 'Visita à portaria' : 'Operação de portaria'}
         </p>
         <h1 className="mt-4 font-heading text-3xl font-semibold">Nenhum Event disponível</h1>
         <p className="mt-3 text-surface-dark-muted">
@@ -65,33 +71,42 @@ export function GateEventSelectionPage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-6 py-12 lg:px-8">
+    <main className={pageClassName}>
       <p className="text-[11px] font-medium uppercase tracking-[2px] text-brass-dark">
-        Operação de portaria
+        {readOnly ? 'Visita à portaria' : 'Operação de portaria'}
       </p>
-      <h1 className="mt-4 font-heading text-3xl font-semibold">Selecione o evento em operação</h1>
+      <h1 className="mt-4 font-heading text-3xl font-semibold">
+        {readOnly ? 'Eventos publicados' : 'Selecione o evento em operação'}
+      </h1>
       <p className="mt-3 max-w-2xl text-surface-dark-muted">
-        Escolha a ocorrência antes de validar qualquer ingresso.
+        {readOnly
+          ? 'Escolha um evento para consultar o contexto da portaria.'
+          : 'Escolha a ocorrência antes de validar qualquer ingresso.'}
       </p>
 
-      <button
-        type="button"
-        aria-pressed={showOnlyToday}
-        onClick={() => setShowOnlyToday((currentValue) => !currentValue)}
-        className="mt-6 rounded-[4px] border border-brass-dark px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
-      >
-        {showOnlyToday ? 'Mostrar todos' : 'Ver eventos de hoje'}
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          aria-pressed={showOnlyToday}
+          onClick={() => setShowOnlyToday((currentValue) => !currentValue)}
+          className="mt-6 rounded-[4px] border border-brass-dark px-4 py-2 text-sm font-medium text-background transition-colors hover:bg-surface-dark-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+        >
+          {showOnlyToday ? 'Mostrar todos' : 'Ver eventos de hoje'}
+        </button>
+      )}
 
       {events.length === 0 ? (
         <p className="mt-8 text-surface-dark-muted">Não há Events para hoje.</p>
       ) : (
         <>
-          <ul className="mt-8 grid gap-3" aria-label="Events disponíveis para operação">
+          <ul
+            className="mt-8 grid gap-3"
+            aria-label={readOnly ? 'Eventos publicados' : 'Events disponíveis para operação'}
+          >
             {events.map((event) => (
               <li key={event.id}>
                 <Link
-                  to={`/gate/events/${encodeURIComponent(event.id)}`}
+                  to={`${eventPath}/${encodeURIComponent(event.id)}`}
                   className="block rounded-[4px] border border-surface-dark-border bg-surface-dark-deep p-5 transition-colors hover:border-brass-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
                 >
                   <span className="block font-heading text-xl font-semibold text-background">

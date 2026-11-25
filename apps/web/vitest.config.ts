@@ -20,7 +20,6 @@ export default defineConfig({
     environment: 'jsdom',
     env: {
       VITE_API_URL: 'http://api.test',
-      VITE_DEMO_USERS_PASSWORD: 'demo-password',
     },
     setupFiles: ['./src/test/setup.ts'],
   },

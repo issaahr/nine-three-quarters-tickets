@@ -7,8 +7,9 @@ import { buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll';
 import { cn } from '@/lib/utils';
-import { EventCategory, EventStatus } from '../../events/types';
+import { EventCategory, EventDiscoveryItem, EventStatus } from '../../events/types';
 import { formatEventPrice } from '../../events/eventPresentation';
+import { useEventDiscovery } from '../../events/hooks';
 import { OrganizerEventCard } from '../components/OrganizerEventCard';
 import { useOrganizerEvents, usePublishEvent } from '../hooks';
 import { OrganizerEvent } from '../types';
@@ -18,9 +19,9 @@ interface OrganizerNavigationState {
 }
 
 /**
- * Exibe a gestão inicial das sessões pertencentes ao organizador autenticado.
+ * Compartilha a listagem do organizador com a visita ao catálogo publicado.
  */
-export function OrganizerHome() {
+export function OrganizerHome({ readOnly = false }: { readOnly?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const navigationState = location.state as OrganizerNavigationState | null;
@@ -45,7 +46,18 @@ export function OrganizerHome() {
     [appliedQuery, categoryFilter, statusFilter, dateFrom, dateTo, sortOrder],
   );
 
-  const eventsQuery = useOrganizerEvents(filters);
+  const organizerEventsQuery = useOrganizerEvents(filters, !readOnly);
+  const publicEventsQuery = useEventDiscovery(
+    {
+      query: filters.query,
+      category: filters.category,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+      sort: filters.sort,
+    },
+    readOnly,
+  );
+  const eventsQuery = readOnly ? publicEventsQuery : organizerEventsQuery;
   const publishMutation = usePublishEvent();
   const { fetchNextPage, hasNextPage, isFetchingNextPage } = eventsQuery;
   const isNextPageError = Boolean(
@@ -54,7 +66,7 @@ export function OrganizerHome() {
   );
 
   const organizerEvents = useMemo(() => {
-    const byId = new Map<string, OrganizerEvent>();
+    const byId = new Map<string, EventDiscoveryItem | OrganizerEvent>();
     for (const page of eventsQuery.data?.pages ?? []) {
       const items = Array.isArray(page?.items) ? page.items : Array.isArray(page) ? page : [];
       for (const event of items) {
@@ -72,9 +84,12 @@ export function OrganizerHome() {
     rootMargin: '240px',
   });
 
-  const activeEvents = organizerEvents.filter((event) => event.isActive).length;
-  const soldTickets = organizerEvents.reduce((total, event) => total + event.soldTickets, 0);
-  const revenueCents = organizerEvents.reduce((total, event) => total + event.revenueCents, 0);
+  const operationalEvents = organizerEvents.filter(
+    (event): event is OrganizerEvent => !readOnly && 'isActive' in event,
+  );
+  const activeEvents = operationalEvents.filter((event) => event.isActive).length;
+  const soldTickets = operationalEvents.reduce((total, event) => total + event.soldTickets, 0);
+  const revenueCents = operationalEvents.reduce((total, event) => total + event.revenueCents, 0);
   const hasActiveFilters = Boolean(
     appliedQuery ||
     categoryFilter !== 'ALL' ||
@@ -117,34 +132,36 @@ export function OrganizerHome() {
       <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[2px] text-primary">
-            Área do organizador
+            {readOnly ? 'Visita à área do organizador' : 'Área do organizador'}
           </p>
           <h1 className="m-0 font-heading text-4xl font-semibold text-foreground sm:text-5xl">
-            Meus eventos
+            {readOnly ? 'Eventos publicados' : 'Meus eventos'}
           </h1>
         </div>
-        <Link
-          to="/organizer/events/new"
-          className={cn(buttonVariants({ size: 'lg' }), 'h-10 rounded-[4px] px-4')}
-        >
-          <Plus aria-hidden="true" />
-          Criar evento
-        </Link>
+        {!readOnly && (
+          <Link
+            to="/organizer/events/new"
+            className={cn(buttonVariants({ size: 'lg' }), 'h-10 rounded-[4px] px-4')}
+          >
+            <Plus aria-hidden="true" />
+            Criar evento
+          </Link>
+        )}
       </header>
 
-      {eventPublished && (
+      {!readOnly && eventPublished && (
         <p role="status" className="mb-6 border-l-2 border-status-valid py-2 pl-4 text-sm">
           Evento criado e publicado com sucesso.
         </p>
       )}
 
-      {publishMutation.isError && (
+      {!readOnly && publishMutation.isError && (
         <p role="alert" className="mb-6 text-sm text-destructive">
           Não foi possível publicar o evento. Tente novamente.
         </p>
       )}
 
-      {eventsQuery.data && organizerEvents.length > 0 && (
+      {operationalEvents.length > 0 && (
         <section className="mb-8 grid gap-3 sm:grid-cols-3" aria-label="Resumo dos eventos">
           {[
             ['Eventos ativos', String(activeEvents)],
@@ -164,11 +181,15 @@ export function OrganizerHome() {
         </section>
       )}
 
-      {eventsQuery.isLoading && <p role="status">Carregando seus eventos...</p>}
+      {eventsQuery.isLoading && (
+        <p role="status">{readOnly ? 'Carregando eventos...' : 'Carregando seus eventos...'}</p>
+      )}
 
       {eventsQuery.isError && organizerEvents.length === 0 && (
         <div role="alert" className="border-l-2 border-destructive py-2 pl-4 text-destructive">
-          Não foi possível carregar seus eventos. Tente novamente em instantes.
+          {readOnly
+            ? 'Não foi possível carregar os eventos. Tente novamente em instantes.'
+            : 'Não foi possível carregar seus eventos. Tente novamente em instantes.'}
         </div>
       )}
 
@@ -177,9 +198,13 @@ export function OrganizerHome() {
         !hasActiveFilters &&
         !eventsQuery.isError && (
           <section className="border border-border bg-card px-6 py-12 text-center [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_12px),calc(100%_-_12px)_100%,0_100%)]">
-            <h2 className="font-heading text-2xl font-semibold">Crie seu primeiro evento</h2>
+            <h2 className="font-heading text-2xl font-semibold">
+              {readOnly ? 'Nenhum evento publicado disponível' : 'Crie seu primeiro evento'}
+            </h2>
             <p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">
-              Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.
+              {readOnly
+                ? 'Os eventos do catálogo aparecem aqui quando estão disponíveis para a visita.'
+                : 'Escolha um filme ou show, defina o local e o horário e publique seu primeiro evento.'}
             </p>
           </section>
         )}
@@ -232,26 +257,28 @@ export function OrganizerHome() {
                 <option value={EventCategory.Show}>Shows</option>
               </select>
             </div>
-            <div>
-              <label
-                htmlFor="organizer-status"
-                className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
-              >
-                Status
-              </label>
-              <select
-                id="organizer-status"
-                aria-label="Filtrar por status"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as EventStatus | 'ALL')}
-                className="h-10 w-full rounded-[4px] border border-input bg-white px-3 text-sm"
-              >
-                <option value="ALL">Todos os status</option>
-                <option value={EventStatus.Draft}>Rascunhos</option>
-                <option value={EventStatus.Published}>Publicados</option>
-                <option value={EventStatus.Cancelled}>Cancelados</option>
-              </select>
-            </div>
+            {!readOnly && (
+              <div>
+                <label
+                  htmlFor="organizer-status"
+                  className="mb-2 block text-[10px] font-semibold uppercase tracking-[1.3px] text-muted-foreground"
+                >
+                  Status
+                </label>
+                <select
+                  id="organizer-status"
+                  aria-label="Filtrar por status"
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as EventStatus | 'ALL')}
+                  className="h-10 w-full rounded-[4px] border border-input bg-white px-3 text-sm"
+                >
+                  <option value="ALL">Todos os status</option>
+                  <option value={EventStatus.Draft}>Rascunhos</option>
+                  <option value={EventStatus.Published}>Publicados</option>
+                  <option value={EventStatus.Cancelled}>Cancelados</option>
+                </select>
+              </div>
+            )}
             <div>
               <label
                 htmlFor="organizer-date-from"
@@ -328,7 +355,8 @@ export function OrganizerHome() {
                   <OrganizerEventCard
                     key={event.id}
                     event={event}
-                    onPublish={(eventId) => void handlePublish(eventId)}
+                    detailsPath={readOnly ? '/demo/organizer/events' : undefined}
+                    onPublish={readOnly ? undefined : (eventId) => void handlePublish(eventId)}
                     isPublishing={
                       publishMutation.isPending && publishMutation.variables === event.id
                     }

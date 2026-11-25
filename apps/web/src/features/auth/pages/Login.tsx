@@ -7,7 +7,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
-import { environment } from '../../../config/environment';
 import { isApiRateLimitError, rateLimitErrorMessage } from '../../../lib/api';
 import { getRoleNavigation } from '../../navigation/roleNavigation';
 import { AuthPageLayout } from '../components/AuthPageLayout';
@@ -17,19 +16,6 @@ import { LoginFormValues, loginSchema } from '../schemas';
 interface LoginProps {
   publicSignupEnabled: boolean;
 }
-
-// As credenciais são públicas e existem exclusivamente para agilizar a avaliação da demonstração.
-const demoUsers = {
-  organizer: {
-    email: 'organizer.demo@ntq.local',
-    password: environment.demoUsersPassword,
-  },
-  customer: {
-    email: 'customer.one.demo@ntq.local',
-    password: environment.demoUsersPassword,
-  },
-  gate: { email: 'gate.demo@ntq.local', password: environment.demoUsersPassword },
-} as const;
 
 /** Traduz a falha de login sem revelar se o e-mail informado possui cadastro. */
 function getLoginErrorMessage(error: unknown): string | null {
@@ -66,7 +52,6 @@ export function Login({ publicSignupEnabled }: LoginProps) {
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors, isValid },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -95,49 +80,12 @@ export function Login({ publicSignupEnabled }: LoginProps) {
     }
   };
 
-  const handleQuickAccess = (role: keyof typeof demoUsers) => {
-    setValue('email', demoUsers[role].email, { shouldValidate: true });
-    setValue('password', demoUsers[role].password, { shouldValidate: true });
-  };
-
   const loginErrorMessage = getLoginErrorMessage(loginError);
-  const quickAccess = (
-    <div className="mt-[24px] md:mt-0">
-      <div className="flex items-center gap-[12px] mb-[16px] md:my-6">
-        <div className="flex-1 h-[0.5px] md:h-[1px] bg-secondary-foreground md:bg-border" />
-        <span className="text-[9.5px] md:text-[10px] font-medium text-secondary md:text-muted-foreground tracking-[1.5px] whitespace-nowrap">
-          ACESSO RÁPIDO PARA TESTE
-        </span>
-        <div className="flex-1 h-[0.5px] md:h-[1px] bg-secondary-foreground md:bg-border" />
-      </div>
-
-      <div className="flex gap-[8px]">
-        {(
-          [
-            ['organizer', 'Organizador'],
-            ['customer', 'Cliente'],
-            ['gate', 'Portaria'],
-          ] as const
-        ).map(([role, label]) => (
-          <Button
-            key={role}
-            type="button"
-            onClick={() => handleQuickAccess(role)}
-            variant="outline"
-            className="flex-1 border-secondary md:border-border text-primary-foreground md:text-primary bg-transparent hover:bg-secondary-foreground md:hover:bg-muted h-auto py-[10px] md:py-[8px] px-[6px] md:px-0 text-[12px] font-medium font-sans rounded-[4px] transition-colors"
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
 
   return (
     <AuthPageLayout
       title="Bem-vindo de volta"
       description="Entre para comprar ou gerenciar seus ingressos"
-      footer={quickAccess}
     >
       {signupCompleted && (
         <div role="status" className="text-[13px] text-foreground mb-[16px] font-sans">
