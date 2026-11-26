@@ -12,6 +12,7 @@ import { JwtAuthGuard } from './guards/jwtAuth.guard';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
 import { PublicSignupGuard } from './guards/publicSignup.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { TrustedOriginGuard } from './guards/trustedOrigin.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
@@ -37,11 +38,12 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     OptionalJwtAuthGuard,
     PublicSignupGuard,
     RolesGuard,
+    TrustedOriginGuard,
     {
       provide: publicSignupEnabledToken,
       useValue: applicationConfig.publicSignupEnabled,
     },
   ],
-  exports: [JwtAuthGuard, RolesGuard],
+  exports: [JwtAuthGuard, RolesGuard, TrustedOriginGuard],
 })
 export class AuthModule {}

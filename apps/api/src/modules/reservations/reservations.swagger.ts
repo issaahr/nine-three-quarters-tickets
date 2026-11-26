@@ -11,6 +11,7 @@ import {
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
+import { ApiTrustedOrigin } from '../auth/auth.swagger';
 import { CreateReservationResponseDto } from './dto/createReservationResponse.dto';
 import { ReservationDetailResponseDto } from './dto/reservationDetailResponse.dto';
 
@@ -97,7 +98,8 @@ export function ApiGetReservation() {
  */
 export function ApiCancelReservation() {
   return applyDecorators(
-    ApiOperation({ summary: 'Cancela uma Reservation ativa e libera seu inventário' }),
+    ApiOperation({ summary: 'Cancela uma Reservation elegível e libera seu inventário' }),
+    ApiTrustedOrigin(),
     ApiOkResponse({ type: ReservationDetailResponseDto }),
     ApiNotFoundResponse({
       type: ApplicationErrorResponseDto,
@@ -105,7 +107,7 @@ export function ApiCancelReservation() {
     }),
     ApiConflictResponse({
       type: ApplicationErrorResponseDto,
-      description: 'Reservation já expirada, confirmada ou cancelada.',
+      description: 'Reservation expirada, cancelada ou compra fora das regras de cancelamento.',
     }),
   );
 }

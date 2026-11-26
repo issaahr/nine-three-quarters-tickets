@@ -1,2 +1,4 @@
 // Token da fronteira externa de processamento de pagamentos.
 export const paymentGatewayToken = Symbol('PaymentGateway');
+
+export const simulatedPixCompletionDelayMs = 15_000;

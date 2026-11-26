@@ -13,6 +13,7 @@ import { TicketDetails, TicketPurchase, TicketPurchasesPage } from './tickets.in
 import { TicketStatus } from './ticketStatus.enum';
 import { Payment } from '../payments/payment.entity';
 import { PaymentStatus } from '../payments/paymentStatus.enum';
+import { purchaseCancellationWindowMilliseconds } from '../reservations/reservations.constants';
 
 const maximumCredentialGenerationAttempts = 20;
 
@@ -113,7 +114,7 @@ export class TicketsService {
         const eligibleUntil = payment?.approvedAt
           ? new Date(
               Math.min(
-                payment.approvedAt.getTime() + 7 * 24 * 60 * 60 * 1000,
+                payment.approvedAt.getTime() + purchaseCancellationWindowMilliseconds,
                 purchase.event.startsAt.getTime(),
               ),
             )

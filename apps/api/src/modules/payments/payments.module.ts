@@ -9,7 +9,9 @@ import { Event } from '../events/event.entity';
 import { EventSeat } from '../events/eventSeat.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
 import { FakePaymentGateway } from './fakePaymentGateway';
+import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
 import { Payment } from './payment.entity';
+import { PaymentFinalizationService } from './paymentFinalization.service';
 import { paymentGatewayToken } from './payments.constants';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
@@ -25,8 +27,10 @@ import { PaymentRepository } from './repositories/payment.repository';
   controllers: [PaymentsController],
   providers: [
     PaymentsService,
+    PaymentFinalizationService,
     PaymentRepository,
     FakePaymentGateway,
+    TrustedPaymentOriginGuard,
     { provide: paymentGatewayToken, useExisting: FakePaymentGateway },
   ],
 })

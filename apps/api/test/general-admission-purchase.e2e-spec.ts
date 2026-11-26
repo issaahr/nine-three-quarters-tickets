@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
@@ -13,6 +14,7 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { Payment } from '../src/modules/payments/payment.entity';
+import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
 import { Refund } from '../src/modules/refunds/refund.entity';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
@@ -218,6 +220,48 @@ describe('compra GENERAL_ADMISSION', () => {
     expect(checkIn.body).toEqual({ result: 'VALID' });
   });
 
+  it('conclui um PIX GA e preserva um Ticket por unidade ao repetir o settlement', async () => {
+    const event = await createEvent(3);
+    const reservationId = await createReservation(event.id, 3, customerOneCookie);
+    const path = `/reservations/${reservationId}/payments/pix`;
+    const created = await request(app.getHttpServer())
+      .post(path)
+      .set('Cookie', customerOneCookie)
+      .set('Idempotency-Key', randomUUID())
+      .expect(201);
+    const paymentId = created.body.id as string;
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+
+    const settlementPath = `${path}/${paymentId}/settle`;
+    const first = await request(app.getHttpServer())
+      .post(settlementPath)
+      .set('Cookie', customerOneCookie)
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .expect(200);
+    const retry = await request(app.getHttpServer())
+      .post(settlementPath)
+      .set('Cookie', customerOneCookie)
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .expect(200);
+
+    const reservation = await reservationsRepository.findOneByOrFail({ id: reservationId });
+    const items = await reservationItemsRepository.findBy({ reservationId });
+    const tickets = await ticketsRepository.findBy({
+      reservationItemId: In(items.map(({ id }) => id)),
+    });
+
+    expect(first.body).toMatchObject({
+      id: paymentId,
+      method: PaymentMethod.Pix,
+      status: PaymentStatus.Approved,
+      amountCents: 45000,
+    });
+    expect(retry.body).toEqual(first.body);
+    expect(reservation.confirmedAt).not.toBeNull();
+    expect(tickets).toHaveLength(3);
+    expect(new Set(tickets.map(({ reservationItemId }) => reservationItemId)).size).toBe(3);
+  });
+
   it('cancela compra GA, registra Refund e devolve toda a capacidade', async () => {
     const event = await createEvent(2);
     const reservationId = await createReservation(event.id, 2, customerOneCookie);
@@ -230,6 +274,7 @@ describe('compra GENERAL_ADMISSION', () => {
 
     const cancellation = await request(app.getHttpServer())
       .post(`/reservations/${reservationId}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', customerOneCookie)
       .expect(200);
     const payment = await paymentsRepository.findOneByOrFail({ reservationId });
@@ -257,6 +302,7 @@ describe('compra GENERAL_ADMISSION', () => {
 
     await request(app.getHttpServer())
       .post(`/organizer/me/events/${event.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', organizerCookie)
       .expect(200);
 

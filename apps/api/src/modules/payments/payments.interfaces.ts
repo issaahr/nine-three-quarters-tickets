@@ -8,7 +8,12 @@ export interface DatabaseTimestampRow {
 /** Resultado da criação ou recuperação idempotente de uma tentativa de pagamento. */
 export interface PaymentInitiation {
   payment: Payment;
-  shouldProcess: boolean;
+  created: boolean;
+}
+
+export interface SimulatedPixPaymentInitiation {
+  payment: Payment;
+  qrCodePayload: string | null;
 }
 
 /** Projeção mínima retornada pelo PostgreSQL para cada EventSeat vendido. */

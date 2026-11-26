@@ -8,6 +8,7 @@ import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
@@ -406,6 +407,7 @@ describe('Reservations seated', () => {
     );
     await request(app.getHttpServer())
       .post(`/reservations/${creation.body.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', customerOneCookie)
       .expect(200);
     await request(app.getHttpServer())
@@ -430,6 +432,7 @@ describe('Reservations seated', () => {
 
     const cancellation = await request(app.getHttpServer())
       .post(`/reservations/${creation.body.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', customerOneCookie)
       .expect(200);
 
@@ -474,9 +477,11 @@ describe('Reservations seated', () => {
     const responses = await Promise.all([
       request(app.getHttpServer())
         .post(`/reservations/${creation.body.id}/cancel`)
+        .set('Origin', applicationConfig.corsOrigins[0])
         .set('Cookie', customerOneCookie),
       request(app.getHttpServer())
         .post(`/reservations/${creation.body.id}/cancel`)
+        .set('Origin', applicationConfig.corsOrigins[0])
         .set('Cookie', customerOneCookie),
     ]);
 
@@ -492,6 +497,7 @@ describe('Reservations seated', () => {
     const expiredReservation = await createExpiredReservation(customerOne.id, event.id);
     await request(app.getHttpServer())
       .post(`/reservations/${expiredReservation.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', customerOneCookie)
       .expect(409)
       .expect(({ body }) =>

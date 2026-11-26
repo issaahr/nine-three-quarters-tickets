@@ -2,29 +2,27 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
-import { Event } from '../events/event.entity';
-import { EventStatus } from '../events/eventStatus.enum';
-import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
 import { ReservationNotFoundError } from '../reservations/errors/reservationNotFound.error';
 import { Payment } from './payment.entity';
+import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
-import { paymentGatewayToken } from './payments.constants';
+import { paymentGatewayToken, simulatedPixCompletionDelayMs } from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
 import {
   DatabaseTimestampRow,
-  PaymentFinalizationResult,
   PaymentInitiation,
+  SimulatedPixPaymentInitiation,
 } from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
+import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { PaymentRepository } from './repositories/payment.repository';
-import { TicketsService } from '../tickets/tickets.service';
 
 @Injectable()
 export class PaymentsService {
@@ -34,8 +32,7 @@ export class PaymentsService {
     private readonly dataSource: DataSource,
     private readonly paymentRepository: PaymentRepository,
     @Inject(paymentGatewayToken) private readonly paymentGateway: PaymentGateway,
-    private readonly ticketsService: TicketsService,
-    private readonly seatRealtimeGateway: SeatRealtimeGateway,
+    private readonly paymentFinalization: PaymentFinalizationService,
   ) {}
 
   /**
@@ -49,7 +46,7 @@ export class PaymentsService {
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
    * @param card - Dados transitórios validados, encaminhados ao gateway após o commit do PENDING.
-   * @returns Payment existente para a mesma chave ou novo Payment PENDING persistido.
+   * @returns Payment existente para a mesma chave ou resultado do processamento da nova tentativa.
    */
   public async processCardPayment(
     customerId: string,
@@ -57,9 +54,14 @@ export class PaymentsService {
     idempotencyKey: string,
     card: CreateCardPaymentRequestDto,
   ): Promise<Payment> {
-    const initiation = await this.startCardPayment(customerId, reservationId, idempotencyKey);
+    const initiation = await this.startPayment(
+      customerId,
+      reservationId,
+      idempotencyKey,
+      PaymentMethod.Card,
+    );
 
-    if (!initiation.shouldProcess) {
+    if (!initiation.created) {
       return initiation.payment;
     }
 
@@ -80,29 +82,112 @@ export class PaymentsService {
         error instanceof Error ? error.stack : undefined,
       );
 
-      return this.failPayment(initiation.payment.id);
+      return this.paymentFinalization.failPayment(initiation.payment.id);
     }
 
-    return this.finalizePayment(initiation.payment.id, gatewayStatus);
+    const outcome =
+      gatewayStatus === CardPaymentGatewayStatus.Approved
+        ? PaymentStatus.Approved
+        : PaymentStatus.Declined;
+
+    return this.paymentFinalization.finalizePayment(initiation.payment.id, outcome);
   }
 
   /**
-   * Cria ou recupera a tentativa PENDING que representa uma intenção de pagamento.
+   * Persiste a tentativa de PIX com o instante de conclusão calculado pelo relógio do PostgreSQL.
+   * O conteúdo do QR simulado deriva do identificador persistido, de modo que o retry é estável.
+   *
+   * @param customerId - Identidade do CUSTOMER que deve possuir a Reservation.
+   * @param reservationId - Reservation cuja tentativa de pagamento será persistida.
+   * @param idempotencyKey - Chave estável da tentativa, compartilhada entre os métodos por Reservation.
+   * @returns Payment original ou recém-criado. O QR só acompanha um Payment de PIX.
+   */
+  public async createSimulatedPixPayment(
+    customerId: string,
+    reservationId: string,
+    idempotencyKey: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const { payment } = await this.startPayment(
+      customerId,
+      reservationId,
+      idempotencyKey,
+      PaymentMethod.Pix,
+    );
+
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  /**
+   * Recupera o PIX ativo do dono da Reservation ou, na ausência dele, o resultado mais recente.
+   *
+   * @param customerId - Identidade do CUSTOMER autenticado.
+   * @param reservationId - Reservation cujo checkout está sendo retomado.
+   * @returns Payment e conteúdo do QR reconstruído a partir do identificador persistido.
+   */
+  public async findSimulatedPixForCheckout(
+    customerId: string,
+    reservationId: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const payment = await this.paymentRepository.findSimulatedPixForCheckout(
+      this.dataSource.manager,
+      customerId,
+      reservationId,
+    );
+
+    if (!payment) {
+      throw new PaymentNotFoundError();
+    }
+
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  /**
+   * Solicita a conclusão da tentativa identificada pelo checkout, permitindo retries sem nova compra.
+   *
+   * @param customerId - Identidade do CUSTOMER que deve possuir a Reservation.
+   * @param reservationId - Reservation apresentada no checkout.
+   * @param paymentId - Tentativa de PIX que deve pertencer à Reservation.
+   * @returns Tentativa ainda PENDING antes do prazo ou o resultado terminal persistido.
+   */
+  public async settleSimulatedPixPayment(
+    customerId: string,
+    reservationId: string,
+    paymentId: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const payment = await this.paymentFinalization.settleSimulatedPixPayment(
+      customerId,
+      reservationId,
+      paymentId,
+    );
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  private toSimulatedPixPayment(payment: Payment): SimulatedPixPaymentInitiation {
+    return {
+      payment,
+      qrCodePayload: payment.method === PaymentMethod.Pix ? `ntq:pix:simulado:${payment.id}` : null,
+    };
+  }
+
+  /**
+   * Serializa a criação de tentativas de cartão e PIX pelo lock da Reservation.
+   * A busca da chave precede a validação de nova tentativa, para preservar retries do Payment original.
    *
    * @param customerId - Identidade do CUSTOMER autenticado que deve possuir a Reservation.
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
-   * @returns Payment e indicação de que somente a request criadora deve chamar o gateway.
+   * @param method - Método usado quando a chave ainda não possui um Payment.
+   * @returns Payment e indicação de criação, que permite ao cartão chamar o gateway uma única vez.
    */
-  private async startCardPayment(
+  private async startPayment(
     customerId: string,
     reservationId: string,
     idempotencyKey: string,
+    method: PaymentMethod,
   ): Promise<PaymentInitiation> {
     return this.dataSource.transaction(async (manager) => {
       const reservationsRepository = manager.getRepository(Reservation);
       const reservationItemsRepository = manager.getRepository(ReservationItem);
-      const now = await this.getDatabaseTimestamp(manager);
       const reservation = await reservationsRepository.findOne({
         where: { id: reservationId, customerId },
         lock: { mode: 'pessimistic_write' },
@@ -112,10 +197,11 @@ export class PaymentsService {
         throw new ReservationNotFoundError();
       }
 
+      const now = await this.getDatabaseTimestamp(manager);
       const staleBefore = new Date(
         now.getTime() - applicationConfig.payments.cardPendingTimeoutSeconds * 1000,
       );
-      const orphanedPayments = await this.paymentRepository.expireOrphanedPending(
+      const orphanedPayments = await this.paymentRepository.expireOrphanedCardPayments(
         manager,
         reservation.id,
         staleBefore,
@@ -123,7 +209,9 @@ export class PaymentsService {
       );
 
       if (orphanedPayments.affected) {
-        this.logger.warn(`Payments PENDING órfãos recuperados para Reservation ${reservation.id}`);
+        this.logger.warn(
+          `Pagamentos de cartão órfãos recuperados para Reservation ${reservation.id}`,
+        );
       }
 
       const idempotentPayment = await this.paymentRepository.findByReservationAndIdempotencyKey(
@@ -133,7 +221,7 @@ export class PaymentsService {
       );
 
       if (idempotentPayment) {
-        return { payment: idempotentPayment, shouldProcess: false };
+        return { payment: idempotentPayment, created: false };
       }
 
       const activePayment = await this.paymentRepository.findActiveByReservation(
@@ -164,191 +252,34 @@ export class PaymentsService {
       const payment = await paymentsRepository.save(
         paymentsRepository.create({
           reservationId: reservation.id,
-          method: PaymentMethod.Card,
+          method,
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
           approvedAt: null,
           failedAt: null,
+          simulationCompletionAt:
+            method === PaymentMethod.Pix
+              ? new Date(now.getTime() + simulatedPixCompletionDelayMs)
+              : null,
         }),
       );
 
-      return { payment, shouldProcess: true };
+      return { payment, created: true };
     });
   }
 
   /**
-   * Finaliza uma tentativa PENDING depois que o gateway respondeu fora de transaction.
-   * O delta realtime é emitido somente depois que a transaction confirma a venda integral.
-   *
-   * @param paymentId - Payment originalmente persistido como PENDING.
-   * @param gatewayStatus - Resultado determinístico devolvido pelo gateway.
-   * @returns Payment em estado terminal após a revalidação autoritativa da Reservation.
-   */
-  private async finalizePayment(
-    paymentId: string,
-    gatewayStatus: CardPaymentGatewayStatus,
-  ): Promise<Payment> {
-    try {
-      const result = await this.dataSource.transaction<PaymentFinalizationResult>(
-        async (manager) => {
-          const paymentsRepository = manager.getRepository(Payment);
-          const reservationsRepository = manager.getRepository(Reservation);
-          const reservationItemsRepository = manager.getRepository(ReservationItem);
-          const eventsRepository = manager.getRepository(Event);
-          const paymentReference = await paymentsRepository.findOne({
-            select: { id: true, reservationId: true },
-            where: { id: paymentId },
-          });
-
-          if (!paymentReference) {
-            return { payment: null!, eventId: null, soldEventSeatIds: [] };
-          }
-
-          const reservationReference = await reservationsRepository.findOne({
-            select: { id: true, eventId: true },
-            where: { id: paymentReference.reservationId },
-          });
-          const event = reservationReference
-            ? await eventsRepository.findOne({
-                where: { id: reservationReference.eventId },
-                lock: { mode: 'pessimistic_write' },
-              })
-            : null;
-          const reservation = reservationReference
-            ? await reservationsRepository.findOne({
-                where: { id: reservationReference.id },
-                lock: { mode: 'pessimistic_write' },
-              })
-            : null;
-          const payment = await paymentsRepository.findOne({
-            where: { id: paymentReference.id },
-            lock: { mode: 'pessimistic_write' },
-          });
-
-          if (!payment || payment.status !== PaymentStatus.Pending) {
-            return { payment: payment!, eventId: null, soldEventSeatIds: [] };
-          }
-
-          const now = await this.getDatabaseTimestamp(manager);
-
-          if (gatewayStatus === CardPaymentGatewayStatus.Declined) {
-            payment.status = PaymentStatus.Declined;
-            return {
-              payment: await paymentsRepository.save(payment),
-              eventId: null,
-              soldEventSeatIds: [],
-            };
-          }
-
-          if (
-            !reservation ||
-            reservation.confirmedAt ||
-            reservation.cancelledAt ||
-            reservation.expiresAt.getTime() <= now.getTime() ||
-            !event ||
-            event.status !== EventStatus.Published ||
-            event.startsAt.getTime() <= now.getTime()
-          ) {
-            payment.status = PaymentStatus.Failed;
-            payment.failedAt = now;
-            this.logger.warn(
-              `Payment ${payment.id} aprovado pelo gateway não pôde confirmar a Reservation`,
-            );
-            return {
-              payment: await paymentsRepository.save(payment),
-              eventId: null,
-              soldEventSeatIds: [],
-            };
-          }
-
-          const items = await reservationItemsRepository.findBy({
-            reservationId: reservation.id,
-          });
-          const seatedItemCount = items.filter((item) => item.eventSeatId !== null).length;
-          const soldEventSeatIds = await this.paymentRepository.sellHeldEventSeats(
-            manager,
-            reservation.id,
-            now,
-          );
-
-          if (soldEventSeatIds.length !== seatedItemCount) {
-            throw new PaymentCompletionConflictError();
-          }
-
-          reservation.confirmedAt = now;
-          payment.status = PaymentStatus.Approved;
-          payment.approvedAt = now;
-          await reservationsRepository.save(reservation);
-          await this.ticketsService.issueForReservationItems(
-            manager,
-            items.map((item) => item.id),
-            now,
-          );
-
-          return {
-            payment: await paymentsRepository.save(payment),
-            eventId: event.id,
-            soldEventSeatIds,
-          };
-        },
-      );
-
-      if (result.eventId && result.soldEventSeatIds.length > 0) {
-        this.seatRealtimeGateway.emitSold({
-          eventId: result.eventId,
-          eventSeatIds: result.soldEventSeatIds,
-        });
-      }
-
-      return result.payment;
-    } catch (error) {
-      if (!(error instanceof PaymentCompletionConflictError)) {
-        throw error;
-      }
-
-      this.logger.warn(`Pagamento ${paymentId} perdeu o hold antes da confirmação`);
-      return this.failPayment(paymentId);
-    }
-  }
-
-  /**
-   * Finaliza um Payment ainda pendente após erro técnico ou conflito de confirmação.
-   *
-   * @param paymentId - Payment que não pode mais confirmar a Reservation.
-   * @returns Payment terminal, preservando estados já finalizados por outra request.
-   */
-  private async failPayment(paymentId: string): Promise<Payment> {
-    return this.dataSource.transaction(async (manager) => {
-      const paymentsRepository = manager.getRepository(Payment);
-      const payment = await paymentsRepository.findOne({
-        where: { id: paymentId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!payment || payment.status !== PaymentStatus.Pending) {
-        return payment!;
-      }
-
-      payment.status = PaymentStatus.Failed;
-      payment.failedAt = await this.getDatabaseTimestamp(manager);
-      return paymentsRepository.save(payment);
-    });
-  }
-
-  /**
-   * Obtém o instante autoritativo da conexão PostgreSQL da transação atual.
+   * Lê o relógio do PostgreSQL após o lock, pois o prazo da Reservation pode vencer durante a espera.
    *
    * @param manager - Manager vinculado à transação que utilizará o timestamp.
    * @returns Instante atual calculado pelo PostgreSQL.
    */
   private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
     const timestampRows = (await manager.query(
-      'SELECT CURRENT_TIMESTAMP AS "now"',
+      'SELECT clock_timestamp() AS "now"',
     )) as DatabaseTimestampRow[];
 
     return new Date(timestampRows[0].now);
   }
 }
-
-class PaymentCompletionConflictError extends Error {}

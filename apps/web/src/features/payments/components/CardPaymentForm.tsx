@@ -1,21 +1,21 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import axios from 'axios';
-import { CircleX, CreditCard, Eye, EyeOff, LoaderCircle } from 'lucide-react';
+import { CircleX, Eye, EyeOff, LoaderCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatEventPrice } from '../../events/eventPresentation';
-import { useReservationMutations } from '../../reservations/hooks';
-import { useCardPayment } from '../hooks';
+import type { useCardPayment } from '../hooks';
 import { CardPaymentFormValues, cardPaymentSchema } from '../schemas';
 import { PaymentStatus } from '../types';
 
 interface CardPaymentFormProps {
-  reservationId: string;
-  eventId: string;
   totalPriceCents: number;
+  paymentFlow: ReturnType<typeof useCardPayment>;
+  cancelAction: ReactNode;
+  disabled: boolean;
 }
 
 const cardPresets = {
@@ -55,19 +55,14 @@ function getPaymentErrorMessage(error: unknown): string | null {
   return 'Não foi possível concluir o pagamento. Você pode tentar novamente.';
 }
 
-function getCancellationErrorMessage(error: unknown): string | null {
-  if (!error) {
-    return null;
-  }
-
-  return 'Não foi possível cancelar a reserva. Tente novamente.';
-}
-
 /** Formulário de cartão simulado, sem persistir dados sensíveis no estado remoto. */
-export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: CardPaymentFormProps) {
-  const { submit, payment, error, isPaying } = useCardPayment({ reservationId, eventId });
-  const { cancel, cancelError, isCancelling } = useReservationMutations(eventId);
-  const [isCancellationConfirmationOpen, setIsCancellationConfirmationOpen] = useState(false);
+export function CardPaymentForm({
+  totalPriceCents,
+  paymentFlow,
+  cancelAction,
+  disabled,
+}: CardPaymentFormProps) {
+  const { submit, payment, error, isPaying } = paymentFlow;
   const [isCvvVisible, setIsCvvVisible] = useState(false);
   const {
     register,
@@ -80,7 +75,6 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
     defaultValues: cardPresets.approved,
   });
   const paymentErrorMessage = getPaymentErrorMessage(error);
-  const cancellationErrorMessage = getCancellationErrorMessage(cancelError);
   const isDeclined = payment?.status === PaymentStatus.Declined;
   const isFailed = payment?.status === PaymentStatus.Failed;
   const isPending = payment?.status === PaymentStatus.Pending;
@@ -93,27 +87,8 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
     }
   };
 
-  const confirmCancellation = async (): Promise<void> => {
-    try {
-      await cancel(reservationId);
-      setIsCancellationConfirmationOpen(false);
-    } catch {
-      // A mensagem é derivada do estado da mutation para manter o feedback da tentativa.
-    }
-  };
-
   return (
-    <section className="mt-8 border-t border-border pt-7" aria-labelledby="payment-heading">
-      <div className="flex items-center gap-2">
-        <CreditCard className="size-5 text-primary" aria-hidden="true" />
-        <h2 id="payment-heading" className="m-0 font-heading text-2xl font-semibold">
-          Pagamento
-        </h2>
-      </div>
-      <p className="mb-0 mt-2 text-sm leading-6 text-muted-foreground">
-        Cartão de crédito é o único método disponível nesta demonstração.
-      </p>
-
+    <>
       <div className="mt-5 grid gap-2 sm:grid-cols-2">
         <Button
           type="button"
@@ -163,15 +138,6 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
           className="mt-5 border-l-4 border-destructive bg-destructive/10 p-4 text-sm text-destructive"
         >
           {paymentErrorMessage}
-        </div>
-      )}
-
-      {cancellationErrorMessage && (
-        <div
-          role="alert"
-          className="mt-5 border-l-4 border-destructive bg-destructive/10 p-4 text-sm text-destructive"
-        >
-          {cancellationErrorMessage}
         </div>
       )}
 
@@ -282,59 +248,19 @@ export function CardPaymentForm({ reservationId, eventId, totalPriceCents }: Car
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPaying || isPending || isCancelling}
-            onClick={() => setIsCancellationConfirmationOpen(true)}
-            className="h-auto rounded-[4px] border-border py-3 text-sm font-semibold"
-          >
-            Cancelar reserva
-          </Button>
+          {cancelAction}
           <Button
             type="submit"
-            disabled={!isValid || isPaying || isPending || isCancelling}
+            disabled={!isValid || isPaying || isPending || disabled}
             className="h-auto rounded-[4px] py-3 text-sm font-semibold"
           >
             {isPaying ? 'Processando pagamento...' : `Pagar ${formatEventPrice(totalPriceCents)}`}
           </Button>
         </div>
-        {isCancellationConfirmationOpen && (
-          <div className="border border-border bg-muted p-4" role="alert">
-            <p className="m-0 text-sm leading-6">
-              Cancelar esta reserva libera os assentos imediatamente. Deseja continuar?
-            </p>
-            <div className="mt-3 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsCancellationConfirmationOpen(false)}
-                disabled={isCancelling}
-                className="rounded-[4px]"
-              >
-                Voltar
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={confirmCancellation}
-                disabled={isCancelling}
-                className="rounded-[4px]"
-              >
-                {isCancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
-              </Button>
-            </div>
-          </div>
-        )}
         <p className="mb-0 text-center text-xs text-muted-foreground">
           Pagamento simulado — nenhum dado é cobrado ou armazenado.
         </p>
-        <p className="mb-0 text-center text-xs leading-5 text-muted-foreground">
-          Política de cancelamento: a compra pode ser cancelada integralmente em até sete dias da
-          aprovação do pagamento, desde que o evento ainda não tenha começado e nenhum ingresso
-          tenha sido utilizado.
-        </p>
       </form>
-    </section>
+    </>
   );
 }

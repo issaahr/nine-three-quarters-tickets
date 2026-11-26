@@ -1,5 +1,6 @@
 export enum PaymentMethod {
   Card = 'CARD',
+  Pix = 'PIX',
 }
 
 export enum PaymentStatus {
@@ -24,4 +25,9 @@ export interface Payment {
   amountCents: number;
   approvedAt: string | null;
   failedAt: string | null;
+}
+
+export interface SimulatedPixPayment extends Payment {
+  simulationCompletionAt: string | null;
+  qrCodePayload: string | null;
 }

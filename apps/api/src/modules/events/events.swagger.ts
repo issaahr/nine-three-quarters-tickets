@@ -12,12 +12,14 @@ import {
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
+import { ApiTrustedOrigin } from '../auth/auth.swagger';
 import { EventDetailResponseDto } from './dto/eventDetailResponse.dto';
 import { EventDiscoveryPageResponseDto } from './dto/eventDiscoveryPageResponse.dto';
 import { EventMutationResponseDto } from './dto/eventMutationResponse.dto';
 import { EventSeatMapItemResponseDto } from './dto/eventSeatMapItemResponse.dto';
 import { GateEventResponseDto } from './dto/gateEventResponse.dto';
 import { GateEventsPageResponseDto } from './dto/gateEventsPageResponse.dto';
+import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
 import { OrganizerEventsPageResponseDto } from './dto/organizerEventsPageResponse.dto';
 
 /**
@@ -179,6 +181,24 @@ export function ApiListOrganizerEvents() {
     ApiBadRequestResponse({
       type: ValidationErrorResponseDto,
       description: 'Parâmetros de paginação inválidos.',
+    }),
+  );
+}
+
+/** Agrupa a documentação HTTP do cancelamento de uma ocorrência pelo organizador. */
+export function ApiCancelOrganizerEvent() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Cancela um Event futuro do organizador autenticado' }),
+    ApiTrustedOrigin(),
+    ApiOkResponse({ type: OrganizerEventResponseDto }),
+    ApiBadRequestResponse({ description: 'Identificador do Event inválido.' }),
+    ApiNotFoundResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event inexistente ou pertencente a outro organizador.',
+    }),
+    ApiConflictResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Event fora das condições de cancelamento.',
     }),
   );
 }

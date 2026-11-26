@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
@@ -8,11 +8,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory, EventStatus } from '../events/types';
+import { PaymentMethod, PaymentStatus, SimulatedPixPayment } from '../payments/types';
 import { server } from '@/test/server';
 
 const apiUrl = 'http://api.test';
 const reservationId = 'reservation-checkout';
 const eventId = 'event-checkout';
+const pixPath = `${apiUrl}/reservations/${reservationId}/payments/pix`;
 const eventDetail = {
   id: eventId,
   title: 'Sessão reservada',
@@ -33,6 +35,36 @@ const reservationItems = [
   { id: 'item-2', eventSeatId: 'event-seat-2', unitPriceCents: 2590 },
 ];
 const payButtonName = /Pagar R\$\s*51,80/;
+
+const pendingPix: SimulatedPixPayment = {
+  id: 'pix-1',
+  reservationId,
+  method: PaymentMethod.Pix,
+  status: PaymentStatus.Pending,
+  amountCents: 5180,
+  approvedAt: null,
+  failedAt: null,
+  simulationCompletionAt: '2099-08-01T12:00:00.000Z',
+  qrCodePayload: 'ntq:pix:simulado:pix-1',
+};
+
+function mockReservationStatus(getStatus: () => 'ACTIVE' | 'CONFIRMED' | 'EXPIRED') {
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  server.use(
+    http.get(`${apiUrl}/reservations/${reservationId}`, () => {
+      const status = getStatus();
+      return HttpResponse.json({
+        id: reservationId,
+        eventId,
+        status,
+        expiresAt,
+        confirmedAt: status === 'CONFIRMED' ? '2030-08-01T12:00:00.000Z' : null,
+        cancelledAt: null,
+        items: reservationItems,
+      });
+    }),
+  );
+}
 
 function createPaymentResponse(status: 'APPROVED' | 'DECLINED' | 'FAILED') {
   return {
@@ -64,8 +96,15 @@ function renderCheckout() {
   );
 }
 
+async function findReadyCardPayButton() {
+  const button = await screen.findByRole('button', { name: payButtonName });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
 beforeEach(() => {
   server.use(
+    http.get(pixPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
     http.get(`${apiUrl}/events/${eventId}`, () => HttpResponse.json(eventDetail)),
     http.get(`${apiUrl}/events/${eventId}/seats`, () =>
       HttpResponse.json([
@@ -161,7 +200,7 @@ describe('checkout de Reservation', () => {
     renderCheckout();
 
     await user.click(await screen.findByRole('button', { name: 'Usar cartão aprovado' }));
-    await user.click(screen.getByRole('button', { name: payButtonName }));
+    await user.click(await findReadyCardPayButton());
 
     expect(
       await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
@@ -201,7 +240,7 @@ describe('checkout de Reservation', () => {
     renderCheckout();
 
     await user.click(await screen.findByRole('button', { name: 'Usar cartão recusado' }));
-    await user.click(screen.getByRole('button', { name: payButtonName }));
+    await user.click(await findReadyCardPayButton());
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Pagamento recusado');
     expect(
@@ -234,7 +273,7 @@ describe('checkout de Reservation', () => {
 
     renderCheckout();
 
-    await user.dblClick(await screen.findByRole('button', { name: payButtonName }));
+    await user.dblClick(await findReadyCardPayButton());
 
     expect(
       await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
@@ -270,7 +309,7 @@ describe('checkout de Reservation', () => {
 
     renderCheckout();
 
-    const submitButton = await screen.findByRole('button', { name: payButtonName });
+    const submitButton = await findReadyCardPayButton();
     await user.click(submitButton);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Não foi possível concluir o pagamento',
@@ -323,5 +362,130 @@ describe('checkout de Reservation', () => {
       await screen.findByRole('heading', { name: 'Sua reserva foi cancelada' }),
     ).toBeInTheDocument();
     expect(cancellationCalls).toBe(1);
+  });
+});
+
+describe('PIX simulado no checkout', () => {
+  it('gera o QR e retoma a tentativa após reload até a confirmação autoritativa', async () => {
+    const user = userEvent.setup();
+    let persisted: SimulatedPixPayment | null = null;
+    let creationCalls = 0;
+    let settlementCalls = 0;
+    let reservationReads = 0;
+    mockReservationStatus(() => {
+      reservationReads += 1;
+      return persisted?.status === PaymentStatus.Approved ? 'CONFIRMED' : 'ACTIVE';
+    });
+    server.use(
+      http.get(pixPath, () =>
+        persisted
+          ? HttpResponse.json(persisted)
+          : HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 }),
+      ),
+      http.post(pixPath, () => {
+        creationCalls += 1;
+        persisted = pendingPix;
+        return HttpResponse.json(persisted, { status: 201 });
+      }),
+      http.post(`${pixPath}/${pendingPix.id}/settle`, () => {
+        settlementCalls += 1;
+        if (settlementCalls === 2) {
+          persisted = {
+            ...pendingPix,
+            status: PaymentStatus.Approved,
+            approvedAt: '2030-08-01T12:00:00.000Z',
+          };
+        }
+        return HttpResponse.json(persisted);
+      }),
+    );
+
+    const firstCheckout = renderCheckout();
+    await user.click(await screen.findByRole('button', { name: 'PIX simulado' }));
+    const generateButton = screen.getByRole('button', { name: 'Gerar QR do PIX' });
+    await waitFor(() => expect(generateButton).toBeEnabled());
+    await user.click(generateButton);
+    const firstQr = await screen.findByRole('img', { name: 'Código QR do PIX simulado' });
+    firstCheckout.unmount();
+    const checkoutAfterReload = renderCheckout();
+
+    const recoveredQr = await screen.findByRole('img', { name: 'Código QR do PIX simulado' });
+    expect(recoveredQr.isEqualNode(firstQr)).toBe(true);
+    expect(screen.getByRole('button', { name: 'Cartão de crédito' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Gerar QR do PIX' })).not.toBeInTheDocument();
+    expect(creationCalls).toBe(1);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pagamento confirmado' }, { timeout: 6_500 }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver meus ingressos' })).toHaveAttribute(
+      'href',
+      '/customer/tickets',
+    );
+    expect(reservationReads).toBeGreaterThanOrEqual(3);
+    expect(settlementCalls).toBe(2);
+    checkoutAfterReload.unmount();
+  }, 10_000);
+
+  it('para de consultar o settlement quando a API encerra o PIX por expiração', async () => {
+    let payment = pendingPix;
+    let settlementCalls = 0;
+    mockReservationStatus(() => (payment.status === PaymentStatus.Failed ? 'EXPIRED' : 'ACTIVE'));
+    server.use(
+      http.get(pixPath, () => HttpResponse.json(payment)),
+      http.post(`${pixPath}/${pendingPix.id}/settle`, () => {
+        settlementCalls += 1;
+        payment = {
+          ...pendingPix,
+          status: PaymentStatus.Failed,
+          failedAt: '2030-08-01T12:00:00.000Z',
+        };
+        return HttpResponse.json(payment);
+      }),
+    );
+
+    renderCheckout();
+    expect(
+      await screen.findByRole('img', { name: 'Código QR do PIX simulado' }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva expirou' }, { timeout: 4_500 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('img', { name: 'Código QR do PIX simulado' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ver meus ingressos' })).not.toBeInTheDocument();
+
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 2_200));
+    expect(settlementCalls).toBe(1);
+  }, 9_000);
+
+  it('repete a chave de criação do PIX após falha de rede', async () => {
+    const user = userEvent.setup();
+    const keys: Array<string | null> = [];
+    mockReservationStatus(() => 'ACTIVE');
+    server.use(
+      http.post(pixPath, ({ request }) => {
+        keys.push(request.headers.get('Idempotency-Key'));
+        return keys.length === 1
+          ? HttpResponse.error()
+          : HttpResponse.json(pendingPix, { status: 201 });
+      }),
+    );
+
+    renderCheckout();
+    await user.click(await screen.findByRole('button', { name: 'PIX simulado' }));
+    const generateButton = screen.getByRole('button', { name: 'Gerar QR do PIX' });
+    await waitFor(() => expect(generateButton).toBeEnabled());
+    await user.click(generateButton);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível iniciar o PIX');
+    await user.click(generateButton);
+
+    expect(
+      await screen.findByRole('img', { name: 'Código QR do PIX simulado' }),
+    ).toBeInTheDocument();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toEqual(expect.any(String));
+    expect(keys[1]).toBe(keys[0]);
   });
 });

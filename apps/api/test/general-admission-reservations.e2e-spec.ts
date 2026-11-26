@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
@@ -302,6 +303,7 @@ describe('Reservations GENERAL_ADMISSION', () => {
 
     await request(app.getHttpServer())
       .post(`/reservations/${creation.body.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', cookie)
       .expect(200);
 

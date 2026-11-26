@@ -3,11 +3,40 @@ import { EntityManager, In, UpdateResult } from 'typeorm';
 
 import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
+import { PaymentMethod } from '../paymentMethod.enum';
 import { SoldEventSeatRow } from '../payments.interfaces';
 import { PaymentStatus } from '../paymentStatus.enum';
 
 @Injectable()
 export class PaymentRepository {
+  /**
+   * Recupera o PIX do checkout com verificação de propriedade na mesma consulta.
+   * Prioriza a tentativa ativa e, quando ela não existe, retorna o resultado terminal mais recente.
+   *
+   * @param manager - Manager da leitura do estado persistido do checkout.
+   * @param customerId - Identidade do CUSTOMER autenticado.
+   * @param reservationId - Identificador da Reservation que deve pertencer ao CUSTOMER.
+   * @returns Payment de PIX disponível para retomada ou null quando não há tentativa visível.
+   */
+  public findSimulatedPixForCheckout(
+    manager: EntityManager,
+    customerId: string,
+    reservationId: string,
+  ): Promise<Payment | null> {
+    return manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .innerJoin('payment.reservation', 'reservation')
+      .where({ reservationId, method: PaymentMethod.Pix })
+      .andWhere('reservation.customerId = :customerId', { customerId })
+      .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
+      .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
+      .addOrderBy('payment.createdAt', 'DESC')
+      .addOrderBy('payment.id', 'DESC')
+      .limit(1)
+      .getOne();
+  }
+
   /**
    * Converte em venda somente os EventSeats cujo hold válido ainda pertence à Reservation.
    *
@@ -36,7 +65,8 @@ export class PaymentRepository {
   }
 
   /**
-   * Finaliza tentativas PENDING cuja criação ultrapassou a janela técnica permitida.
+   * Encerra tentativas de cartão fake que excederam a janela técnica de processamento.
+   * O PIX aguarda o settlement mesmo após essa janela.
    *
    * @param manager - Manager vinculado à transação que bloqueou a Reservation.
    * @param reservationId - Reservation cujas tentativas podem ser recuperadas.
@@ -44,7 +74,7 @@ export class PaymentRepository {
    * @param now - Instante autoritativo do PostgreSQL usado como failedAt.
    * @returns Resultado da atualização condicional executada dentro da transação.
    */
-  public expireOrphanedPending(
+  public expireOrphanedCardPayments(
     manager: EntityManager,
     reservationId: string,
     staleBefore: Date,
@@ -56,6 +86,7 @@ export class PaymentRepository {
       .update(Payment)
       .set({ status: PaymentStatus.Failed, failedAt: now })
       .where('"reservationId" = :reservationId', { reservationId })
+      .andWhere('"method" = :method', { method: PaymentMethod.Card })
       .andWhere('"status" = :status', { status: PaymentStatus.Pending })
       .andWhere('"createdAt" <= :staleBefore', { staleBefore })
       .execute();
