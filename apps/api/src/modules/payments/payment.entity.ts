@@ -11,11 +11,19 @@ import { PaymentStatus } from './paymentStatus.enum';
 @Entity('payments')
 @Unique('paymentsReservationIdempotencyKeyUnique', ['reservationId', 'idempotencyKey'])
 @Unique('paymentsProviderExternalReferenceUnique', ['provider', 'externalReference'])
+@Unique('paymentsProviderExternalPaymentReferenceUnique', ['provider', 'externalPaymentReference'])
 @Index('paymentsActiveReservationUnique', ['reservationId'], {
   unique: true,
   where: `"status" IN ('${PaymentStatus.Pending}', '${PaymentStatus.Approved}')`,
 })
+@Index('paymentsPendingHostedReconciliationIndex', ['provider', 'id'], {
+  where: `"status" = '${PaymentStatus.Pending}' AND "externalReference" IS NOT NULL`,
+})
 @Check('paymentsAmountCentsNonNegative', '"amountCents" >= 0')
+@Check(
+  'paymentsExternalPaymentReferenceMatchesOutcome',
+  `"externalPaymentReference" IS NULL OR ("provider" <> '${PaymentProvider.Fake}' AND "externalReference" IS NOT NULL AND btrim("externalPaymentReference") <> '' AND "status" IN ('${PaymentStatus.Approved}', '${PaymentStatus.Failed}'))`,
+)
 @Check(
   'paymentsSimulationCompletionMatchesProviderAndMethod',
   `("provider" = '${PaymentProvider.Fake}' AND "method" = '${PaymentMethod.Pix}') = ("simulationCompletionAt" IS NOT NULL)`,
@@ -55,6 +63,10 @@ export class Payment extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   public externalReference!: string | null;
+
+  // Evidência de cobrança confirmada pelo provedor, mesmo quando a compra local falha.
+  @Column({ type: 'text', nullable: true })
+  public externalPaymentReference!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   public approvedAt!: Date | null;

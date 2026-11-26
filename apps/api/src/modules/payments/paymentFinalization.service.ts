@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
+import { getDatabaseClockTimestamp } from '../../database/databaseClock';
+import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
 import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
@@ -8,11 +10,13 @@ import { Reservation } from '../reservations/reservation.entity';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { TicketsService } from '../tickets/tickets.service';
 import { PaymentNotFoundError } from './errors/paymentNotFound.error';
+import { HostedCheckoutUnavailableError } from './errors/hostedCheckoutUnavailable.error';
+import { HostedPaymentOutcomeStatus } from './hostedPaymentOutcomeStatus.enum';
 import { Payment } from './payment.entity';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
-import { DatabaseTimestampRow, PaymentFinalizationResult } from './payments.interfaces';
+import { HostedPaymentObservation, PaymentFinalizationResult } from './payments.interfaces';
 import { PaymentRepository } from './repositories/payment.repository';
 
 @Injectable()
@@ -59,6 +63,19 @@ export class PaymentFinalizationService {
   }
 
   /**
+   * Concilia um resultado consultado fora da transação. Uma cobrança tardia deixa a referência
+   * persistida junto à falha local para que o estorno possa ser tratado depois.
+   */
+  public finalizeHostedPayment(observation: HostedPaymentObservation): Promise<Payment> {
+    return this.applyOutcome(
+      observation.request.paymentId,
+      PaymentStatus.Approved,
+      undefined,
+      observation,
+    );
+  }
+
+  /**
    * Usa o relógio do PostgreSQL após os locks para decidir se a compra pode ser confirmada.
    * Publica o delta de assentos vendidos somente após o commit.
    *
@@ -69,6 +86,8 @@ export class PaymentFinalizationService {
     paymentId: string,
     outcome: PaymentStatus.Approved | PaymentStatus.Declined,
     pixScope?: { customerId: string; reservationId: string },
+    hosted?: HostedPaymentObservation,
+    rejectHostedPurchase = false,
   ): Promise<Payment> {
     try {
       const result = await this.dataSource.transaction<PaymentFinalizationResult>(
@@ -79,8 +98,8 @@ export class PaymentFinalizationService {
           const eventsRepository = manager.getRepository(Event);
           const paymentCriteria = {
             id: paymentId,
-            provider: PaymentProvider.Fake,
-            method: pixScope ? PaymentMethod.Pix : PaymentMethod.Card,
+            provider: hosted?.provider ?? PaymentProvider.Fake,
+            method: hosted?.request.method ?? (pixScope ? PaymentMethod.Pix : PaymentMethod.Card),
             ...(pixScope && { reservationId: pixScope.reservationId }),
           };
           const paymentReference = await paymentsRepository.findOne({
@@ -119,6 +138,11 @@ export class PaymentFinalizationService {
             throw new PaymentNotFoundError();
           }
 
+          if (hosted) {
+            const reconciled = await this.applyHostedObservation(manager, payment, hosted);
+            if (reconciled) return { payment: reconciled, eventId: null, soldEventSeatIds: [] };
+          }
+
           if (payment.status !== PaymentStatus.Pending) {
             return { payment, eventId: null, soldEventSeatIds: [] };
           }
@@ -132,14 +156,8 @@ export class PaymentFinalizationService {
             };
           }
 
-          const now = await this.getDatabaseTimestamp(manager);
-          if (
-            reservation.confirmedAt ||
-            reservation.cancelledAt ||
-            reservation.expiresAt.getTime() <= now.getTime() ||
-            event.status !== EventStatus.Published ||
-            event.startsAt.getTime() <= now.getTime()
-          ) {
+          const now = await getDatabaseClockTimestamp(manager);
+          if (rejectHostedPurchase || this.isPurchaseUnavailable(reservation, event, now)) {
             payment.status = PaymentStatus.Failed;
             payment.failedAt = now;
             this.logger.warn(`Payment ${payment.id} não pôde confirmar a Reservation`);
@@ -151,6 +169,7 @@ export class PaymentFinalizationService {
           }
 
           if (
+            !hosted &&
             payment.method === PaymentMethod.Pix &&
             (!payment.simulationCompletionAt || payment.simulationCompletionAt > now)
           ) {
@@ -160,14 +179,26 @@ export class PaymentFinalizationService {
           const items = await reservationItemsRepository.findBy({
             reservationId: reservation.id,
           });
-          const seatedItemCount = items.filter((item) => item.eventSeatId !== null).length;
+          const seatIds = items.flatMap(({ eventSeatId }) => (eventSeatId ? [eventSeatId] : []));
+          // Enquanto o Event estiver bloqueado, um hold GA ativo já compõe a capacidade ocupada.
+          if (
+            hosted &&
+            (items.length === 0 ||
+              (event.admissionMode === AdmissionMode.Seated
+                ? seatIds.length !== items.length
+                : seatIds.length !== 0))
+          )
+            throw new PaymentCompletionConflictError();
           const soldEventSeatIds = await this.paymentRepository.sellHeldEventSeats(
             manager,
             reservation.id,
             now,
           );
 
-          if (soldEventSeatIds.length !== seatedItemCount) {
+          if (
+            soldEventSeatIds.length !== seatIds.length ||
+            (hosted && seatIds.some((seatId) => !soldEventSeatIds.includes(seatId)))
+          ) {
             // Reverte também os assentos já atualizados antes de registrar a falha em outra transação.
             throw new PaymentCompletionConflictError();
           }
@@ -182,11 +213,20 @@ export class PaymentFinalizationService {
             now,
           );
 
-          return {
-            payment: await paymentsRepository.save(payment),
-            eventId: event.id,
-            soldEventSeatIds,
-          };
+          const savedPayment = await paymentsRepository.save(payment);
+          // Uma atualização de assento ou emissão pode esperar por locks depois da primeira leitura.
+          if (
+            hosted &&
+            this.isPurchaseUnavailable(
+              reservation,
+              event,
+              await getDatabaseClockTimestamp(manager),
+              true,
+            )
+          ) {
+            throw new PaymentCompletionConflictError();
+          }
+          return { payment: savedPayment, eventId: event.id, soldEventSeatIds };
         },
       );
 
@@ -204,8 +244,69 @@ export class PaymentFinalizationService {
       }
 
       this.logger.warn(`Pagamento ${paymentId} perdeu o hold antes da confirmação`);
+      if (hosted) return this.applyOutcome(paymentId, outcome, pixScope, hosted, true);
       return this.failPayment(paymentId);
     }
+  }
+
+  /** Revalida a identidade sob lock e preserva evidência de cobrança sem reabrir uma tentativa terminal. */
+  private async applyHostedObservation(
+    manager: EntityManager,
+    payment: Payment,
+    { request, externalReference, outcome }: HostedPaymentObservation,
+  ): Promise<Payment | null> {
+    if (
+      payment.amountCents !== request.amountCents ||
+      payment.currency !== request.currency ||
+      (payment.externalReference !== null && payment.externalReference !== externalReference)
+    ) {
+      throw new HostedCheckoutUnavailableError();
+    }
+
+    const payments = manager.getRepository(Payment);
+    const needsLink = payment.externalReference === null;
+    payment.externalReference = externalReference;
+
+    if (outcome.status === HostedPaymentOutcomeStatus.Paid) {
+      if (
+        payment.externalPaymentReference &&
+        payment.externalPaymentReference !== outcome.externalPaymentReference
+      ) {
+        throw new HostedCheckoutUnavailableError();
+      }
+      if (payment.status === PaymentStatus.Pending) {
+        payment.externalPaymentReference = outcome.externalPaymentReference;
+        return null;
+      }
+      if (payment.status === PaymentStatus.Failed && !payment.externalPaymentReference) {
+        payment.externalPaymentReference = outcome.externalPaymentReference;
+        return payments.save(payment);
+      }
+    } else if (
+      outcome.status === HostedPaymentOutcomeStatus.Closed &&
+      payment.status === PaymentStatus.Pending
+    ) {
+      payment.status = PaymentStatus.Failed;
+      payment.failedAt = await getDatabaseClockTimestamp(manager);
+      return payments.save(payment);
+    }
+
+    return needsLink ? payments.save(payment) : payment;
+  }
+
+  private isPurchaseUnavailable(
+    reservation: Reservation,
+    event: Event,
+    now: Date,
+    confirming = false,
+  ): boolean {
+    return (
+      (!confirming && reservation.confirmedAt !== null) ||
+      reservation.cancelledAt !== null ||
+      reservation.expiresAt <= now ||
+      event.status !== EventStatus.Published ||
+      event.startsAt <= now
+    );
   }
 
   /**
@@ -228,18 +329,9 @@ export class PaymentFinalizationService {
       }
 
       payment.status = PaymentStatus.Failed;
-      payment.failedAt = await this.getDatabaseTimestamp(manager);
+      payment.failedAt = await getDatabaseClockTimestamp(manager);
       return paymentsRepository.save(payment);
     });
-  }
-
-  // CURRENT_TIMESTAMP não avança enquanto a transação aguarda os locks.
-  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
-    const timestampRows = (await manager.query(
-      'SELECT clock_timestamp() AS "now"',
-    )) as DatabaseTimestampRow[];
-
-    return new Date(timestampRows[0].now);
   }
 }
 

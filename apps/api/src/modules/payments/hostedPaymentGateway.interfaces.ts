@@ -1,3 +1,4 @@
+import { HostedPaymentOutcomeStatus } from './hostedPaymentOutcomeStatus.enum';
 import { PaymentCurrency } from './paymentCurrency.enum';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentProvider } from './paymentProvider.enum';
@@ -14,6 +15,10 @@ export interface HostedPaymentRedirect {
   checkoutUrl: string | null;
 }
 
+export type HostedPaymentOutcome =
+  | { status: HostedPaymentOutcomeStatus.Paid; externalPaymentReference: string }
+  | { status: HostedPaymentOutcomeStatus.Pending | HostedPaymentOutcomeStatus.Closed };
+
 /** A tentativa local identifica uma única criação durante a janela de idempotência do provedor. */
 export interface HostedPaymentGateway {
   readonly provider: PaymentProvider;
@@ -23,4 +28,9 @@ export interface HostedPaymentGateway {
     request: HostedPaymentRequest,
     externalReference: string,
   ): Promise<HostedPaymentRedirect>;
+  /** Consulta o provedor para distinguir cobrança confirmada, operação aberta e encerramento sem cobrança. */
+  retrievePaymentOutcome(
+    request: HostedPaymentRequest,
+    externalReference: string,
+  ): Promise<HostedPaymentOutcome>;
 }

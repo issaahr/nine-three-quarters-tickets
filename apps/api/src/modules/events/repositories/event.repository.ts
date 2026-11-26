@@ -145,12 +145,13 @@ export class EventRepository {
         reservation.cancelledAt = now;
         await reservationsRepository.save(reservation);
         if (payment.amountCents > 0) {
+          const completedLocally = payment.provider === PaymentProvider.Fake;
           await refundsRepository.save(
             refundsRepository.create({
               paymentId: payment.id,
               amountCents: payment.amountCents,
-              status: RefundStatus.Completed,
-              completedAt: now,
+              status: completedLocally ? RefundStatus.Completed : RefundStatus.Pending,
+              completedAt: completedLocally ? now : null,
               failedAt: null,
             }),
           );

@@ -1,24 +1,28 @@
 import { HostedCheckoutUnavailableError } from '../errors/hostedCheckoutUnavailable.error';
 import {
   HostedPaymentGateway,
+  HostedPaymentOutcome,
   HostedPaymentRedirect,
   HostedPaymentRequest,
 } from '../hostedPaymentGateway.interfaces';
+import { HostedPaymentOutcomeStatus } from '../hostedPaymentOutcomeStatus.enum';
 import { PaymentMethod } from '../paymentMethod.enum';
 import { PaymentProvider } from '../paymentProvider.enum';
+import { stripePaymentIntentIdPrefix, stripeTestSessionIdPrefix } from './stripeCheckout.constants';
 import {
   StripeCheckoutMode,
   StripeCheckoutObject,
   StripeCheckoutPaymentStatus,
   StripeCheckoutSessionStatus,
   StripePaymentMethod,
+  StripePaymentIntentStatus,
 } from './stripeCheckout.enums';
+import { StripeCheckoutSession } from './stripeCheckout.interfaces';
 
 const stripeApiVersion = '2026-11-18.endive';
 const stripeCheckoutSessionsUrl = 'https://api.stripe.com/v1/checkout/sessions';
 const stripeCheckoutOrigin = 'https://checkout.stripe.com';
 const stripeCheckoutUiMode = 'hosted_page';
-const stripeTestSessionIdPrefix = 'cs_test_';
 const stripeRequestTimeoutMs = 10_000;
 const stripePixExpirationSeconds = 600;
 // Mantém margem para a repetição chegar à Stripe antes do limite de retenção de 24 horas.
@@ -40,7 +44,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
    * @param returnUrl - URL confiável da aplicação para retorno por conclusão ou desistência.
    * @returns Referência externa e link quando a sessão ainda aceita pagamento.
    */
-  public createCheckout(
+  public async createCheckout(
     request: HostedPaymentRequest,
     returnUrl: string,
   ): Promise<HostedPaymentRedirect> {
@@ -65,11 +69,12 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
       );
     }
 
-    return this.requestSession(stripeCheckoutSessionsUrl, request, {
+    const session = await this.requestSession(stripeCheckoutSessionsUrl, request, {
       method: 'POST',
       body: params,
       headers: { 'Idempotency-Key': `checkout-${request.paymentId}` },
     });
+    return this.redirect(session);
   }
 
   /**
@@ -79,23 +84,72 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
    * @param externalReference - Identificador da sessão já gravado na tentativa.
    * @returns Referência validada e link quando a sessão ainda aceita pagamento.
    */
-  public retrieveCheckout(
+  public async retrieveCheckout(
     request: HostedPaymentRequest,
     externalReference: string,
   ): Promise<HostedPaymentRedirect> {
-    return this.requestSession(
+    const session = await this.requestSession(
       `${stripeCheckoutSessionsUrl}/${encodeURIComponent(externalReference)}`,
       request,
       {},
       externalReference,
     );
+    return this.redirect(session);
+  }
+
+  /**
+   * Verifica a situação atual da sessão e do PaymentIntent antes de conciliar a tentativa local.
+   * Uma sessão sem cobrança mantém a tentativa pendente enquanto o provedor ainda pode cobrar.
+   */
+  public async retrievePaymentOutcome(
+    request: HostedPaymentRequest,
+    externalReference: string,
+  ): Promise<HostedPaymentOutcome> {
+    const query = new URLSearchParams({ 'expand[]': StripeCheckoutObject.PaymentIntent });
+    const session = await this.requestSession(
+      `${stripeCheckoutSessionsUrl}/${encodeURIComponent(externalReference)}?${query}`,
+      request,
+      {},
+      externalReference,
+    );
+    const intent = this.record(session.paymentIntent);
+
+    if (session.paymentStatus === StripeCheckoutPaymentStatus.Paid) {
+      if (
+        session.status !== StripeCheckoutSessionStatus.Complete ||
+        !intent ||
+        !this.matchesPaymentIntent(intent, request) ||
+        intent.status !== StripePaymentIntentStatus.Succeeded ||
+        intent.amount_received !== request.amountCents ||
+        typeof intent.id !== 'string'
+      )
+        throw new HostedCheckoutUnavailableError();
+      return { status: HostedPaymentOutcomeStatus.Paid, externalPaymentReference: intent.id };
+    }
+
+    const noCharge =
+      intent &&
+      this.matchesPaymentIntent(intent, request) &&
+      intent.amount_received === 0 &&
+      (intent.status === StripePaymentIntentStatus.Canceled ||
+        intent.status === StripePaymentIntentStatus.RequiresPaymentMethod);
+    // O Checkout só permite tentar outro meio de pagamento enquanto a sessão continuar aberta.
+    if (
+      session.paymentStatus === StripeCheckoutPaymentStatus.Unpaid &&
+      ((session.status === StripeCheckoutSessionStatus.Expired &&
+        (session.paymentIntent === null || noCharge)) ||
+        (session.status === StripeCheckoutSessionStatus.Complete && noCharge))
+    )
+      return { status: HostedPaymentOutcomeStatus.Closed };
+
+    return { status: HostedPaymentOutcomeStatus.Pending };
   }
 
   /**
    * Valida o vínculo, o valor e o ambiente da sessão antes de expor a resposta ao checkout.
    *
    * @param expectedReference - Na consulta, restringe a resposta ao identificador já persistido.
-   * @returns Referência validada e link apenas para sessões abertas e ainda não pagas.
+   * @returns Campos usados para retomar ou conciliar a sessão externa.
    * @throws {@link HostedCheckoutUnavailableError} se a chamada falhar ou a sessão divergir da tentativa.
    */
   private async requestSession(
@@ -103,7 +157,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     request: HostedPaymentRequest,
     init: RequestInit,
     expectedReference?: string,
-  ): Promise<HostedPaymentRedirect> {
+  ): Promise<StripeCheckoutSession> {
     let data: unknown;
     try {
       const headers = new Headers(init.headers);
@@ -123,9 +177,9 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
       throw new HostedCheckoutUnavailableError();
     }
 
-    if (typeof data !== 'object' || data === null) throw new HostedCheckoutUnavailableError();
-    const session = data as Record<string, unknown>;
+    const session = this.record(data);
     if (
+      !session ||
       session.object !== StripeCheckoutObject.Session ||
       session.livemode !== false ||
       session.mode !== StripeCheckoutMode.Payment ||
@@ -145,10 +199,39 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     }
 
     return {
+      id: session.id,
+      status: session.status,
+      paymentStatus: session.payment_status,
+      paymentIntent: session.payment_intent,
+      url: session.url,
+    };
+  }
+
+  private matchesPaymentIntent(
+    intent: Record<string, unknown>,
+    request: HostedPaymentRequest,
+  ): boolean {
+    return (
+      intent.object === StripeCheckoutObject.PaymentIntent &&
+      intent.livemode === false &&
+      typeof intent.id === 'string' &&
+      intent.id.startsWith(stripePaymentIntentIdPrefix) &&
+      this.record(intent.metadata)?.paymentId === request.paymentId &&
+      intent.amount === request.amountCents &&
+      intent.currency === request.currency.toLowerCase()
+    );
+  }
+
+  private record(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+  }
+
+  private redirect(session: StripeCheckoutSession): HostedPaymentRedirect {
+    return {
       externalReference: session.id,
       checkoutUrl:
         session.status === StripeCheckoutSessionStatus.Open &&
-        session.payment_status === StripeCheckoutPaymentStatus.Unpaid
+        session.paymentStatus === StripeCheckoutPaymentStatus.Unpaid
           ? this.hostedUrl(session.url)
           : null,
     };

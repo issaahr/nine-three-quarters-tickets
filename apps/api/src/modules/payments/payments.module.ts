@@ -14,14 +14,21 @@ import { FakePaymentsModeGuard } from './guards/fakePaymentsMode.guard';
 import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
 import { HostedCheckoutController } from './hostedCheckout.controller';
 import { HostedCheckoutService } from './hostedCheckout.service';
+import { HostedPaymentReconciliationService } from './hostedPaymentReconciliation.service';
 import { Payment } from './payment.entity';
 import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentProvider } from './paymentProvider.enum';
-import { hostedPaymentGatewayToken, paymentGatewayToken } from './payments.constants';
+import {
+  hostedPaymentGatewayToken,
+  paymentGatewayToken,
+  stripeCheckoutWebhookToken,
+} from './payments.constants';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { PaymentRepository } from './repositories/payment.repository';
 import { StripeHostedPaymentGateway } from './stripe/stripeHostedPaymentGateway';
+import { StripeCheckoutWebhook } from './stripe/stripeCheckoutWebhook';
+import { StripeCheckoutWebhookController } from './stripe/stripeCheckoutWebhook.controller';
 
 @Module({
   imports: [
@@ -30,7 +37,7 @@ import { StripeHostedPaymentGateway } from './stripe/stripeHostedPaymentGateway'
     TicketsModule,
     RealtimeModule,
   ],
-  controllers: [PaymentsController, HostedCheckoutController],
+  controllers: [PaymentsController, HostedCheckoutController, StripeCheckoutWebhookController],
   providers: [
     PaymentsService,
     PaymentFinalizationService,
@@ -38,6 +45,7 @@ import { StripeHostedPaymentGateway } from './stripe/stripeHostedPaymentGateway'
     FakePaymentGateway,
     FakePaymentsModeGuard,
     HostedCheckoutService,
+    HostedPaymentReconciliationService,
     TrustedPaymentOriginGuard,
     { provide: paymentGatewayToken, useExisting: FakePaymentGateway },
     {
@@ -46,6 +54,15 @@ import { StripeHostedPaymentGateway } from './stripe/stripeHostedPaymentGateway'
         const config = applicationConfig.payments;
         return config.provider === PaymentProvider.Stripe
           ? new StripeHostedPaymentGateway(config.secretKey)
+          : null;
+      },
+    },
+    {
+      provide: stripeCheckoutWebhookToken,
+      useFactory: () => {
+        const config = applicationConfig.payments;
+        return config.provider === PaymentProvider.Stripe
+          ? new StripeCheckoutWebhook(config.webhookSecret)
           : null;
       },
     },

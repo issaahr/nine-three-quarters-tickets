@@ -307,9 +307,9 @@ As configurações de rate limiting definem as janelas e limites utilizados pela
 
 ### Stripe Checkout em sandbox
 
-Configure `PAYMENT_PROVIDER=fake` para a demonstração. Quando a variável é omitida, a API mantém esse modo. Para testar os endpoints de checkout hospedado, configure `PAYMENT_PROVIDER=stripe` e forneça `PAYMENT_STRIPE_SECRET_KEY` com uma chave `sk_test_...` no ambiente do backend. A primeira origem de `CORS_ORIGINS` recebe o retorno à página da reserva.
+Configure `PAYMENT_PROVIDER=fake` para a demonstração. Quando a variável é omitida, a API mantém esse modo. Para testar o checkout hospedado, configure `PAYMENT_PROVIDER=stripe`, `PAYMENT_STRIPE_SECRET_KEY` com uma chave `sk_test_...` e `PAYMENT_STRIPE_WEBHOOK_SECRET` com o segredo `whsec_...` do webhook ou da Stripe CLI. A primeira origem de `CORS_ORIGINS` recebe o retorno à página da reserva.
 
-Os endpoints hospedados ficam em `/reservations/:reservationId/payments/hosted`. O `POST` inicia uma tentativa com `Idempotency-Key` e um método (`CARD` ou `PIX`). O `GET` recupera a tentativa e o `POST /:paymentId/resume` retoma sua criação caso a resposta anterior tenha se perdido. O frontend poderá consultar o `GET` quando o cliente voltar do Checkout. A confirmação de pagamentos externos será feita pela conciliação no backend. [Validação do sandbox](docs/stripe-sandbox-validation.md)
+Os endpoints hospedados ficam em `/reservations/:reservationId/payments/hosted`. O `POST` inicia uma tentativa com `Idempotency-Key` e um método (`CARD` ou `PIX`). O `GET` recupera a tentativa e o `POST /:paymentId/resume` retoma sua criação caso a resposta anterior tenha se perdido. Encaminhe webhooks de teste a `POST /payments/webhooks/stripe`. A API confirma o pagamento pela consulta ao provedor e concilia periodicamente as tentativas pendentes com vínculo externo para recuperar notificações perdidas. [Validação do sandbox](docs/stripe-sandbox-validation.md)
 
 ### Integrações externas
 

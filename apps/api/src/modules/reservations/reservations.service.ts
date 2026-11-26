@@ -7,6 +7,7 @@ import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
 import { Payment } from '../payments/payment.entity';
+import { PaymentProvider } from '../payments/paymentProvider.enum';
 import { PaymentStatus } from '../payments/paymentStatus.enum';
 import { EventNotFoundError } from '../events/errors/eventNotFound.error';
 import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
@@ -304,12 +305,13 @@ export class ReservationsService {
         reservation.cancelledAt = now;
         await reservationsRepository.save(reservation);
         if (payment.amountCents > 0) {
+          const completedLocally = payment.provider === PaymentProvider.Fake;
           await manager.getRepository(Refund).save(
             manager.getRepository(Refund).create({
               paymentId: payment.id,
               amountCents: payment.amountCents,
-              status: RefundStatus.Completed,
-              completedAt: now,
+              status: completedLocally ? RefundStatus.Completed : RefundStatus.Pending,
+              completedAt: completedLocally ? now : null,
               failedAt: null,
             }),
           );

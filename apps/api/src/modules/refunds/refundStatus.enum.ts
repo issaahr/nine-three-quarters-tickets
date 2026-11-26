@@ -1,5 +1,5 @@
 /**
- * Estados persistidos de um Refund simulado.
+ * Estados persistidos de um Refund. Estornos externos aguardam confirmação do provedor.
  */
 export enum RefundStatus {
   Pending = 'PENDING',

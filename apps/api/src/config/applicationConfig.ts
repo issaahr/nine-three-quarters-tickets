@@ -154,7 +154,16 @@ function getPaymentProviderConfig(environmentVariables: NodeJS.ProcessEnv) {
   if (!/^sk_test_[A-Za-z0-9_]+$/.test(secretKey)) {
     throw new ConfigurationError('PAYMENT_STRIPE_SECRET_KEY deve ser uma chave de teste da Stripe');
   }
-  return { provider: PaymentProvider.Stripe, secretKey } as const;
+  const webhookSecret = getRequiredEnvironmentVariable(
+    'PAYMENT_STRIPE_WEBHOOK_SECRET',
+    environmentVariables,
+  );
+  if (!/^whsec_[A-Za-z0-9_]+$/.test(webhookSecret)) {
+    throw new ConfigurationError(
+      'PAYMENT_STRIPE_WEBHOOK_SECRET deve ser um segredo de assinatura da Stripe',
+    );
+  }
+  return { provider: PaymentProvider.Stripe, secretKey, webhookSecret } as const;
 }
 
 /**

@@ -1,4 +1,14 @@
+import { HostedPaymentOutcome, HostedPaymentRequest } from './hostedPaymentGateway.interfaces';
 import { Payment } from './payment.entity';
+import { PaymentProvider } from './paymentProvider.enum';
+
+/** Resultado consultado no provedor e os dados locais usados para validar a mesma tentativa. */
+export interface HostedPaymentObservation {
+  request: HostedPaymentRequest;
+  provider: PaymentProvider;
+  externalReference: string;
+  outcome: HostedPaymentOutcome;
+}
 
 /** Projeção do timestamp autoritativo retornado pela conexão PostgreSQL. */
 export interface DatabaseTimestampRow {

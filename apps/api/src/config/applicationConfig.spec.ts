@@ -37,9 +37,22 @@ describe('loadApplicationConfig', () => {
       loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_live_invalid' }),
     ).toThrow('chave de teste');
     expect(
-      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example' })
-        .payments.provider,
+      loadApplicationConfig({
+        ...stripeEnvironment,
+        PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example',
+        PAYMENT_STRIPE_WEBHOOK_SECRET: 'whsec_example',
+      }).payments.provider,
     ).toBe(PaymentProvider.Stripe);
+    expect(() =>
+      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example' }),
+    ).toThrow('PAYMENT_STRIPE_WEBHOOK_SECRET');
+    expect(() =>
+      loadApplicationConfig({
+        ...stripeEnvironment,
+        PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example',
+        PAYMENT_STRIPE_WEBHOOK_SECRET: 'invalid',
+      }),
+    ).toThrow('PAYMENT_STRIPE_WEBHOOK_SECRET');
     expect(() =>
       loadApplicationConfig({ ...validEnvironment, PAYMENT_PROVIDER: 'unknown' }),
     ).toThrow('PAYMENT_PROVIDER');

@@ -5,6 +5,7 @@ import {
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiHeader,
+  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -16,6 +17,22 @@ import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
 import { HostedCheckoutResponseDto } from './dto/hostedCheckoutResponse.dto';
 import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
+import { stripeWebhookSignatureHeader } from './stripe/stripeCheckout.constants';
+
+export function ApiStripeCheckoutWebhook() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Concilia atualizações de sessões Stripe do ambiente de teste' }),
+    ApiHeader({ name: stripeWebhookSignatureHeader, required: true }),
+    ApiNoContentResponse({ description: 'Notificação processada ou já conciliada.' }),
+    ApiBadRequestResponse({
+      description: 'Assinatura, formato ou ambiente da notificação inválido.',
+    }),
+    ApiNotFoundResponse({ description: 'Integração Stripe desabilitada.' }),
+    ApiServiceUnavailableResponse({
+      description: 'Não foi possível confirmar o estado atual no provedor.',
+    }),
+  );
+}
 
 const apiPaymentIdempotencyKey = ApiHeader({
   name: 'Idempotency-Key',

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { INestApplication } from '@nestjs/common';
@@ -19,6 +19,8 @@ import { HostedCheckoutUnavailableError } from '../src/modules/payments/errors/h
 import { PaymentInProgressError } from '../src/modules/payments/errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from '../src/modules/payments/errors/reservationAlreadyPaid.error';
 import { HostedPaymentGateway } from '../src/modules/payments/hostedPaymentGateway.interfaces';
+import { HostedPaymentOutcomeStatus } from '../src/modules/payments/hostedPaymentOutcomeStatus.enum';
+import { HostedPaymentReconciliationService } from '../src/modules/payments/hostedPaymentReconciliation.service';
 import { Payment } from '../src/modules/payments/payment.entity';
 import { PaymentCurrency } from '../src/modules/payments/paymentCurrency.enum';
 import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
@@ -26,6 +28,7 @@ import { PaymentProvider } from '../src/modules/payments/paymentProvider.enum';
 import {
   hostedPaymentGatewayToken,
   paymentGatewayToken,
+  stripeCheckoutWebhookToken,
 } from '../src/modules/payments/payments.constants';
 import { PaymentsService } from '../src/modules/payments/payments.service';
 import {
@@ -35,8 +38,14 @@ import {
   PaymentGateway,
 } from '../src/modules/payments/paymentGateway.interfaces';
 import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
+import {
+  StripeCheckoutEventType,
+  StripeCheckoutObject,
+} from '../src/modules/payments/stripe/stripeCheckout.enums';
+import { StripeCheckoutWebhook } from '../src/modules/payments/stripe/stripeCheckoutWebhook';
 import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
 import { Refund } from '../src/modules/refunds/refund.entity';
+import { RefundStatus } from '../src/modules/refunds/refundStatus.enum';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
 import { Reservation } from '../src/modules/reservations/reservation.entity';
 import { Ticket } from '../src/modules/tickets/ticket.entity';
@@ -61,6 +70,8 @@ describe('Payments', () => {
   const lockPollIntervalMilliseconds = 20;
   const deadlineAfterLockObservedMilliseconds = 50;
   const deadlineBeforeRequestMilliseconds = 2_000;
+  const webhookFixtureSecret = 'whsec_payment_test_fixture';
+  const webhookEndpoint = '/payments/webhooks/stripe';
   let app: INestApplication;
   let dataSource: DataSource;
   let eventsRepository: Repository<Event>;
@@ -82,8 +93,10 @@ describe('Payments', () => {
     creationRetryWindowMs: 86_400_000,
     createCheckout: jest.fn(),
     retrieveCheckout: jest.fn(),
+    retrievePaymentOutcome: jest.fn(),
   };
   let paymentsService: PaymentsService;
+  let reconciliation: HostedPaymentReconciliationService;
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
@@ -94,14 +107,17 @@ describe('Payments', () => {
       .useValue(paymentGateway)
       .overrideProvider(hostedPaymentGatewayToken)
       .useValue(hostedGateway)
+      .overrideProvider(stripeCheckoutWebhookToken)
+      .useValue(new StripeCheckoutWebhook(webhookFixtureSecret))
       .compile();
 
-    app = testingModule.createNestApplication();
+    app = testingModule.createNestApplication({ rawBody: true });
     new Application().configure(app);
     await app.init();
 
     dataSource = app.get(DataSource);
     paymentsService = app.get(PaymentsService);
+    reconciliation = app.get(HostedPaymentReconciliationService);
     eventsRepository = dataSource.getRepository(Event);
     eventSeatsRepository = dataSource.getRepository(EventSeat);
     paymentsRepository = dataSource.getRepository(Payment);
@@ -133,6 +149,7 @@ describe('Payments', () => {
     paymentGateway.processCard.mockResolvedValue({ status: CardPaymentGatewayStatus.Approved });
     hostedGateway.createCheckout.mockReset();
     hostedGateway.retrieveCheckout.mockReset();
+    hostedGateway.retrievePaymentOutcome.mockReset();
     jest.mocked(seatRealtimeGateway.emitSold).mockClear();
     jest.mocked(seatRealtimeGateway.emitReleased).mockClear();
   });
@@ -443,6 +460,284 @@ describe('Payments', () => {
     });
   });
 
+  async function createPendingHostedPayment(
+    reservation: Reservation,
+    externalReference: string | null,
+    method = PaymentMethod.Card,
+  ): Promise<Payment> {
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    return paymentsRepository.save({
+      reservationId: reservation.id,
+      method,
+      provider: PaymentProvider.Stripe,
+      status: PaymentStatus.Pending,
+      idempotencyKey: randomUUID(),
+      amountCents: items.reduce((total, item) => total + item.unitPriceCents, 0),
+      currency: PaymentCurrency.Brl,
+      externalReference,
+    });
+  }
+
+  function sendHostedNotification(
+    paymentId: string,
+    externalReference: string,
+    options: { validSignature?: boolean; livemode?: boolean; type?: StripeCheckoutEventType } = {},
+  ) {
+    const timestamp = Math.floor(Date.now() / 1000);
+    const payload = JSON.stringify(
+      {
+        type: options.type ?? StripeCheckoutEventType.Completed,
+        livemode: options.livemode ?? false,
+        data: {
+          object: {
+            object: StripeCheckoutObject.Session,
+            id: externalReference,
+            livemode: false,
+            client_reference_id: paymentId,
+            payment_status: 'unpaid',
+          },
+        },
+      },
+      null,
+      2,
+    );
+    const signature = createHmac('sha256', webhookFixtureSecret)
+      .update(`${timestamp}.${payload}${options.validSignature === false ? ' ' : ''}`)
+      .digest('hex');
+    return request(app.getHttpServer())
+      .post(webhookEndpoint)
+      .set('Content-Type', 'application/json')
+      .set('Stripe-Signature', `t=${timestamp},v1=${signature}`)
+      .send(payload);
+  }
+
+  function reportHostedPaymentAsPaid(paymentId: string, externalPaymentReference: string): void {
+    hostedGateway.retrievePaymentOutcome.mockImplementation(async (attempt) =>
+      attempt.paymentId === paymentId
+        ? { status: HostedPaymentOutcomeStatus.Paid, externalPaymentReference }
+        : { status: HostedPaymentOutcomeStatus.Pending },
+    );
+  }
+
+  it('converge com notificações repetidas e fora de ordem concorrendo com a conciliação SEATED', async () => {
+    const reservation = await createActiveReservation(undefined, 2);
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+
+    await Promise.all([
+      sendHostedNotification(payment.id, externalReference).expect(204),
+      sendHostedNotification(payment.id, externalReference, {
+        type: StripeCheckoutEventType.Expired,
+      }).expect(204),
+      reconciliation.reconcilePendingBatch(),
+    ]);
+
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    await expect(
+      ticketsRepository.countBy({ reservationItemId: In(items.map(({ id }) => id)) }),
+    ).resolves.toBe(2);
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Approved,
+      approvedAt: expect.any(Date),
+      externalPaymentReference,
+    });
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
+  });
+
+  it('recusa assinatura, modo live e referência divergente antes de conciliar', async () => {
+    const reservation = await createActiveReservation();
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+
+    await sendHostedNotification(payment.id, externalReference, { validSignature: false }).expect(
+      400,
+    );
+    await sendHostedNotification(payment.id, externalReference, { livemode: true }).expect(400);
+    await sendHostedNotification(payment.id, 'cs_test_other_session').expect(503);
+    expect(hostedGateway.retrievePaymentOutcome).not.toHaveBeenCalled();
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Pending,
+      externalReference,
+    });
+  });
+
+  it('confirma capacidade GA sem callback e mantém exclusiva a capacidade vendida', async () => {
+    const gaVenue = await dataSource
+      .getRepository(Venue)
+      .findOneByOrFail({ admissionMode: AdmissionMode.GeneralAdmission });
+    const event = await eventsRepository.save({
+      organizerId: organizer.id,
+      venueId: gaVenue.id,
+      title: 'Conciliação GA',
+      category: EventCategory.Show,
+      admissionMode: AdmissionMode.GeneralAdmission,
+      status: EventStatus.Published,
+      startsAt: new Date('2099-10-01T23:30:00.000Z'),
+      capacity: 2,
+      priceCents: 2590,
+      catalogSource: CatalogSource.Ticketmaster,
+      externalId: randomUUID(),
+    });
+    createdEventIds.push(event.id);
+    const cookie = await authenticate();
+    const otherCookie = await authenticate(customerTwo);
+    const hold = await request(app.getHttpServer())
+      .post('/reservations/general-admission')
+      .set('Cookie', cookie)
+      .send({ eventId: event.id, quantity: 2 })
+      .expect(201);
+    const reservation = await reservationsRepository.findOneByOrFail({ id: hold.body.id });
+    const payment = await createPendingHostedPayment(
+      reservation,
+      `cs_test_${randomUUID()}`,
+      PaymentMethod.Pix,
+    );
+    reportHostedPaymentAsPaid(payment.id, `pi_${randomUUID()}`);
+
+    await reconciliation.reconcilePendingBatch();
+    await reconciliation.reconcilePendingBatch();
+
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    await expect(
+      ticketsRepository.countBy({ reservationItemId: In(items.map(({ id }) => id)) }),
+    ).resolves.toBe(2);
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Approved,
+    });
+    await request(app.getHttpServer())
+      .post('/reservations/general-admission')
+      .set('Cookie', otherCookie)
+      .send({ eventId: event.id, quantity: 1 })
+      .expect(409);
+    expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
+  });
+
+  it.each(['prazo expirado', 'hold perdido'])(
+    'preserva cobrança tardia sem emitir Tickets após %s',
+    async (reason) => {
+      const reservation =
+        reason === 'prazo expirado'
+          ? await createActiveReservation(new Date('2020-01-01T00:10:00.000Z'), 2)
+          : await createActiveReservation(undefined, 2);
+      const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+      if (reason === 'hold perdido') {
+        await eventSeatsRepository.update(items[0].eventSeatId!, {
+          holdReservationId: null,
+          holdExpiresAt: null,
+        });
+      }
+      const payment = await createPendingHostedPayment(reservation, null);
+      const externalReference = `cs_test_${randomUUID()}`;
+      const externalPaymentReference = `pi_${randomUUID()}`;
+      reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+
+      await sendHostedNotification(payment.id, externalReference).expect(204);
+      await sendHostedNotification(payment.id, externalReference).expect(204);
+
+      await expect(
+        ticketsRepository.countBy({ reservationItemId: In(items.map(({ id }) => id)) }),
+      ).resolves.toBe(0);
+      await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+        status: PaymentStatus.Failed,
+        externalReference,
+        externalPaymentReference,
+        failedAt: expect.any(Date),
+      });
+      await expect(eventSeatsRepository.findBy({ eventId: reservation.eventId })).resolves.toEqual(
+        expect.arrayContaining(
+          items.map(({ eventSeatId }) =>
+            expect.objectContaining({ id: eventSeatId, soldAt: null }),
+          ),
+        ),
+      );
+      expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reverte a venda se o hold vencer enquanto a conciliação Stripe aguarda o lock do assento', async () => {
+    const reservation = await createActiveReservation();
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+
+    const response = await requestWaitingPastDeadline(
+      sendHostedNotification(payment.id, externalReference),
+      (manager) =>
+        manager.getRepository(EventSeat).findOneOrFail({
+          where: { id: item.eventSeatId! },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      // Grava o prazo em outra conexão. A conciliação só deve ficar bloqueada ao atualizar o assento.
+      (_manager, deadline) =>
+        reservationsRepository.update(reservation.id, { expiresAt: deadline }),
+    );
+
+    expect(response.status).toBe(204);
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Failed,
+      externalPaymentReference,
+    });
+    await expect(
+      reservationsRepository.findOneByOrFail({ id: reservation.id }),
+    ).resolves.toMatchObject({ confirmedAt: null });
+    await expect(ticketsRepository.countBy({ reservationItemId: item.id })).resolves.toBe(0);
+    await expect(
+      eventSeatsRepository.findOneByOrFail({ id: item.eventSeatId! }),
+    ).resolves.toMatchObject({ soldAt: null, holdReservationId: reservation.id });
+    expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
+  });
+
+  it.each(['reserva', 'evento'])(
+    'registra estorno Stripe pendente no cancelamento de %s',
+    async (target) => {
+      const reservation = await createActiveReservation();
+      const externalReference = `cs_test_${randomUUID()}`;
+      const payment = await createPendingHostedPayment(reservation, externalReference);
+      const externalPaymentReference = `pi_${randomUUID()}`;
+      reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+      await sendHostedNotification(payment.id, externalReference).expect(204);
+
+      const isEventCancellation = target === 'evento';
+      const cookie = await authenticate(isEventCancellation ? organizer : customer);
+      const path = isEventCancellation
+        ? `/organizer/me/events/${reservation.eventId}/cancel`
+        : `/reservations/${reservation.id}/cancel`;
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Cookie', cookie)
+        .set('Origin', checkoutOrigin)
+        .expect(200);
+
+      await expect(refundsRepository.findBy({ paymentId: payment.id })).resolves.toEqual([
+        expect.objectContaining({
+          amountCents: payment.amountCents,
+          status: RefundStatus.Pending,
+          completedAt: null,
+          failedAt: null,
+        }),
+      ]);
+      await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+        status: PaymentStatus.Approved,
+        externalPaymentReference,
+      });
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      await expect(
+        ticketsRepository.findOneByOrFail({ reservationItemId: item.id }),
+      ).resolves.toMatchObject({ cancelledAt: expect.any(Date) });
+      await expect(
+        eventSeatsRepository.findOneByOrFail({ id: item.eventSeatId! }),
+      ).resolves.toMatchObject({ soldAt: null });
+    },
+  );
+
   async function waitForBlockedTransaction(pid: number): Promise<void> {
     for (let attempt = 0; attempt < lockPollAttempts; attempt++) {
       const [{ blocked }] = (await dataSource.query(
@@ -490,8 +785,8 @@ describe('Payments', () => {
     }
   }
 
-  async function cancelWaitingPastDeadline(
-    cancellation: HttpRequest,
+  async function requestWaitingPastDeadline(
+    pendingRequest: HttpRequest,
     acquireLock: (manager: EntityManager) => Promise<unknown>,
     setDeadline: (manager: EntityManager, deadline: Date) => Promise<unknown>,
   ): Promise<HttpResponse> {
@@ -508,7 +803,7 @@ describe('Payments', () => {
         [deadlineBeforeRequestMilliseconds],
       )) as Array<{ pid: number; deadline: Date }>;
       await setDeadline(locker.manager, deadline);
-      response = cancellation.then((result) => result);
+      response = pendingRequest.then((result) => result);
       await waitForBlockedTransaction(pid);
 
       const [{ beforeDeadline }] = (await locker.query(
@@ -1399,7 +1694,7 @@ describe('Payments', () => {
         .post(`/organizer/me/events/${reservation.eventId}/cancel`)
         .set('Origin', checkoutOrigin)
         .set('Cookie', organizerCookie);
-      const response = await cancelWaitingPastDeadline(
+      const response = await requestWaitingPastDeadline(
         cancellation,
         (manager) =>
           manager.getRepository(Payment).findOneOrFail({
@@ -1468,7 +1763,7 @@ describe('Payments', () => {
         .set('Origin', checkoutOrigin)
         .set('Cookie', isEvent ? await authenticate(organizer) : customerCookie);
 
-      const response = await cancelWaitingPastDeadline(
+      const response = await requestWaitingPastDeadline(
         cancellation,
         (manager) => {
           switch (lock) {

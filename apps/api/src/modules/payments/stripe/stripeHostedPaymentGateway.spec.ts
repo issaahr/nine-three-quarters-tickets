@@ -1,4 +1,5 @@
 import { HostedCheckoutUnavailableError } from '../errors/hostedCheckoutUnavailable.error';
+import { HostedPaymentOutcomeStatus } from '../hostedPaymentOutcomeStatus.enum';
 import { PaymentCurrency } from '../paymentCurrency.enum';
 import { PaymentMethod } from '../paymentMethod.enum';
 import { StripeHostedPaymentGateway } from './stripeHostedPaymentGateway';
@@ -80,4 +81,117 @@ describe('StripeHostedPaymentGateway', () => {
       checkoutUrl: null,
     });
   });
+
+  const paidIntent = {
+    id: 'pi_test_example',
+    object: 'payment_intent',
+    livemode: false,
+    status: 'succeeded',
+    amount: payment.amountCents,
+    amount_received: payment.amountCents,
+    currency: 'brl',
+    metadata: { paymentId: payment.paymentId },
+  };
+
+  it('reconhece cobrança apenas após validar o PaymentIntent expandido', async () => {
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json({
+        ...session,
+        status: 'complete',
+        payment_status: 'paid',
+        payment_intent: paidIntent,
+      }),
+    );
+    await expect(gateway.retrievePaymentOutcome(payment, session.id)).resolves.toEqual({
+      status: HostedPaymentOutcomeStatus.Paid,
+      externalPaymentReference: paidIntent.id,
+    });
+    expect(new URL(String(fetchSpy.mock.calls[0][0])).searchParams.get('expand[]')).toBe(
+      'payment_intent',
+    );
+  });
+
+  it.each([
+    { livemode: true },
+    { amount: 1 },
+    { amount_received: 1 },
+    { currency: 'usd' },
+    { status: 'processing' },
+    { metadata: { paymentId: 'different-attempt' } },
+  ])('rejeita PaymentIntent divergente (%j)', async (mismatch) => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json({
+        ...session,
+        status: 'complete',
+        payment_status: 'paid',
+        payment_intent: { ...paidIntent, ...mismatch },
+      }),
+    );
+    await expect(gateway.retrievePaymentOutcome(payment, session.id)).rejects.toBeInstanceOf(
+      HostedCheckoutUnavailableError,
+    );
+  });
+
+  it('mantém PIX não pago em aberto e encerra somente a sessão que não pode mais cobrar', async () => {
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        Response.json({
+          ...session,
+          status: 'complete',
+          payment_intent: { ...paidIntent, status: 'processing' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          ...session,
+          status: 'expired',
+          payment_intent: { ...paidIntent, status: 'canceled', amount_received: 0 },
+        }),
+      );
+    await expect(gateway.retrievePaymentOutcome(payment, session.id)).resolves.toEqual({
+      status: HostedPaymentOutcomeStatus.Pending,
+    });
+    await expect(gateway.retrievePaymentOutcome(payment, session.id)).resolves.toEqual({
+      status: HostedPaymentOutcomeStatus.Closed,
+    });
+  });
+
+  it.each(['complete', 'expired'])(
+    'encerra sessão %s cujo PaymentIntent precisa de outro meio de pagamento e não foi cobrado',
+    async (status) => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        Response.json({
+          ...session,
+          status,
+          payment_intent: { ...paidIntent, status: 'requires_payment_method', amount_received: 0 },
+        }),
+      );
+
+      await expect(gateway.retrievePaymentOutcome(payment, session.id)).resolves.toEqual({
+        status: HostedPaymentOutcomeStatus.Closed,
+      });
+    },
+  );
+
+  it.each([
+    { status: 'open', intent: { amount_received: 0 } },
+    { status: 'complete', intent: { amount_received: 0, amount: 1 } },
+    { status: 'complete', intent: { amount_received: 1 } },
+  ])(
+    'mantém sessão em conciliação quando não há encerramento seguro (%j)',
+    async ({ status, intent }) => {
+      jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+        Response.json({
+          ...session,
+          status,
+          payment_intent: { ...paidIntent, status: 'requires_payment_method', ...intent },
+        }),
+      );
+
+      await expect(gateway.retrievePaymentOutcome(payment, session.id)).resolves.toEqual({
+        status: HostedPaymentOutcomeStatus.Pending,
+      });
+    },
+  );
 });
