@@ -7,8 +7,10 @@ import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
 import { ReservationNotFoundError } from '../reservations/errors/reservationNotFound.error';
 import { Payment } from './payment.entity';
+import { PaymentCurrency } from './paymentCurrency.enum';
 import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentMethod } from './paymentMethod.enum';
+import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
 import { paymentGatewayToken, simulatedPixCompletionDelayMs } from './payments.constants';
@@ -165,7 +167,10 @@ export class PaymentsService {
   private toSimulatedPixPayment(payment: Payment): SimulatedPixPaymentInitiation {
     return {
       payment,
-      qrCodePayload: payment.method === PaymentMethod.Pix ? `ntq:pix:simulado:${payment.id}` : null,
+      qrCodePayload:
+        payment.provider === PaymentProvider.Fake && payment.method === PaymentMethod.Pix
+          ? `ntq:pix:simulado:${payment.id}`
+          : null,
     };
   }
 
@@ -201,7 +206,7 @@ export class PaymentsService {
       const staleBefore = new Date(
         now.getTime() - applicationConfig.payments.cardPendingTimeoutSeconds * 1000,
       );
-      const orphanedPayments = await this.paymentRepository.expireOrphanedCardPayments(
+      const orphanedPayments = await this.paymentRepository.expireOrphanedFakeCardPayments(
         manager,
         reservation.id,
         staleBefore,
@@ -253,9 +258,12 @@ export class PaymentsService {
         paymentsRepository.create({
           reservationId: reservation.id,
           method,
+          provider: PaymentProvider.Fake,
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
+          currency: PaymentCurrency.Brl,
+          externalReference: null,
           approvedAt: null,
           failedAt: null,
           simulationCompletionAt:

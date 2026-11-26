@@ -4,6 +4,7 @@ import { EntityManager, In, UpdateResult } from 'typeorm';
 import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
 import { PaymentMethod } from '../paymentMethod.enum';
+import { PaymentProvider } from '../paymentProvider.enum';
 import { SoldEventSeatRow } from '../payments.interfaces';
 import { PaymentStatus } from '../paymentStatus.enum';
 
@@ -27,7 +28,7 @@ export class PaymentRepository {
       .getRepository(Payment)
       .createQueryBuilder('payment')
       .innerJoin('payment.reservation', 'reservation')
-      .where({ reservationId, method: PaymentMethod.Pix })
+      .where({ reservationId, method: PaymentMethod.Pix, provider: PaymentProvider.Fake })
       .andWhere('reservation.customerId = :customerId', { customerId })
       .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
       .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
@@ -74,7 +75,7 @@ export class PaymentRepository {
    * @param now - Instante autoritativo do PostgreSQL usado como failedAt.
    * @returns Resultado da atualização condicional executada dentro da transação.
    */
-  public expireOrphanedCardPayments(
+  public expireOrphanedFakeCardPayments(
     manager: EntityManager,
     reservationId: string,
     staleBefore: Date,
@@ -87,6 +88,7 @@ export class PaymentRepository {
       .set({ status: PaymentStatus.Failed, failedAt: now })
       .where('"reservationId" = :reservationId', { reservationId })
       .andWhere('"method" = :method', { method: PaymentMethod.Card })
+      .andWhere('"provider" = :provider', { provider: PaymentProvider.Fake })
       .andWhere('"status" = :status', { status: PaymentStatus.Pending })
       .andWhere('"createdAt" <= :staleBefore', { staleBefore })
       .execute();

@@ -18,7 +18,9 @@ import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { PaymentInProgressError } from '../src/modules/payments/errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from '../src/modules/payments/errors/reservationAlreadyPaid.error';
 import { Payment } from '../src/modules/payments/payment.entity';
+import { PaymentCurrency } from '../src/modules/payments/paymentCurrency.enum';
 import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
+import { PaymentProvider } from '../src/modules/payments/paymentProvider.enum';
 import { paymentGatewayToken } from '../src/modules/payments/payments.constants';
 import { PaymentsService } from '../src/modules/payments/payments.service';
 import {
@@ -419,7 +421,10 @@ describe('Payments', () => {
     expect(pendingPayment).toMatchObject({
       reservationId: reservation.id,
       status: PaymentStatus.Pending,
+      provider: PaymentProvider.Fake,
       amountCents: 2590,
+      currency: PaymentCurrency.Brl,
+      externalReference: null,
       approvedAt: null,
       failedAt: null,
     });
@@ -470,9 +475,11 @@ describe('Payments', () => {
     const orphanedPayment = await paymentsRepository.save({
       reservationId: reservation.id,
       method: PaymentMethod.Card,
+      provider: PaymentProvider.Fake,
       status: PaymentStatus.Pending,
       idempotencyKey: randomUUID(),
       amountCents: 2590,
+      currency: PaymentCurrency.Brl,
       approvedAt: null,
       failedAt: null,
     });
@@ -490,6 +497,80 @@ describe('Payments', () => {
     expect(recoveredPayment).toMatchObject({ status: PaymentStatus.Failed });
     expect(recoveredPayment.failedAt).not.toBeNull();
     expect(newPaymentResponse.body.status).toBe(PaymentStatus.Approved);
+  });
+
+  it('mantém o cartão Stripe pendente após a janela técnica do cartão fake', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const payment = await paymentsRepository.save({
+      reservationId: reservation.id,
+      method: PaymentMethod.Card,
+      provider: PaymentProvider.Stripe,
+      status: PaymentStatus.Pending,
+      idempotencyKey: randomUUID(),
+      amountCents: 2590,
+      currency: PaymentCurrency.Brl,
+      createdAt: new Date('2000-01-01T00:00:00Z'),
+    });
+
+    const response = await createPaymentRequest(reservation.id, randomUUID(), cookie).expect(409);
+
+    expect(response.body.code).toBe('PAYMENT_IN_PROGRESS');
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Pending,
+      failedAt: null,
+      externalReference: null,
+    });
+    expect(paymentGateway.processCard).not.toHaveBeenCalled();
+  });
+
+  it('persiste PIX Stripe sem simulação e vincula cada referência externa a uma única tentativa', async () => {
+    const firstReservation = await createActiveReservation();
+    const secondReservation = await createActiveReservation();
+    const pendingStripePix = {
+      method: PaymentMethod.Pix,
+      provider: PaymentProvider.Stripe,
+      status: PaymentStatus.Pending,
+      amountCents: 2590,
+      currency: PaymentCurrency.Brl,
+    };
+    const first = await paymentsRepository.save({
+      ...pendingStripePix,
+      reservationId: firstReservation.id,
+      idempotencyKey: randomUUID(),
+    });
+    const second = await paymentsRepository.save({
+      ...pendingStripePix,
+      reservationId: secondReservation.id,
+      idempotencyKey: randomUUID(),
+    });
+
+    const externalReference = `session-${randomUUID()}`;
+    await paymentsRepository.update(first.id, { externalReference });
+    await expect(paymentsRepository.update(second.id, { externalReference })).rejects.toMatchObject(
+      {
+        driverError: { constraint: 'paymentsProviderExternalReferenceUnique' },
+      },
+    );
+    await expect(
+      paymentsRepository.update(first.id, { simulationCompletionAt: new Date() }),
+    ).rejects.toMatchObject({
+      driverError: { constraint: 'paymentsSimulationCompletionMatchesProviderAndMethod' },
+    });
+
+    const cookie = await authenticate();
+    await request(app.getHttpServer())
+      .get(`/reservations/${firstReservation.id}/payments/pix`)
+      .set('Cookie', cookie)
+      .expect(404);
+    await settlePixRequest(firstReservation.id, first.id, cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(404);
+    await expect(paymentsRepository.findOneByOrFail({ id: first.id })).resolves.toMatchObject({
+      externalReference,
+      simulationCompletionAt: null,
+      status: PaymentStatus.Pending,
+    });
   });
 
   it('persiste uma única tentativa PIX em retries simultâneos, com prazo e QR estáveis', async () => {
@@ -511,9 +592,12 @@ describe('Payments', () => {
     expect(persisted).toMatchObject({
       id: first.payment.id,
       method: PaymentMethod.Pix,
+      provider: PaymentProvider.Fake,
       status: PaymentStatus.Pending,
       idempotencyKey,
       amountCents: 5180,
+      currency: PaymentCurrency.Brl,
+      externalReference: null,
       approvedAt: null,
       failedAt: null,
       simulationCompletionAt: expect.any(Date),
@@ -530,7 +614,7 @@ describe('Payments', () => {
     await expect(
       paymentsRepository.update(persisted.id, { simulationCompletionAt: null }),
     ).rejects.toMatchObject({
-      driverError: { constraint: 'paymentsSimulationCompletionMatchesMethod' },
+      driverError: { constraint: 'paymentsSimulationCompletionMatchesProviderAndMethod' },
     });
     expect(paymentGateway.processCard).not.toHaveBeenCalled();
   });
@@ -580,9 +664,11 @@ describe('Payments', () => {
       paymentsRepository.insert({
         reservationId: reservation.id,
         method: PaymentMethod.Card,
+        provider: PaymentProvider.Stripe,
         status: PaymentStatus.Pending,
         idempotencyKey: randomUUID(),
         amountCents: winner.amountCents,
+        currency: PaymentCurrency.Brl,
         simulationCompletionAt: null,
       }),
     ).rejects.toMatchObject({

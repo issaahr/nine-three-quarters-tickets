@@ -2,20 +2,27 @@ import { Check, Column, Entity, Index, JoinColumn, ManyToOne, Relation, Unique }
 
 import { BaseEntity } from '../../database/base.entity';
 import { Reservation } from '../reservations/reservation.entity';
+import { PaymentCurrency } from './paymentCurrency.enum';
 import { PaymentMethod } from './paymentMethod.enum';
+import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 
 /** Tentativa idempotente de pagamento vinculada a uma Reservation. */
 @Entity('payments')
 @Unique('paymentsReservationIdempotencyKeyUnique', ['reservationId', 'idempotencyKey'])
+@Unique('paymentsProviderExternalReferenceUnique', ['provider', 'externalReference'])
 @Index('paymentsActiveReservationUnique', ['reservationId'], {
   unique: true,
   where: `"status" IN ('${PaymentStatus.Pending}', '${PaymentStatus.Approved}')`,
 })
 @Check('paymentsAmountCentsNonNegative', '"amountCents" >= 0')
 @Check(
-  'paymentsSimulationCompletionMatchesMethod',
-  `("method" = '${PaymentMethod.Pix}') = ("simulationCompletionAt" IS NOT NULL)`,
+  'paymentsSimulationCompletionMatchesProviderAndMethod',
+  `("provider" = '${PaymentProvider.Fake}' AND "method" = '${PaymentMethod.Pix}') = ("simulationCompletionAt" IS NOT NULL)`,
+)
+@Check(
+  'paymentsExternalReferenceMatchesProvider',
+  `"externalReference" IS NULL OR ("provider" <> '${PaymentProvider.Fake}' AND btrim("externalReference") <> '')`,
 )
 @Check(
   'paymentsLifecycleConsistent',
@@ -30,6 +37,9 @@ export class Payment extends BaseEntity {
   @Column({ type: 'enum', enum: PaymentMethod, enumName: 'paymentMethodEnum' })
   public method!: PaymentMethod;
 
+  @Column({ type: 'enum', enum: PaymentProvider, enumName: 'paymentProviderEnum' })
+  public provider!: PaymentProvider;
+
   @Column({ type: 'enum', enum: PaymentStatus, enumName: 'paymentStatusEnum' })
   public status!: PaymentStatus;
 
@@ -39,6 +49,12 @@ export class Payment extends BaseEntity {
   // Valor obtido dos snapshots dos ReservationItems, nunca de dados do cliente
   @Column({ type: 'integer' })
   public amountCents!: number;
+
+  @Column({ type: 'enum', enum: PaymentCurrency, enumName: 'paymentCurrencyEnum' })
+  public currency!: PaymentCurrency;
+
+  @Column({ type: 'text', nullable: true })
+  public externalReference!: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   public approvedAt!: Date | null;

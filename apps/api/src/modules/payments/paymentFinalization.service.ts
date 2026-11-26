@@ -10,6 +10,7 @@ import { TicketsService } from '../tickets/tickets.service';
 import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { Payment } from './payment.entity';
 import { PaymentMethod } from './paymentMethod.enum';
+import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { DatabaseTimestampRow, PaymentFinalizationResult } from './payments.interfaces';
 import { PaymentRepository } from './repositories/payment.repository';
@@ -76,9 +77,12 @@ export class PaymentFinalizationService {
           const reservationsRepository = manager.getRepository(Reservation);
           const reservationItemsRepository = manager.getRepository(ReservationItem);
           const eventsRepository = manager.getRepository(Event);
-          const paymentCriteria = pixScope
-            ? { id: paymentId, method: PaymentMethod.Pix, reservationId: pixScope.reservationId }
-            : { id: paymentId, method: PaymentMethod.Card };
+          const paymentCriteria = {
+            id: paymentId,
+            provider: PaymentProvider.Fake,
+            method: pixScope ? PaymentMethod.Pix : PaymentMethod.Card,
+            ...(pixScope && { reservationId: pixScope.reservationId }),
+          };
           const paymentReference = await paymentsRepository.findOne({
             select: { reservationId: true },
             where: paymentCriteria,
@@ -215,7 +219,7 @@ export class PaymentFinalizationService {
     return this.dataSource.transaction(async (manager) => {
       const paymentsRepository = manager.getRepository(Payment);
       const payment = await paymentsRepository.findOneOrFail({
-        where: { id: paymentId },
+        where: { id: paymentId, provider: PaymentProvider.Fake },
         lock: { mode: 'pessimistic_write' },
       });
 
