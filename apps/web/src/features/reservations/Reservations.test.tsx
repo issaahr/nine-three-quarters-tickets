@@ -135,6 +135,11 @@ beforeEach(() => {
 });
 
 describe('checkout hospedado', () => {
+  const initialMessage = 'Você será redirecionado ao checkout seguro para concluir o pagamento.';
+  const preparingMessage = 'Preparando seu pagamento…';
+  const resumeMessage =
+    'Você tem um pagamento em andamento. Clique em “Retomar pagamento” para continuar.';
+  const waitingMessage = 'Aguardando confirmação do pagamento.';
   const pendingPayment: HostedCheckoutPayment = {
     id: 'hosted-payment',
     method: PaymentMethod.Pix,
@@ -160,30 +165,53 @@ describe('checkout hospedado', () => {
     mockReservationStatus(() => 'ACTIVE');
   });
 
-  it('oferece apenas os métodos habilitados e envia só o método para abrir o checkout', async () => {
-    enableHosted([PaymentMethod.Pix]);
-    const starts: Array<{ body: unknown; key: string | null }> = [];
-    server.use(
-      http.get(hostedPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
-      http.post(hostedPath, async ({ request }) => {
-        starts.push({ body: await request.json(), key: request.headers.get('idempotency-key') });
-        return HttpResponse.json({ ...pendingPayment, checkoutUrl });
-      }),
-    );
+  it.each([
+    { method: PaymentMethod.Card, label: 'Cartão de crédito', otherLabel: 'Pix' },
+    { method: PaymentMethod.Pix, label: 'Pix', otherLabel: 'Cartão de crédito' },
+  ])(
+    'mostra o estado inicial e o preparo ao abrir o checkout de $label',
+    async ({ method, label, otherLabel }) => {
+      enableHosted([method]);
+      const starts: Array<{ body: unknown; key: string | null }> = [];
+      let finishRequest!: () => void;
+      const pendingRequest = new Promise<void>((resolve) => {
+        finishRequest = resolve;
+      });
+      server.use(
+        http.get(hostedPath, () =>
+          HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 }),
+        ),
+        http.post(hostedPath, async ({ request }) => {
+          starts.push({ body: await request.json(), key: request.headers.get('idempotency-key') });
+          await pendingRequest;
+          return HttpResponse.json({ ...pendingPayment, checkoutUrl, method });
+        }),
+      );
 
-    renderCheckout();
-    const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
-    await waitFor(() => expect(action).toBeEnabled());
-    expect(screen.getByRole('button', { name: 'Pix' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.queryByRole('button', { name: 'Cartão de crédito' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
-    expect(screen.getByRole('timer', { name: 'Tempo restante da reserva' })).toBeInTheDocument();
+      renderCheckout();
+      const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
+      await waitFor(() => expect(action).toBeEnabled());
+      expect(screen.getByRole('button', { name: label })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.queryByRole('button', { name: otherLabel })).not.toBeInTheDocument();
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+      expect(screen.getByRole('timer', { name: 'Tempo restante da reserva' })).toBeInTheDocument();
+      expect(screen.getByText(initialMessage)).toBeInTheDocument();
+      expect(screen.queryByText(resumeMessage)).not.toBeInTheDocument();
 
-    await userEvent.dblClick(action);
-
-    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
-    expect(starts).toEqual([{ body: { method: PaymentMethod.Pix }, key: expect.any(String) }]);
-  });
+      try {
+        await userEvent.dblClick(action);
+        expect(await screen.findByText(preparingMessage)).toHaveAttribute('role', 'status');
+        expect(action).toBeDisabled();
+        expect(screen.queryByText(initialMessage)).not.toBeInTheDocument();
+        expect(screen.queryByText(resumeMessage)).not.toBeInTheDocument();
+        expect(screen.queryByText(waitingMessage)).not.toBeInTheDocument();
+      } finally {
+        finishRequest();
+      }
+      await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+      expect(starts).toEqual([{ body: { method }, key: expect.any(String) }]);
+    },
+  );
 
   it('retoma a tentativa órfã do GET usando o ID local e sem iniciar outro pagamento', async () => {
     const start = vi.fn();
@@ -206,6 +234,9 @@ describe('checkout hospedado', () => {
     expect(resume).not.toHaveBeenCalled();
     expect(screen.queryByText('Pagamento confirmado')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pix' })).toBeDisabled();
+    expect(screen.getByText(resumeMessage)).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(initialMessage)).not.toBeInTheDocument();
+    expect(screen.queryByText(waitingMessage)).not.toBeInTheDocument();
     await userEvent.click(action);
 
     await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
@@ -222,8 +253,16 @@ describe('checkout hospedado', () => {
       ),
     );
 
-    renderCheckout();
+    const initialVisit = renderCheckout();
+    await screen.findByText(resumeMessage);
+    initialVisit.unmount();
+
+    renderCheckout('?status=paid');
     const action = await screen.findByRole('button', { name: 'Retomar pagamento' });
+    expect(screen.getByText(resumeMessage)).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(initialMessage)).not.toBeInTheDocument();
+    expect(screen.queryByText(preparingMessage)).not.toBeInTheDocument();
+    expect(screen.queryByText(waitingMessage)).not.toBeInTheDocument();
 
     expect(navigateToHostedCheckout).not.toHaveBeenCalled();
     await userEvent.click(action);
@@ -268,7 +307,10 @@ describe('checkout hospedado', () => {
     );
 
     renderCheckout('?status=paid');
-    expect(await screen.findByText('Aguardando confirmação do pagamento.')).toBeInTheDocument();
+    expect(await screen.findByText(waitingMessage)).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(initialMessage)).not.toBeInTheDocument();
+    expect(screen.queryByText(resumeMessage)).not.toBeInTheDocument();
+    expect(screen.queryByText(preparingMessage)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retomar pagamento' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ver meus ingressos' })).not.toBeInTheDocument();
     approved = true;
@@ -279,6 +321,35 @@ describe('checkout hospedado', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ver meus ingressos' })).toBeInTheDocument();
     expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+  });
+
+  it('prioriza a espera informada pela API após uma falha anterior de navegação', async () => {
+    let hasOpenSession = true;
+    const navigationError = 'Não foi possível abrir o checkout. Tente novamente.';
+    vi.mocked(navigateToHostedCheckout).mockImplementationOnce(() => {
+      throw new Error('Navegação indisponível');
+    });
+    server.use(
+      http.get(hostedPath, () =>
+        HttpResponse.json({ ...pendingPayment, checkoutUrl: hasOpenSession ? checkoutUrl : null }),
+      ),
+      http.post(`${hostedPath}/${pendingPayment.id}/resume`, () =>
+        HttpResponse.json({ ...pendingPayment, checkoutUrl }),
+      ),
+    );
+
+    renderCheckout();
+    await userEvent.click(await screen.findByRole('button', { name: 'Retomar pagamento' }));
+    expect(await screen.findByText(navigationError)).toHaveAttribute('role', 'alert');
+
+    hasOpenSession = false;
+    // O TanStack Query consulta novamente ao voltar o foco para a página.
+    window.dispatchEvent(new Event('visibilitychange'));
+
+    expect(await screen.findByText(waitingMessage)).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(navigationError)).not.toBeInTheDocument();
+    expect(screen.queryByText(resumeMessage)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Atualizar situação do pagamento' })).toBeEnabled();
   });
 
   it('reutiliza a chave e mantém o método após uma falha de transporte sem tentativa encontrada', async () => {

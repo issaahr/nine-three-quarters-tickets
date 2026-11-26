@@ -30,7 +30,7 @@ export function CheckoutPayment(props: CheckoutPaymentProps) {
 
   return (
     <section
-      className="mt-8 border-t border-border pt-7"
+      className="mt-5 border-t border-border pt-5"
       aria-labelledby="payment-heading"
       hidden={!props.isReservationActive}
     >

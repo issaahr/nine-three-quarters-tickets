@@ -3,9 +3,9 @@ import { QRCodeSVG } from 'qrcode.react';
 import { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 import type { useSimulatedPixPayment } from '../hooks';
 import { PaymentStatus } from '../types';
+import { CheckoutActions } from './CheckoutActions';
 
 interface SimulatedPixPanelProps {
   paymentFlow: ReturnType<typeof useSimulatedPixPayment>;
@@ -97,12 +97,7 @@ export function SimulatedPixPanel({ paymentFlow, cancelAction, disabled }: Simul
         </p>
       )}
 
-      <div
-        className={cn(
-          'grid gap-3',
-          showGenerateAction ? 'min-[420px]:grid-cols-2' : 'mx-auto w-full min-[420px]:w-1/2',
-        )}
-      >
+      <CheckoutActions>
         {cancelAction}
         {showGenerateAction && (
           <Button
@@ -114,7 +109,7 @@ export function SimulatedPixPanel({ paymentFlow, cancelAction, disabled }: Simul
             {isCreating ? 'Gerando QR...' : 'Gerar QR do PIX'}
           </Button>
         )}
-      </div>
+      </CheckoutActions>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { formatEventPrice } from '../../events/eventPresentation';
 import type { useCardPayment } from '../hooks';
 import { CardPaymentFormValues, cardPaymentSchema } from '../schemas';
 import { PaymentStatus } from '../types';
+import { CheckoutActions } from './CheckoutActions';
 
 interface CardPaymentFormProps {
   totalPriceCents: number;
@@ -247,7 +248,7 @@ export function CardPaymentForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <CheckoutActions>
           {cancelAction}
           <Button
             type="submit"
@@ -256,7 +257,7 @@ export function CardPaymentForm({
           >
             {isPaying ? 'Processando pagamento...' : `Pagar ${formatEventPrice(totalPriceCents)}`}
           </Button>
-        </div>
+        </CheckoutActions>
         <p className="mb-0 text-center text-xs text-muted-foreground">
           Pagamento simulado — nenhum dado é cobrado ou armazenado.
         </p>
