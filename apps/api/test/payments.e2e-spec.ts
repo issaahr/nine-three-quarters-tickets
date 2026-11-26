@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -102,6 +103,7 @@ describe('Payments', () => {
   beforeEach(() => {
     paymentGateway.processCard.mockReset();
     paymentGateway.processCard.mockResolvedValue({ status: CardPaymentGatewayStatus.Approved });
+    jest.mocked(seatRealtimeGateway.emitSold).mockClear();
   });
 
   afterAll(async () => {
@@ -383,6 +385,74 @@ describe('Payments', () => {
 
     expect(response.body.code).toBe('RESERVATION_EXPIRED');
     await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(0);
+  });
+
+  it('não confirma a Reservation quando o hold vence enquanto a finalização aguarda um lock', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const locker = dataSource.createQueryRunner();
+    await locker.connect();
+    await locker.startTransaction();
+
+    const response = createPaymentRequest(reservation.id, randomUUID(), cookie);
+
+    try {
+      await locker.manager.getRepository(Event).findOneOrFail({
+        where: { id: reservation.eventId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const [{ pid }] = (await locker.query('SELECT pg_backend_pid() AS pid')) as Array<{
+        pid: number;
+      }>;
+      const paymentResponse = response.then((result) => result);
+
+      try {
+        let blocked = false;
+        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
+          const [row] = (await dataSource.query(
+            'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
+            [pid],
+          )) as Array<{ blocked: boolean }>;
+          blocked = row.blocked;
+          if (!blocked) await delay(20);
+        }
+        expect(blocked).toBe(true);
+
+        // Posiciona o vencimento entre o início da finalização e a aquisição do lock.
+        const [{ expiresAt }] = (await locker.query(
+          `SELECT date_trunc('milliseconds', clock_timestamp()) + interval '50 milliseconds' AS "expiresAt"`,
+        )) as Array<{ expiresAt: Date }>;
+        await locker.manager.getRepository(Reservation).update(reservation.id, { expiresAt });
+        await locker.manager
+          .getRepository(EventSeat)
+          .update({ holdReservationId: reservation.id }, { holdExpiresAt: expiresAt });
+        await locker.query('SELECT pg_sleep_until($1::timestamptz)', [expiresAt]);
+        await locker.commitTransaction();
+      } finally {
+        if (locker.isTransactionActive) await locker.rollbackTransaction();
+        await paymentResponse;
+      }
+
+      const result = await paymentResponse;
+      expect(result.status).toBe(201);
+      expect(result.body).toMatchObject({ status: PaymentStatus.Failed, approvedAt: null });
+    } finally {
+      if (locker.isTransactionActive) await locker.rollbackTransaction();
+      await locker.release();
+    }
+
+    const persistedReservation = await reservationsRepository.findOneByOrFail({
+      id: reservation.id,
+    });
+    const seat = await eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId });
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+
+    expect(persistedReservation.confirmedAt).toBeNull();
+    expect(seat.soldAt).toBeNull();
+    expect(await ticketsRepository.countBy({ reservationItemId: item.id })).toBe(0);
+    expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
   });
 
   it('recusa o cartão sem confirmar a Reservation ou emitir Ticket', async () => {

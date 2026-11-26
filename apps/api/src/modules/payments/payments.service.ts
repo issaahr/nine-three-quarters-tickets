@@ -2,29 +2,22 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
-import { Event } from '../events/event.entity';
-import { EventStatus } from '../events/eventStatus.enum';
-import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
 import { ReservationNotFoundError } from '../reservations/errors/reservationNotFound.error';
 import { Payment } from './payment.entity';
+import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
 import { paymentGatewayToken } from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
-import {
-  DatabaseTimestampRow,
-  PaymentFinalizationResult,
-  PaymentInitiation,
-} from './payments.interfaces';
+import { DatabaseTimestampRow, PaymentInitiation } from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
 import { PaymentRepository } from './repositories/payment.repository';
-import { TicketsService } from '../tickets/tickets.service';
 
 @Injectable()
 export class PaymentsService {
@@ -34,8 +27,7 @@ export class PaymentsService {
     private readonly dataSource: DataSource,
     private readonly paymentRepository: PaymentRepository,
     @Inject(paymentGatewayToken) private readonly paymentGateway: PaymentGateway,
-    private readonly ticketsService: TicketsService,
-    private readonly seatRealtimeGateway: SeatRealtimeGateway,
+    private readonly paymentFinalization: PaymentFinalizationService,
   ) {}
 
   /**
@@ -80,10 +72,15 @@ export class PaymentsService {
         error instanceof Error ? error.stack : undefined,
       );
 
-      return this.failPayment(initiation.payment.id);
+      return this.paymentFinalization.failPayment(initiation.payment.id);
     }
 
-    return this.finalizePayment(initiation.payment.id, gatewayStatus);
+    const outcome =
+      gatewayStatus === CardPaymentGatewayStatus.Approved
+        ? PaymentStatus.Approved
+        : PaymentStatus.Declined;
+
+    return this.paymentFinalization.finalizePayment(initiation.payment.id, outcome);
   }
 
   /**
@@ -178,165 +175,6 @@ export class PaymentsService {
   }
 
   /**
-   * Finaliza uma tentativa PENDING depois que o gateway respondeu fora de transaction.
-   * O delta realtime é emitido somente depois que a transaction confirma a venda integral.
-   *
-   * @param paymentId - Payment originalmente persistido como PENDING.
-   * @param gatewayStatus - Resultado determinístico devolvido pelo gateway.
-   * @returns Payment em estado terminal após a revalidação autoritativa da Reservation.
-   */
-  private async finalizePayment(
-    paymentId: string,
-    gatewayStatus: CardPaymentGatewayStatus,
-  ): Promise<Payment> {
-    try {
-      const result = await this.dataSource.transaction<PaymentFinalizationResult>(
-        async (manager) => {
-          const paymentsRepository = manager.getRepository(Payment);
-          const reservationsRepository = manager.getRepository(Reservation);
-          const reservationItemsRepository = manager.getRepository(ReservationItem);
-          const eventsRepository = manager.getRepository(Event);
-          const paymentReference = await paymentsRepository.findOne({
-            select: { id: true, reservationId: true },
-            where: { id: paymentId },
-          });
-
-          if (!paymentReference) {
-            return { payment: null!, eventId: null, soldEventSeatIds: [] };
-          }
-
-          const reservationReference = await reservationsRepository.findOne({
-            select: { id: true, eventId: true },
-            where: { id: paymentReference.reservationId },
-          });
-          const event = reservationReference
-            ? await eventsRepository.findOne({
-                where: { id: reservationReference.eventId },
-                lock: { mode: 'pessimistic_write' },
-              })
-            : null;
-          const reservation = reservationReference
-            ? await reservationsRepository.findOne({
-                where: { id: reservationReference.id },
-                lock: { mode: 'pessimistic_write' },
-              })
-            : null;
-          const payment = await paymentsRepository.findOne({
-            where: { id: paymentReference.id },
-            lock: { mode: 'pessimistic_write' },
-          });
-
-          if (!payment || payment.status !== PaymentStatus.Pending) {
-            return { payment: payment!, eventId: null, soldEventSeatIds: [] };
-          }
-
-          const now = await this.getDatabaseTimestamp(manager);
-
-          if (gatewayStatus === CardPaymentGatewayStatus.Declined) {
-            payment.status = PaymentStatus.Declined;
-            return {
-              payment: await paymentsRepository.save(payment),
-              eventId: null,
-              soldEventSeatIds: [],
-            };
-          }
-
-          if (
-            !reservation ||
-            reservation.confirmedAt ||
-            reservation.cancelledAt ||
-            reservation.expiresAt.getTime() <= now.getTime() ||
-            !event ||
-            event.status !== EventStatus.Published ||
-            event.startsAt.getTime() <= now.getTime()
-          ) {
-            payment.status = PaymentStatus.Failed;
-            payment.failedAt = now;
-            this.logger.warn(
-              `Payment ${payment.id} aprovado pelo gateway não pôde confirmar a Reservation`,
-            );
-            return {
-              payment: await paymentsRepository.save(payment),
-              eventId: null,
-              soldEventSeatIds: [],
-            };
-          }
-
-          const items = await reservationItemsRepository.findBy({
-            reservationId: reservation.id,
-          });
-          const seatedItemCount = items.filter((item) => item.eventSeatId !== null).length;
-          const soldEventSeatIds = await this.paymentRepository.sellHeldEventSeats(
-            manager,
-            reservation.id,
-            now,
-          );
-
-          if (soldEventSeatIds.length !== seatedItemCount) {
-            throw new PaymentCompletionConflictError();
-          }
-
-          reservation.confirmedAt = now;
-          payment.status = PaymentStatus.Approved;
-          payment.approvedAt = now;
-          await reservationsRepository.save(reservation);
-          await this.ticketsService.issueForReservationItems(
-            manager,
-            items.map((item) => item.id),
-            now,
-          );
-
-          return {
-            payment: await paymentsRepository.save(payment),
-            eventId: event.id,
-            soldEventSeatIds,
-          };
-        },
-      );
-
-      if (result.eventId && result.soldEventSeatIds.length > 0) {
-        this.seatRealtimeGateway.emitSold({
-          eventId: result.eventId,
-          eventSeatIds: result.soldEventSeatIds,
-        });
-      }
-
-      return result.payment;
-    } catch (error) {
-      if (!(error instanceof PaymentCompletionConflictError)) {
-        throw error;
-      }
-
-      this.logger.warn(`Pagamento ${paymentId} perdeu o hold antes da confirmação`);
-      return this.failPayment(paymentId);
-    }
-  }
-
-  /**
-   * Finaliza um Payment ainda pendente após erro técnico ou conflito de confirmação.
-   *
-   * @param paymentId - Payment que não pode mais confirmar a Reservation.
-   * @returns Payment terminal, preservando estados já finalizados por outra request.
-   */
-  private async failPayment(paymentId: string): Promise<Payment> {
-    return this.dataSource.transaction(async (manager) => {
-      const paymentsRepository = manager.getRepository(Payment);
-      const payment = await paymentsRepository.findOne({
-        where: { id: paymentId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!payment || payment.status !== PaymentStatus.Pending) {
-        return payment!;
-      }
-
-      payment.status = PaymentStatus.Failed;
-      payment.failedAt = await this.getDatabaseTimestamp(manager);
-      return paymentsRepository.save(payment);
-    });
-  }
-
-  /**
    * Obtém o instante autoritativo da conexão PostgreSQL da transação atual.
    *
    * @param manager - Manager vinculado à transação que utilizará o timestamp.
@@ -350,5 +188,3 @@ export class PaymentsService {
     return new Date(timestampRows[0].now);
   }
 }
-
-class PaymentCompletionConflictError extends Error {}
