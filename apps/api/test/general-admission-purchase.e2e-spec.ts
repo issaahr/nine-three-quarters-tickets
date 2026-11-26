@@ -13,6 +13,7 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
 import { Payment } from '../src/modules/payments/payment.entity';
+import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 import { PaymentStatus } from '../src/modules/payments/paymentStatus.enum';
 import { Refund } from '../src/modules/refunds/refund.entity';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
@@ -216,6 +217,48 @@ describe('compra GENERAL_ADMISSION', () => {
       .send({ credential: purchases.body.items[0].tickets[0].credential })
       .expect(200);
     expect(checkIn.body).toEqual({ result: 'VALID' });
+  });
+
+  it('conclui um PIX GA e preserva um Ticket por unidade ao repetir o settlement', async () => {
+    const event = await createEvent(3);
+    const reservationId = await createReservation(event.id, 3, customerOneCookie);
+    const path = `/reservations/${reservationId}/payments/pix`;
+    const created = await request(app.getHttpServer())
+      .post(path)
+      .set('Cookie', customerOneCookie)
+      .set('Idempotency-Key', randomUUID())
+      .expect(201);
+    const paymentId = created.body.id as string;
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+
+    const settlementPath = `${path}/${paymentId}/settle`;
+    const first = await request(app.getHttpServer())
+      .post(settlementPath)
+      .set('Cookie', customerOneCookie)
+      .set('Origin', 'http://localhost:5173')
+      .expect(200);
+    const retry = await request(app.getHttpServer())
+      .post(settlementPath)
+      .set('Cookie', customerOneCookie)
+      .set('Origin', 'http://localhost:5173')
+      .expect(200);
+
+    const reservation = await reservationsRepository.findOneByOrFail({ id: reservationId });
+    const items = await reservationItemsRepository.findBy({ reservationId });
+    const tickets = await ticketsRepository.findBy({
+      reservationItemId: In(items.map(({ id }) => id)),
+    });
+
+    expect(first.body).toMatchObject({
+      id: paymentId,
+      method: PaymentMethod.Pix,
+      status: PaymentStatus.Approved,
+      amountCents: 45000,
+    });
+    expect(retry.body).toEqual(first.body);
+    expect(reservation.confirmedAt).not.toBeNull();
+    expect(tickets).toHaveLength(3);
+    expect(new Set(tickets.map(({ reservationItemId }) => reservationItemId)).size).toBe(3);
   });
 
   it('cancela compra GA, registra Refund e devolve toda a capacidade', async () => {

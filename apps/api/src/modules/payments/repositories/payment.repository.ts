@@ -10,6 +10,34 @@ import { PaymentStatus } from '../paymentStatus.enum';
 @Injectable()
 export class PaymentRepository {
   /**
+   * Recupera o PIX do checkout com verificação de propriedade na mesma consulta.
+   * Prioriza a tentativa ativa e, quando ela não existe, retorna o resultado terminal mais recente.
+   *
+   * @param manager - Manager da leitura do estado persistido do checkout.
+   * @param customerId - Identidade do CUSTOMER autenticado.
+   * @param reservationId - Identificador da Reservation que deve pertencer ao CUSTOMER.
+   * @returns Payment de PIX disponível para retomada ou null quando não há tentativa visível.
+   */
+  public findSimulatedPixForCheckout(
+    manager: EntityManager,
+    customerId: string,
+    reservationId: string,
+  ): Promise<Payment | null> {
+    return manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .innerJoin('payment.reservation', 'reservation')
+      .where({ reservationId, method: PaymentMethod.Pix })
+      .andWhere('reservation.customerId = :customerId', { customerId })
+      .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
+      .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
+      .addOrderBy('payment.createdAt', 'DESC')
+      .addOrderBy('payment.id', 'DESC')
+      .limit(1)
+      .getOne();
+  }
+
+  /**
    * Converte em venda somente os EventSeats cujo hold válido ainda pertence à Reservation.
    *
    * @param manager - EntityManager vinculado à transaction de confirmação do pagamento.

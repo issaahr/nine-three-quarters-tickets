@@ -21,6 +21,7 @@ import {
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
+import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { PaymentRepository } from './repositories/payment.repository';
 
 @Injectable()
@@ -113,6 +114,55 @@ export class PaymentsService {
       PaymentMethod.Pix,
     );
 
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  /**
+   * Recupera o PIX ativo do dono da Reservation ou, na ausência dele, o resultado mais recente.
+   *
+   * @param customerId - Identidade do CUSTOMER autenticado.
+   * @param reservationId - Reservation cujo checkout está sendo retomado.
+   * @returns Payment e conteúdo do QR reconstruído a partir do identificador persistido.
+   */
+  public async findSimulatedPixForCheckout(
+    customerId: string,
+    reservationId: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const payment = await this.paymentRepository.findSimulatedPixForCheckout(
+      this.dataSource.manager,
+      customerId,
+      reservationId,
+    );
+
+    if (!payment) {
+      throw new PaymentNotFoundError();
+    }
+
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  /**
+   * Solicita a conclusão da tentativa identificada pelo checkout, permitindo retries sem nova compra.
+   *
+   * @param customerId - Identidade do CUSTOMER que deve possuir a Reservation.
+   * @param reservationId - Reservation apresentada no checkout.
+   * @param paymentId - Tentativa de PIX que deve pertencer à Reservation.
+   * @returns Tentativa ainda PENDING antes do prazo ou o resultado terminal persistido.
+   */
+  public async settleSimulatedPixPayment(
+    customerId: string,
+    reservationId: string,
+    paymentId: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const payment = await this.paymentFinalization.settleSimulatedPixPayment(
+      customerId,
+      reservationId,
+      paymentId,
+    );
+    return this.toSimulatedPixPayment(payment);
+  }
+
+  private toSimulatedPixPayment(payment: Payment): SimulatedPixPaymentInitiation {
     return {
       payment,
       qrCodePayload: payment.method === PaymentMethod.Pix ? `ntq:pix:simulado:${payment.id}` : null,

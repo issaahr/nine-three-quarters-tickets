@@ -1,14 +1,32 @@
-import { Body, Controller, Headers, Param, ParseUUIDPipe, Post, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { isUUID } from 'class-validator';
 
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
+import { PaymentIdempotencyKey } from './decorators/paymentIdempotencyKey.decorator';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
-import { InvalidIdempotencyKeyError } from './errors/invalidIdempotencyKey.error';
-import { ApiCreateCardPayment } from './payments.swagger';
+import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
+import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
+import {
+  ApiCreateCardPayment,
+  ApiCreateSimulatedPixPayment,
+  ApiGetSimulatedPixPayment,
+  ApiSettleSimulatedPixPayment,
+} from './payments.swagger';
 import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments')
@@ -25,13 +43,9 @@ export class PaymentsController {
   public async createCardPayment(
     @Req() request: AuthenticatedRequest,
     @Param('reservationId', ParseUUIDPipe) reservationId: string,
-    @Headers('idempotency-key') idempotencyKey: string,
+    @PaymentIdempotencyKey() idempotencyKey: string,
     @Body() data: CreateCardPaymentRequestDto,
   ): Promise<PaymentResponseDto> {
-    if (!isUUID(idempotencyKey, '4')) {
-      throw new InvalidIdempotencyKeyError();
-    }
-
     const payment = await this.paymentsService.processCardPayment(
       request.user.id,
       reservationId,
@@ -40,5 +54,54 @@ export class PaymentsController {
     );
 
     return PaymentResponseDto.fromPayment(payment);
+  }
+
+  @Post('pix')
+  @Roles(UserRole.Customer)
+  @ApiCreateSimulatedPixPayment()
+  public async createSimulatedPixPayment(
+    @Req() request: AuthenticatedRequest,
+    @Param('reservationId', ParseUUIDPipe) reservationId: string,
+    @PaymentIdempotencyKey() idempotencyKey: string,
+  ) {
+    const result = await this.paymentsService.createSimulatedPixPayment(
+      request.user.id,
+      reservationId,
+      idempotencyKey,
+    );
+    return SimulatedPixPaymentResponseDto.fromSimulatedPixPayment(result);
+  }
+
+  @Get('pix')
+  @Header('Cache-Control', 'private, no-store')
+  @Roles(UserRole.Customer)
+  @ApiGetSimulatedPixPayment()
+  public async getSimulatedPixPayment(
+    @Req() request: AuthenticatedRequest,
+    @Param('reservationId', ParseUUIDPipe) reservationId: string,
+  ) {
+    const result = await this.paymentsService.findSimulatedPixForCheckout(
+      request.user.id,
+      reservationId,
+    );
+    return SimulatedPixPaymentResponseDto.fromSimulatedPixPayment(result);
+  }
+
+  @Post('pix/:paymentId/settle')
+  @HttpCode(HttpStatus.OK)
+  @ApiSettleSimulatedPixPayment()
+  @UseGuards(TrustedPaymentOriginGuard)
+  @Roles(UserRole.Customer)
+  public async settleSimulatedPixPayment(
+    @Req() request: AuthenticatedRequest,
+    @Param('reservationId', ParseUUIDPipe) reservationId: string,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+  ) {
+    const result = await this.paymentsService.settleSimulatedPixPayment(
+      request.user.id,
+      reservationId,
+      paymentId,
+    );
+    return SimulatedPixPaymentResponseDto.fromSimulatedPixPayment(result);
   }
 }

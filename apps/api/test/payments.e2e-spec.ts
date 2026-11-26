@@ -47,6 +47,7 @@ class ControlledPaymentGateway implements PaymentGateway {
 }
 
 describe('Payments', () => {
+  const checkoutOrigin = 'http://localhost:5173';
   let app: INestApplication;
   let dataSource: DataSource;
   let eventsRepository: Repository<Event>;
@@ -263,6 +264,37 @@ describe('Payments', () => {
         expiry: '08/29',
         cvv: '123',
       });
+  }
+
+  function createPixRequest(
+    reservationId: string,
+    cookie: string,
+    idempotencyKey: string = randomUUID(),
+    application = app,
+  ) {
+    return request(application.getHttpServer())
+      .post(`/reservations/${reservationId}/payments/pix`)
+      .set('Cookie', cookie)
+      .set('Idempotency-Key', idempotencyKey);
+  }
+
+  function settlePixRequest(reservationId: string, paymentId: string, cookie: string) {
+    return request(app.getHttpServer())
+      .post(`/reservations/${reservationId}/payments/pix/${paymentId}/settle`)
+      .set('Cookie', cookie);
+  }
+
+  async function waitForBlockedTransaction(pid: number): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const [{ blocked }] = (await dataSource.query(
+        'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
+        [pid],
+      )) as Array<{ blocked: boolean }>;
+      if (blocked) return;
+      await delay(20);
+    }
+
+    throw new Error('Nenhuma transação aguardou o lock observado');
   }
 
   async function createConfirmedReservation(cookie: string): Promise<Reservation> {
@@ -535,16 +567,7 @@ describe('Payments', () => {
       const paymentResponse = response.then((result) => result);
 
       try {
-        let blocked = false;
-        for (let attempt = 0; attempt < 100 && !blocked; attempt++) {
-          const [row] = (await dataSource.query(
-            'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
-            [pid],
-          )) as Array<{ blocked: boolean }>;
-          blocked = row.blocked;
-          if (!blocked) await delay(20);
-        }
-        expect(blocked).toBe(true);
+        await waitForBlockedTransaction(pid);
 
         // Posiciona o vencimento entre o início da finalização e a aquisição do lock.
         const [{ expiresAt }] = (await locker.query(
@@ -582,6 +605,182 @@ describe('Payments', () => {
     expect(await ticketsRepository.countBy({ reservationItemId: item.id })).toBe(0);
     expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
   });
+
+  it('recupera a tentativa PIX e o mesmo QR em outra instância após encerrar a instância criadora', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const path = `/reservations/${reservation.id}/payments/pix`;
+    const idempotencyKey = randomUUID();
+    await request(app.getHttpServer()).get(path).set('Cookie', cookie).expect(404);
+
+    const testingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const creator = testingModule.createNestApplication();
+    new Application().configure(creator);
+
+    const created = await (async () => {
+      try {
+        await creator.init();
+        return await createPixRequest(reservation.id, cookie, idempotencyKey, creator).expect(201);
+      } finally {
+        await creator.close();
+      }
+    })();
+
+    const recovered = await request(app.getHttpServer())
+      .get(path)
+      .set('Cookie', cookie)
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    const repeated = await createPixRequest(reservation.id, cookie, idempotencyKey).expect(201);
+
+    expect(recovered.body).toEqual(created.body);
+    expect(repeated.body).toEqual(created.body);
+    expect(recovered.body).toMatchObject({
+      method: PaymentMethod.Pix,
+      status: PaymentStatus.Pending,
+      simulationCompletionAt: expect.any(String),
+      qrCodePayload: `ntq:pix:simulado:${created.body.id}`,
+    });
+    expect(recovered.body).not.toHaveProperty('idempotencyKey');
+  });
+
+  it('restringe criação, consulta e settlement do PIX ao dono da Reservation', async () => {
+    const reservation = await createActiveReservation();
+    const otherReservation = await createActiveReservation();
+    const [cookie, otherCookie] = await Promise.all([authenticate(), authenticate(customerTwo)]);
+    const path = `/reservations/${reservation.id}/payments/pix`;
+
+    await createPixRequest(reservation.id, otherCookie).expect(404);
+    await createPixRequest(reservation.id, cookie, 'chave-invalida').expect(400);
+    const created = await createPixRequest(reservation.id, cookie).expect(201);
+    const paymentId = created.body.id as string;
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+
+    await request(app.getHttpServer()).get(path).set('Cookie', otherCookie).expect(404);
+    await settlePixRequest(reservation.id, paymentId, otherCookie)
+      .set('Origin', checkoutOrigin)
+      .expect(404);
+    await settlePixRequest(otherReservation.id, paymentId, cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(404);
+    await request(app.getHttpServer()).post(`${path}/${paymentId}/settle`).expect(401);
+    const payment = await paymentsRepository.findOneByOrFail({ id: paymentId });
+    expect(payment.status).toBe(PaymentStatus.Pending);
+  });
+
+  it('rejeita POST de settlement com origem ausente, opaca ou fora da configuração', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const created = await createPixRequest(reservation.id, cookie).expect(201);
+    const paymentId = created.body.id as string;
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+
+    for (const origin of [undefined, 'null', 'https://untrusted.example']) {
+      const settlement = settlePixRequest(reservation.id, paymentId, cookie).type('form');
+      if (origin !== undefined) settlement.set('Origin', origin);
+
+      const response = await settlement.expect(403);
+      expect(response.body.code).toBe('PAYMENT_ORIGIN_NOT_ALLOWED');
+    }
+
+    const recovered = await request(app.getHttpServer())
+      .get(`/reservations/${reservation.id}/payments/pix`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(recovered.body.status).toBe(PaymentStatus.Pending);
+    expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
+  });
+
+  it('relê o prazo PIX sob os locks e confirma uma única vez em settlements concorrentes', async () => {
+    const reservation = await createActiveReservation(undefined, 2);
+    const cookie = await authenticate();
+    const created = await createPixRequest(reservation.id, cookie).expect(201);
+    const paymentId = created.body.id as string;
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+    const locker = dataSource.createQueryRunner();
+    await locker.connect();
+    await locker.startTransaction();
+
+    try {
+      await locker.manager.getRepository(Event).findOneOrFail({
+        where: { id: reservation.eventId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const [{ pid }] = (await locker.query('SELECT pg_backend_pid() AS pid')) as Array<{
+        pid: number;
+      }>;
+      const settlement = settlePixRequest(reservation.id, paymentId, cookie)
+        .set('Origin', checkoutOrigin)
+        .expect(200)
+        .then((result) => result);
+
+      try {
+        await waitForBlockedTransaction(pid);
+        await locker.manager.getRepository(Payment).update(paymentId, {
+          simulationCompletionAt: new Date('2099-01-01T00:00:00Z'),
+        });
+        await locker.commitTransaction();
+      } finally {
+        if (locker.isTransactionActive) await locker.rollbackTransaction();
+        await settlement;
+      }
+
+      expect((await settlement).body.status).toBe(PaymentStatus.Pending);
+    } finally {
+      if (locker.isTransactionActive) await locker.rollbackTransaction();
+      await locker.release();
+    }
+
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    const ticketCriteria = { reservationItemId: In(items.map(({ id }) => id)) };
+    expect(await ticketsRepository.countBy(ticketCriteria)).toBe(0);
+
+    await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+    const [approved, retry] = await Promise.all([
+      settlePixRequest(reservation.id, paymentId, cookie).set('Origin', checkoutOrigin).expect(200),
+      settlePixRequest(reservation.id, paymentId, cookie).set('Origin', checkoutOrigin).expect(200),
+    ]);
+
+    expect(approved.body.status).toBe(PaymentStatus.Approved);
+    expect(retry.body).toEqual(approved.body);
+    expect(await ticketsRepository.countBy(ticketCriteria)).toBe(2);
+    expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['expirada', 'cancelada'])(
+    'encerra o PIX sem Tickets quando a Reservation está %s',
+    async (state) => {
+      const reservation = await createActiveReservation();
+      const cookie = await authenticate();
+      const created = await createPixRequest(reservation.id, cookie).expect(201);
+      const paymentId = created.body.id as string;
+      await paymentsRepository.update(paymentId, { simulationCompletionAt: new Date(0) });
+
+      if (state === 'cancelada') {
+        await request(app.getHttpServer())
+          .post(`/reservations/${reservation.id}/cancel`)
+          .set('Cookie', cookie)
+          .expect(200);
+      } else {
+        await reservationsRepository.update(reservation.id, {
+          createdAt: new Date('2000-01-01T00:00:00Z'),
+          expiresAt: new Date('2000-01-01T00:10:00Z'),
+        });
+      }
+
+      const settlement = await settlePixRequest(reservation.id, paymentId, cookie)
+        .set('Origin', checkoutOrigin)
+        .expect(200);
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      const seat = await eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId });
+
+      expect(settlement.body).toMatchObject({ status: PaymentStatus.Failed, approvedAt: null });
+      expect(seat.soldAt).toBeNull();
+      expect(await ticketsRepository.countBy({ reservationItemId: item.id })).toBe(0);
+    },
+  );
 
   it('recusa o cartão sem confirmar a Reservation ou emitir Ticket', async () => {
     paymentGateway.processCard.mockResolvedValueOnce({ status: CardPaymentGatewayStatus.Declined });

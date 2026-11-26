@@ -7,7 +7,9 @@ import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { TicketsService } from '../tickets/tickets.service';
+import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { Payment } from './payment.entity';
+import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { DatabaseTimestampRow, PaymentFinalizationResult } from './payments.interfaces';
 import { PaymentRepository } from './repositories/payment.repository';
@@ -24,10 +26,8 @@ export class PaymentFinalizationService {
   ) {}
 
   /**
-   * Aplica o resultado do processamento a um Payment PENDING. Antes de confirmar a compra,
-   * revalida o Event, a Reservation e os holds com o horário do PostgreSQL após adquirir os locks.
-   * Confirmação da Reservation, consolidação do inventário e emissão dos Tickets são atômicas.
-   * O delta de assentos vendidos é publicado somente após o commit.
+   * Aplica o resultado do gateway a uma tentativa de cartão. A confirmação da Reservation,
+   * a consolidação do inventário e a emissão dos Tickets ocorrem na mesma transação.
    *
    * @param paymentId - Identificador da tentativa já persistida antes do processamento.
    * @param outcome - Resultado do processamento. Uma aprovação ainda depende da revalidação da compra.
@@ -37,6 +37,38 @@ export class PaymentFinalizationService {
     paymentId: string,
     outcome: PaymentStatus.Approved | PaymentStatus.Declined,
   ): Promise<Payment> {
+    return this.applyOutcome(paymentId, outcome);
+  }
+
+  /**
+   * Revalida o vínculo com o CUSTOMER, o prazo do PIX e a validade da compra sob os locks
+   * da confirmação. A espera pelo prazo mantém o Payment PENDING enquanto a compra é válida.
+   *
+   * @param customerId - Identidade do CUSTOMER autenticado e proprietário da Reservation.
+   * @param reservationId - Reserva que deve conter a tentativa de PIX.
+   * @param paymentId - Identificador da tentativa que o checkout está acompanhando.
+   * @returns Payment pendente se ainda dentro da espera, terminal se finalizado nesta chamada ou antes.
+   */
+  public async settleSimulatedPixPayment(
+    customerId: string,
+    reservationId: string,
+    paymentId: string,
+  ): Promise<Payment> {
+    return this.applyOutcome(paymentId, PaymentStatus.Approved, { customerId, reservationId });
+  }
+
+  /**
+   * Usa o relógio do PostgreSQL após os locks para decidir se a compra pode ser confirmada.
+   * Publica o delta de assentos vendidos somente após o commit.
+   *
+   * @param pixScope - Vincula o settlement de PIX ao CUSTOMER e à Reservation do checkout.
+   * @returns Estado persistido da tentativa, que continua PENDING enquanto o PIX válido aguarda o prazo.
+   */
+  private async applyOutcome(
+    paymentId: string,
+    outcome: PaymentStatus.Approved | PaymentStatus.Declined,
+    pixScope?: { customerId: string; reservationId: string },
+  ): Promise<Payment> {
     try {
       const result = await this.dataSource.transaction<PaymentFinalizationResult>(
         async (manager) => {
@@ -44,28 +76,44 @@ export class PaymentFinalizationService {
           const reservationsRepository = manager.getRepository(Reservation);
           const reservationItemsRepository = manager.getRepository(ReservationItem);
           const eventsRepository = manager.getRepository(Event);
-          const paymentReference = await paymentsRepository.findOneOrFail({
+          const paymentCriteria = pixScope
+            ? { id: paymentId, method: PaymentMethod.Pix, reservationId: pixScope.reservationId }
+            : { id: paymentId, method: PaymentMethod.Card };
+          const paymentReference = await paymentsRepository.findOne({
             select: { reservationId: true },
-            where: { id: paymentId },
+            where: paymentCriteria,
           });
-          const reservationReference = await reservationsRepository.findOneOrFail({
+          if (!paymentReference) {
+            throw new PaymentNotFoundError();
+          }
+
+          const reservationCriteria = pixScope
+            ? { id: paymentReference.reservationId, customerId: pixScope.customerId }
+            : { id: paymentReference.reservationId };
+          const reservationReference = await reservationsRepository.findOne({
             select: { eventId: true },
-            where: { id: paymentReference.reservationId },
+            where: reservationCriteria,
           });
+          if (!reservationReference) {
+            throw new PaymentNotFoundError();
+          }
 
           // A ordem Event → Reservation → Payment evita a inversão de locks com os cancelamentos.
           const event = await eventsRepository.findOneOrFail({
             where: { id: reservationReference.eventId },
             lock: { mode: 'pessimistic_write' },
           });
-          const reservation = await reservationsRepository.findOneOrFail({
-            where: { id: paymentReference.reservationId },
+          const reservation = await reservationsRepository.findOne({
+            where: reservationCriteria,
             lock: { mode: 'pessimistic_write' },
           });
-          const payment = await paymentsRepository.findOneOrFail({
-            where: { id: paymentId },
+          const payment = await paymentsRepository.findOne({
+            where: paymentCriteria,
             lock: { mode: 'pessimistic_write' },
           });
+          if (!reservation || !payment) {
+            throw new PaymentNotFoundError();
+          }
 
           if (payment.status !== PaymentStatus.Pending) {
             return { payment, eventId: null, soldEventSeatIds: [] };
@@ -96,6 +144,13 @@ export class PaymentFinalizationService {
               eventId: null,
               soldEventSeatIds: [],
             };
+          }
+
+          if (
+            payment.method === PaymentMethod.Pix &&
+            (!payment.simulationCompletionAt || payment.simulationCompletionAt > now)
+          ) {
+            return { payment, eventId: null, soldEventSeatIds: [] };
           }
 
           const items = await reservationItemsRepository.findBy({
