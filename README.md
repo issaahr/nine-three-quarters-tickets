@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white" alt="Docker Compose" />
 </p>
 
-Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, reserva de assentos, entrada geral, checkout com pagamento simulado, emissão de Tickets com QR Code e validação na portaria.
+Plataforma full-stack de eventos e ingressos com descoberta de filmes e shows, reserva de assentos, entrada geral, checkout simulado ou Stripe Checkout em sandbox, emissão de Tickets com QR Code e validação na portaria.
 
 ## Aplicação publicada
 
@@ -35,7 +35,7 @@ O frontend está hospedado na Vercel e a API no Heroku, permitindo deploy indepe
 * eventos com assentos numerados;
 * eventos com entrada geral;
 * reserva temporária de inventário;
-* checkout com pagamento simulado;
+* checkout de cartão e Pix em modo simulado ou no sandbox da Stripe;
 * emissão de Tickets individuais;
 * QR Code e credencial protegida contra adulteração;
 * consulta e cancelamento de compras;
@@ -61,7 +61,8 @@ O frontend está hospedado na Vercel e a API no Heroku, permitindo deploy indepe
 ### Integrações externas
 
 * TMDb para descoberta de filmes;
-* Ticketmaster Discovery API para descoberta de shows.
+* Ticketmaster Discovery API para descoberta de shows;
+* Stripe Checkout hospedado para pagamentos de teste em BRL.
 
 ## Principais decisões técnicas
 
@@ -85,13 +86,13 @@ Não existe um `package.json` compartilhado nem um workspace de package manager 
 
 Microsserviços e pacotes compartilhados não foram introduzidos sem uma necessidade concreta: para a V1, a complexidade adicional não traria benefício proporcional ao escopo.
 
-### Pagamento simulado
+### Pagamentos de teste
 
-O checkout oferece cartão e PIX simulados. O cartão utiliza `FakePaymentGateway`. No PIX, o checkout exibe um QR de demonstração e recupera a tentativa persistida ao recarregar a página. A API confirma a compra após revalidar o prazo e a reserva. Ambos os métodos operam sem movimentação financeira.
+O checkout simulado oferece cartão via `FakePaymentGateway` e Pix com QR de demonstração. No modo Stripe, a aplicação abre o Checkout hospedado e recupera a tentativa persistida ao retornar ou recarregar a reserva. O backend concilia a cobrança com a Stripe e revalida o prazo e o inventário no PostgreSQL antes de emitir os ingressos. Ambos os modos operam sem movimentação financeira.
 
 ### Providers externos isolados
 
-As integrações com TMDb e Ticketmaster ficam atrás de providers próprios da aplicação, mantendo o domínio desacoplado das APIs específicas de cada fornecedor.
+As integrações com TMDb, Ticketmaster e Stripe ficam atrás de interfaces próprias da aplicação, mantendo o domínio desacoplado das APIs específicas de cada fornecedor.
 
 ### Documentação arquitetural
 
@@ -307,9 +308,9 @@ As configurações de rate limiting definem as janelas e limites utilizados pela
 
 ### Stripe Checkout em sandbox
 
-Configure `PAYMENT_PROVIDER=fake` para a demonstração. Quando a variável é omitida, a API mantém esse modo. Para testar o checkout hospedado, configure `PAYMENT_PROVIDER=stripe`, `PAYMENT_STRIPE_SECRET_KEY` com uma chave `sk_test_...` e `PAYMENT_STRIPE_WEBHOOK_SECRET` com o segredo `whsec_...` do webhook ou da Stripe CLI. A primeira origem de `CORS_ORIGINS` recebe o retorno à página da reserva.
+Defina `PAYMENT_PROVIDER=fake` no `.env` para a demonstração local. Esse também é o comportamento quando a variável é omitida. Para abrir o Stripe Checkout, use `PAYMENT_PROVIDER=stripe` e configure a API com `PAYMENT_STRIPE_SECRET_KEY` (`sk_test_...`) e `PAYMENT_STRIPE_WEBHOOK_SECRET` (`whsec_...`). A primeira origem de `CORS_ORIGINS` monta o endereço de retorno à reserva. Mantenha as duas credenciais fora das variáveis `VITE_`.
 
-Os endpoints hospedados ficam em `/reservations/:reservationId/payments/hosted`. O `POST` inicia uma tentativa com `Idempotency-Key` e um método (`CARD` ou `PIX`). O `GET` recupera a tentativa e o `POST /:paymentId/resume` retoma sua criação caso a resposta anterior tenha se perdido. Encaminhe webhooks de teste a `POST /payments/webhooks/stripe`. A API confirma o pagamento pela consulta ao provedor e concilia periodicamente as tentativas pendentes com vínculo externo para recuperar notificações perdidas. [Validação do sandbox](docs/stripe-sandbox-validation.md)
+A Stripe CLI encaminha eventos locais a `POST /payments/webhooks/stripe`. A API consulta a Stripe e concilia periodicamente pagamentos pendentes com sessão vinculada e estornos pendentes, inclusive quando um webhook se perde. O guia traz a configuração completa e o roteiro de cartão, Pix, retomada, expiração e estorno pelo Web. [Guia e resultados da validação no sandbox](docs/stripe-sandbox-validation.md)
 
 ### Integrações externas
 
@@ -652,11 +653,10 @@ O frontend é publicado na Vercel através da integração nativa da Vercel com 
 
 Algumas possibilidades foram avaliadas, mas foram deixadas de fora deliberadamente para manter o escopo e a complexidade da V1 sob controle:
 
-* integração com gateway de pagamento real;
 * pagamentos financeiros reais;
-* webhooks financeiros;
+* webhooks e estornos financeiros em produção;
 * envio de e-mails transacionais;
-* processamento assíncrono de cancelamentos e reembolsos;
+* processamento assíncrono do cancelamento em massa de eventos;
 * processamento assíncrono de notificações;
 * edição de dados cadastrais de usuários;
 * transferência de titularidade de Tickets;
