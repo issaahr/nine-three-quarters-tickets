@@ -155,6 +155,9 @@ beforeEach(() => {
   );
   server.use(
     http.get(`${apiUrl}/auth/session`, () => new HttpResponse(null, { status: 204 })),
+    http.get(`${apiUrl}/reservations/:reservationId/payments/pix`, () =>
+      HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 }),
+    ),
     http.get(`${apiUrl}/events`, () =>
       HttpResponse.json({ items: [event], page: 1, hasMore: false }),
     ),

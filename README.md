@@ -87,7 +87,7 @@ Microsserviços e pacotes compartilhados não foram introduzidos sem uma necessi
 
 ### Pagamento simulado
 
-A V1 utiliza `PaymentGateway` com `FakePaymentGateway`. O fluxo de pagamento é funcional para o domínio da aplicação, mas não movimenta dinheiro real e não possui integração com PIX, Stripe ou webhooks financeiros.
+O checkout oferece cartão e PIX simulados. O cartão utiliza `FakePaymentGateway`. No PIX, o checkout exibe um QR de demonstração e recupera a tentativa persistida ao recarregar a página. A API confirma a compra após revalidar o prazo e a reserva. Ambos os métodos operam sem movimentação financeira.
 
 ### Providers externos isolados
 
@@ -647,7 +647,7 @@ O frontend é publicado na Vercel através da integração nativa da Vercel com 
 Algumas possibilidades foram avaliadas, mas foram deixadas de fora deliberadamente para manter o escopo e a complexidade da V1 sob controle:
 
 * integração com gateway de pagamento real;
-* PIX e pagamentos financeiros reais;
+* pagamentos financeiros reais;
 * webhooks financeiros;
 * envio de e-mails transacionais;
 * processamento assíncrono de cancelamentos e reembolsos;

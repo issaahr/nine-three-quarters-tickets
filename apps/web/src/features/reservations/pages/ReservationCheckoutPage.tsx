@@ -11,7 +11,7 @@ import { AdmissionMode } from '../../events/types';
 import { getReservationCountdown } from '../reservationCountdown';
 import { useReservation } from '../hooks';
 import { ReservationStatus } from '../types';
-import { CardPaymentForm } from '../../payments/components/CardPaymentForm';
+import { CheckoutPayment } from '../../payments/components/CheckoutPayment';
 
 export function ReservationCheckoutPage() {
   const { reservationId } = useParams<{ reservationId: string }>();
@@ -166,19 +166,20 @@ export function ReservationCheckoutPage() {
           )}
 
           {isActive && (
-            <>
-              <p className="mb-0 mt-8 text-sm leading-6 text-muted-foreground">
-                {isGeneralAdmission
-                  ? 'Revise os detalhes do pedido enquanto seus ingressos permanecem reservados para você.'
-                  : 'Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.'}
-              </p>
-              <CardPaymentForm
-                reservationId={reservation.id}
-                eventId={reservation.eventId}
-                totalPriceCents={totalPriceCents}
-              />
-            </>
+            <p className="mb-0 mt-8 text-sm leading-6 text-muted-foreground">
+              {isGeneralAdmission
+                ? 'Revise os detalhes do pedido enquanto seus ingressos permanecem reservados para você.'
+                : 'Revise os detalhes do pedido enquanto seus lugares permanecem reservados para você.'}
+            </p>
           )}
+          <CheckoutPayment
+            key={reservation.id}
+            reservationId={reservation.id}
+            eventId={reservation.eventId}
+            totalPriceCents={totalPriceCents}
+            isReservationActive={isActive}
+            isGeneralAdmission={isGeneralAdmission}
+          />
         </section>
 
         <aside className="order-first h-fit bg-secondary-foreground p-6 text-primary-foreground [clip-path:polygon(0_0,100%_0,100%_calc(100%_-_14px),calc(100%_-14px)_100%,0_100%)] sm:p-8 lg:order-last lg:sticky lg:top-6">
