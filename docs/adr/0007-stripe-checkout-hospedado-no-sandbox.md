@@ -19,12 +19,15 @@ A prova de capacidade confirmou criação idempotente, consulta, webhook, expira
 
 ### Proteção das rotas
 
-Esta decisão complementa a política do [ADR 0003](0003-autenticacao-jwt-em-cookie-http-only.md). Iniciar e retomar o checkout hospedado exigem sessão de `CUSTOMER`, propriedade da reserva e `Origin` confiável.
+Esta decisão complementa a política do [ADR 0003](0003-autenticacao-jwt-em-cookie-http-only.md). Iniciar, consultar e retomar o checkout hospedado exigem sessão de `CUSTOMER`, propriedade da reserva e `Origin` confiável. A autenticação e a origem são verificadas antes de consumir a quota compartilhada do usuário, para que requisições cross-site rejeitadas não bloqueiem seu checkout.
 
 - `POST /reservations/:reservationId/payments/hosted`
+- `GET /reservations/:reservationId/payments/hosted`
 - `POST /reservations/:reservationId/payments/hosted/:paymentId/resume`
 
 O webhook `POST /payments/webhooks/stripe` autentica a assinatura da Stripe sobre o corpo bruto e verifica o ambiente de teste. O evento indica a sessão a consultar. O resultado externo e a transição local são revalidados antes do ACK quando a notificação corresponde a uma tentativa da aplicação.
+
+A consulta do checkout e as duas mutações compartilham uma quota por CUSTOMER já autenticado. As três usam a mesma chave de throttle, independentemente da reserva e do proxy. O excesso retorna `429` e o webhook segue sua política de assinatura.
 
 ## Alternativas consideradas
 
@@ -36,5 +39,6 @@ O webhook `POST /payments/webhooks/stripe` autentica a assinatura da Stripe sobr
 
 - A interface hospedada muda de origem. Nas transições de domínio, a rota de retorno original precisa permanecer acessível para sessões que já foram criadas.
 - O aplicativo libera inventário com base no prazo local, mesmo quando o worker está parado. A expiração na Stripe e o estorno podem ser observados depois da liberação local.
+- O worker da API só faz progresso enquanto o serviço está ativo. Se o Render Free hibernar, a conciliação retoma do estado persistido quando a API volta. [Limites do Render Free](https://render.com/docs/free#spinning-down-on-idle)
 - Uma falha ambígua sem sessão encontrada permanece pendente. A ausência de correspondência na listagem ou o encurtamento da janela idempotente não autoriza uma nova cobrança.
 - Os testes automatizados usam PostgreSQL e respostas controladas do provedor. A validação manual no sandbox cobre os dois métodos. Credenciais e cobranças em produção, boleto, múltiplos provedores, estorno parcial e infraestrutura distribuída permanecem fora da S12.

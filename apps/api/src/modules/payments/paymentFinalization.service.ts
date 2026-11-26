@@ -67,6 +67,9 @@ export class PaymentFinalizationService {
   /**
    * Concilia um resultado consultado fora da transação. Uma cobrança tardia deixa a referência
    * e a intenção de estorno persistidas junto à falha local.
+   *
+   * @param observation - Identidade da tentativa, provedor, sessão e resultado consultado antes da transação.
+   * @returns Tentativa no estado persistido após conciliar a observação externa e as condições locais da compra.
    */
   public finalizeHostedPayment(observation: HostedPaymentObservation): Promise<Payment> {
     return this.applyOutcome(
@@ -78,10 +81,14 @@ export class PaymentFinalizationService {
   }
 
   /**
-   * Usa o relógio do PostgreSQL após os locks para decidir se a compra pode ser confirmada.
+   * Usa o relógio do PostgreSQL após os locks e novamente após as escritas da confirmação.
    * Publica o delta de assentos vendidos somente após o commit.
    *
+   * @param paymentId - Identificador da tentativa local; quando omitido na consulta, permite selecionar a tentativa da reserva.
+   * @param outcome - Resultado observado, sujeito às revalidações transacionais antes da transição local.
    * @param pixScope - Vincula o settlement de PIX ao CUSTOMER e à Reservation do checkout.
+   * @param hosted - Dados do fluxo hospedado; quando ausentes, mantém o processamento local fake.
+   * @param rejectHostedPurchase - Impede uma nova confirmação após rollback por perda do prazo ou do inventário.
    * @returns Estado persistido da tentativa, que continua PENDING enquanto o PIX válido aguarda o prazo.
    */
   private async applyOutcome(
@@ -89,7 +96,7 @@ export class PaymentFinalizationService {
     outcome: PaymentStatus.Approved | PaymentStatus.Declined,
     pixScope?: { customerId: string; reservationId: string },
     hosted?: HostedPaymentObservation,
-    rejectHostedPurchase = false,
+    rejectHostedPurchase: boolean = false,
   ): Promise<Payment> {
     try {
       const result = await this.dataSource.transaction<PaymentFinalizationResult>(
@@ -220,7 +227,6 @@ export class PaymentFinalizationService {
           const savedPayment = await paymentsRepository.save(payment);
           // Uma atualização de assento ou emissão pode esperar por locks depois da primeira leitura.
           if (
-            hosted &&
             this.isPurchaseUnavailable(
               reservation,
               event,
@@ -253,7 +259,14 @@ export class PaymentFinalizationService {
     }
   }
 
-  /** Revalida a identidade sob lock e preserva evidência de cobrança sem reabrir uma tentativa terminal. */
+  /**
+   * Revalida a identidade sob lock e preserva evidência de cobrança sem reabrir uma tentativa terminal.
+   *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
+   * @param payment - Tentativa persistida cujos dados delimitam a operação.
+   * @param observation - Requisição persistida, referência da sessão e resultado externo a revalidar sob lock.
+   * @returns Tentativa já resolvida pela observação, ou null quando a finalização deve continuar na mesma transação.
+   */
   private async applyHostedObservation(
     manager: EntityManager,
     payment: Payment,
@@ -305,6 +318,9 @@ export class PaymentFinalizationService {
   /**
    * Guarda a intenção no mesmo commit da falha local. O lock de Payment serializa todos os caminhos
    * que podem registrar estorno para a cobrança.
+   *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
+   * @param payment - Tentativa persistida cujos dados delimitam a operação.
    */
   private async ensureHostedRefund(manager: EntityManager, payment: Payment): Promise<void> {
     if (!payment.externalPaymentReference || payment.amountCents <= 0) return;

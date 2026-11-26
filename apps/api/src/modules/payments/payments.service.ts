@@ -130,9 +130,12 @@ export class PaymentsService {
   /**
    * Grava ou recupera a tentativa cuja identidade será usada na chamada ao provedor.
    *
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
    * @param idempotencyKey - Chave compartilhada entre os métodos da reserva para recuperar a mesma tentativa.
+   * @param method - Meio de pagamento solicitado para a tentativa local.
    * @param hosted - Provedor e URL de retorno a preservar antes de iniciar cobrança de valor positivo.
-   * @returns Tentativa com valor calculado a partir dos itens persistidos da reserva.
+   * @returns Tentativa com total calculado pelos itens persistidos e indicação de criação nesta chamada.
    */
   public async startHostedPayment(
     customerId: string,
@@ -149,6 +152,7 @@ export class PaymentsService {
    *
    * @param customerId - Titular da reserva, revalidado na liquidação local de PIX.
    * @param payment - Tentativa persistida com provedor fake e valor zero.
+   * @returns Tentativa gratuita após finalização local, sujeita à revalidação do prazo e da disponibilidade.
    */
   public confirmFreeHostedPayment(customerId: string, payment: Payment): Promise<Payment> {
     if (payment.provider !== PaymentProvider.Fake || payment.amountCents !== 0) {
@@ -226,8 +230,8 @@ export class PaymentsService {
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
    * @param method - Método usado quando a chave ainda não possui um Payment.
-   * @param provider - Provedor solicitado para uma tentativa de valor positivo.
-   * @returns Payment e indicação de criação, que permite ao cartão chamar o gateway uma única vez.
+   * @param hosted - Dados do fluxo hospedado; quando ausentes, mantém o processamento local fake.
+   * @returns Tentativa e indicação de criação, distinguindo uma nova intenção de um retry idempotente.
    */
   private async startPayment(
     customerId: string,

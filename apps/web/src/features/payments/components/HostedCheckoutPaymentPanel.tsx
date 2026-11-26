@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { isApiRateLimitError, rateLimitErrorMessage } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { navigateToHostedCheckout } from '../hostedCheckoutNavigation';
 import { useHostedCheckout } from '../hooks';
@@ -85,6 +86,9 @@ export function HostedCheckoutPaymentPanel({
   let messageRole: 'alert' | 'status' | undefined = 'status';
   if (isSubmitting) {
     message = 'Preparando seu pagamento…';
+  } else if (isApiRateLimitError(paymentQuery.error)) {
+    message = rateLimitErrorMessage;
+    messageRole = 'alert';
   } else if (paymentQuery.isError) {
     message = 'Não foi possível consultar o pagamento. Atualize a situação para continuar.';
     messageRole = 'alert';
@@ -94,6 +98,9 @@ export function HostedCheckoutPaymentPanel({
     message = 'Confirmando seus ingressos...';
   } else if (isWaitingForConfirmation) {
     message = 'Aguardando confirmação do pagamento.';
+  } else if (isApiRateLimitError(submissionError)) {
+    message = rateLimitErrorMessage;
+    messageRole = 'alert';
   } else if (unsupportedAmountMethod && unsupportedAmountMethod === method) {
     message = 'O total da reserva está fora dos limites para este método de pagamento.';
     messageRole = 'alert';

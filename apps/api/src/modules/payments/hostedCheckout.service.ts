@@ -31,7 +31,10 @@ export class HostedCheckoutService {
   /**
    * Persiste a tentativa local antes de iniciar a sessão externa.
    *
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
    * @param idempotencyKey - Chave reutilizada pelo cliente para repetir a mesma intenção de pagamento.
+   * @param method - Meio de pagamento solicitado para a tentativa local.
    * @returns Tentativa persistida com link quando o pagamento externo pode prosseguir.
    */
   public async start(
@@ -54,6 +57,8 @@ export class HostedCheckoutService {
   /**
    * Consulta a tentativa visível sem criar sessão nem confirmar a compra.
    *
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
    * @returns Tentativa local com URL nula se o vínculo externo ainda não foi gravado.
    */
   public find(customerId: string, reservationId: string): Promise<HostedCheckout> {
@@ -63,7 +68,10 @@ export class HostedCheckoutService {
   /**
    * Retoma uma tentativa já persistida mesmo se o cliente perdeu a chave original.
    *
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
    * @param paymentId - Identidade local estável usada também para repetir a criação externa.
+   * @returns Tentativa persistida com link somente quando o checkout pode prosseguir.
    */
   public resume(
     customerId: string,
@@ -76,8 +84,13 @@ export class HostedCheckoutService {
   /**
    * Obtém o link fora da transação e revalida a reserva antes de devolvê-lo.
    *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @param paymentId - Identificador da tentativa local; quando omitido na consulta, permite selecionar a tentativa da reserva.
    * @param allowCreation - Autoriza a recuperação e a criação idempotente em mutações.
    * @param isNew - Indica que nenhuma requisição anterior pôde iniciar a sessão.
+   * @returns Tentativa revalidada com link e indicação de retomada, sem expor URL quando a compra não é elegível.
    */
   private async checkout(
     gateway: HostedPaymentGateway,
@@ -85,7 +98,7 @@ export class HostedCheckoutService {
     reservationId: string,
     paymentId: string | undefined,
     allowCreation: boolean,
-    isNew = false,
+    isNew: boolean = false,
   ): Promise<HostedCheckout> {
     const payment = await this.findAttempt(gateway, customerId, reservationId, paymentId);
     const now = await getDatabaseClockTimestamp(this.dataSource.manager);
@@ -139,6 +152,12 @@ export class HostedCheckoutService {
   /**
    * Investiga a criação anterior antes de repetir a chave. Uma ausência na lista não autoriza
    * outro POST se os parâmetros originais são desconhecidos ou a retenção não está garantida.
+   *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param request - Dados persistidos da intenção local usados para validar a operação e a resposta externa.
+   * @param payment - Tentativa persistida cujos dados delimitam a operação.
+   * @param isNew - Indica uma tentativa recém-criada que ainda não iniciou uma chamada externa anterior.
+   * @returns Sessão validada ou null quando a recuperação ainda não encontrou um vínculo seguro.
    */
   private async recoverOrCreate(
     gateway: HostedPaymentGateway,
@@ -184,7 +203,11 @@ export class HostedCheckoutService {
   /**
    * Busca uma tentativa do titular e usa a mesma resposta para ausência e falta de acesso.
    *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
    * @param paymentId - Restringe a retomada a um ID local em vez de selecionar a tentativa da reserva.
+   * @returns Tentativa acessível ao titular, com reserva e evento para revalidação.
    */
   private async findAttempt(
     gateway: HostedPaymentGateway,

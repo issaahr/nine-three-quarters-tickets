@@ -3,6 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getOptionsToken, seconds } from '@nestjs/throttler';
 import request, { type Response as HttpResponse, type Test as HttpRequest } from 'supertest';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 
@@ -58,6 +59,11 @@ import { TicketCredentialService } from '../src/modules/tickets/ticketCredential
 import { User } from '../src/modules/users/user.entity';
 import { Venue } from '../src/modules/venues/venue.entity';
 import { VenueSeat } from '../src/modules/venues/venueSeat.entity';
+import { RateLimitPolicy } from '../src/rateLimit/rateLimitPolicy.enum';
+import {
+  generateRateLimitKey,
+  trackHostedCheckoutRequest,
+} from '../src/rateLimit/rateLimit.trackers';
 
 class ControlledPaymentGateway implements PaymentGateway {
   public processCard = jest.fn(
@@ -114,17 +120,29 @@ describe('Payments', () => {
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
-  async function createPaymentsTestApplication(): Promise<INestApplication> {
+  async function createPaymentsTestApplication(
+    hostedCheckoutLimit?: number,
+  ): Promise<INestApplication> {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(paymentGatewayToken)
       .useValue(paymentGateway)
       .overrideProvider(hostedPaymentGatewayToken)
       .useValue(hostedGateway)
       .overrideProvider(stripeCheckoutWebhookToken)
-      .useValue(new StripeCheckoutWebhook(webhookFixtureSecret))
-      .compile();
+      .useValue(new StripeCheckoutWebhook(webhookFixtureSecret));
+    if (hostedCheckoutLimit !== undefined) {
+      testingModule.overrideProvider(getOptionsToken()).useValue([
+        {
+          name: RateLimitPolicy.HostedCheckout,
+          ttl: seconds(60),
+          limit: hostedCheckoutLimit,
+          getTracker: trackHostedCheckoutRequest,
+          generateKey: generateRateLimitKey,
+        },
+      ]);
+    }
 
-    const testApp = testingModule.createNestApplication({ rawBody: true });
+    const testApp = (await testingModule.compile()).createNestApplication({ rawBody: true });
     new Application().configure(testApp);
     await testApp.init();
     return testApp;
@@ -381,6 +399,68 @@ describe('Payments', () => {
     });
   });
 
+  it('limita as três rotas hospedadas por CUSTOMER após autorizar e preserva o webhook', async () => {
+    const cookie = await authenticate();
+    const otherCookie = await authenticate(customerTwo);
+    const reservation = await createActiveReservation();
+    const endpoint = `/reservations/${reservation.id}/payments/hosted`;
+    const externalReference = `cs_test_${randomUUID()}`;
+    const redirect = { externalReference, checkoutUrl: 'https://checkout.stripe.com/test' };
+    hostedGateway.createCheckout.mockResolvedValueOnce(redirect);
+    hostedGateway.retrieveCheckout.mockResolvedValueOnce(redirect);
+    const limited = await createPaymentsTestApplication(2);
+    try {
+      const server = limited.getHttpServer();
+      await request(server).get(endpoint).set('Origin', checkoutOrigin).expect(401);
+      await request(server).get(endpoint).set('Origin', checkoutOrigin).expect(401);
+      // Uma origem rejeitada não pode consumir a quota da sessão autenticada.
+      for (const method of ['get', 'post'] as const) {
+        await request(server)
+          [method](endpoint)
+          .set('Cookie', cookie)
+          .set('Origin', 'https://untrusted.example')
+          .expect(403);
+      }
+      await request(server).get(endpoint).set('Cookie', cookie).expect(403);
+      const creation = await startHostedRequest(reservation.id, cookie, randomUUID(), limited)
+        .send({ method: PaymentMethod.Card })
+        .expect(201);
+      const paymentId = String(creation.body.id);
+      await request(server)
+        .get(endpoint)
+        .set('Origin', checkoutOrigin)
+        .set('Cookie', cookie)
+        .expect(200);
+      const response = await request(server)
+        .post(`${endpoint}/${paymentId}/resume`)
+        .set('Cookie', cookie)
+        .set('Origin', checkoutOrigin)
+        .expect(429);
+      expect(response.body.code).toBe('RATE_LIMIT_EXCEEDED');
+      expect(response.headers['retry-after-hostedcheckout']).toBeDefined();
+      await request(server)
+        .get(`/reservations/${randomUUID()}/payments/hosted`)
+        .set('Origin', checkoutOrigin)
+        .set('Cookie', cookie)
+        .expect(429);
+      await request(server)
+        .get(endpoint)
+        .set('Origin', checkoutOrigin)
+        .set('Cookie', otherCookie)
+        .expect(404);
+      expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(1);
+      expect(hostedGateway.retrieveCheckout).toHaveBeenCalledTimes(1);
+
+      reportHostedPaymentAsPaid(paymentId, `pi_${randomUUID()}`);
+      await sendHostedNotification(paymentId, externalReference, {}, limited).expect(204);
+      await expect(paymentsRepository.findOneByOrFail({ id: paymentId })).resolves.toMatchObject({
+        status: PaymentStatus.Approved,
+      });
+    } finally {
+      await limited.close();
+    }
+  });
+
   it('bloqueia os endpoints fake quando a API está em modo Stripe', async () => {
     const cookie = await authenticate();
     const reservation = await createActiveReservation();
@@ -502,9 +582,14 @@ describe('Payments', () => {
       .send({ method: PaymentMethod.Pix })
       .expect(503);
     const persisted = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
-    await request(app.getHttpServer()).get(endpoint).set('Cookie', otherCookie).expect(404);
+    await request(app.getHttpServer())
+      .get(endpoint)
+      .set('Origin', checkoutOrigin)
+      .set('Cookie', otherCookie)
+      .expect(404);
     const pending = await request(app.getHttpServer())
       .get(endpoint)
+      .set('Origin', checkoutOrigin)
       .set('Cookie', cookie)
       .expect(200);
     expect(pending.body).toMatchObject({
@@ -540,7 +625,11 @@ describe('Payments', () => {
     await startHostedRequest(reservation.id, cookie, key)
       .send({ method: PaymentMethod.Card })
       .expect(201);
-    await request(app.getHttpServer()).get(endpoint).set('Cookie', cookie).expect(200);
+    await request(app.getHttpServer())
+      .get(endpoint)
+      .set('Origin', checkoutOrigin)
+      .set('Cookie', cookie)
+      .expect(200);
     expect(hostedGateway.retrieveCheckout).toHaveBeenCalledTimes(2);
     expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(2);
     await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(1);
@@ -749,6 +838,7 @@ describe('Payments', () => {
     paymentId: string,
     externalReference: string,
     options: { validSignature?: boolean; livemode?: boolean; type?: StripeCheckoutEventType } = {},
+    instance = app,
   ) {
     const timestamp = Math.floor(Date.now() / 1000);
     const payload = JSON.stringify(
@@ -771,7 +861,7 @@ describe('Payments', () => {
     const signature = createHmac('sha256', webhookFixtureSecret)
       .update(`${timestamp}.${payload}${options.validSignature === false ? ' ' : ''}`)
       .digest('hex');
-    return request(app.getHttpServer())
+    return request(instance.getHttpServer())
       .post(webhookEndpoint)
       .set('Content-Type', 'application/json')
       .set('Stripe-Signature', `t=${timestamp},v1=${signature}`)
@@ -1174,6 +1264,72 @@ describe('Payments', () => {
     ).resolves.toMatchObject({ soldAt: null, holdReservationId: reservation.id });
     expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { mode: PaymentCheckoutMode.Hosted, method: PaymentMethod.Card },
+    { mode: PaymentCheckoutMode.Hosted, method: PaymentMethod.Pix },
+    { mode: PaymentCheckoutMode.Simulated, method: PaymentMethod.Card },
+    { mode: PaymentCheckoutMode.Simulated, method: PaymentMethod.Pix },
+  ])(
+    'reverte confirmação $mode de $method se o prazo vencer no lock do assento',
+    async ({ mode, method }) => {
+      const reservation = await createActiveReservation();
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      const cookie = await authenticate();
+      let confirmation: HttpRequest;
+      if (mode === PaymentCheckoutMode.Hosted) {
+        await reservationItemsRepository.update(item.id, { unitPriceCents: 0 });
+        confirmation = startHostedRequest(reservation.id, cookie).send({ method });
+      } else if (method === PaymentMethod.Pix) {
+        const started = await createPixRequest(reservation.id, cookie).expect(201);
+        await paymentsRepository.update(started.body.id, {
+          simulationCompletionAt: new Date('2020-01-01T00:00:00.000Z'),
+        });
+        confirmation = settlePixRequest(reservation.id, started.body.id, cookie).set(
+          'Origin',
+          checkoutOrigin,
+        );
+      } else {
+        confirmation = createPaymentRequest(reservation.id, randomUUID(), cookie);
+      }
+
+      const response = await requestWaitingPastDeadline(
+        confirmation,
+        (manager) =>
+          manager.getRepository(EventSeat).findOneOrFail({
+            where: { id: item.eventSeatId! },
+            lock: { mode: 'pessimistic_write' },
+          }),
+        (_manager, deadline) =>
+          reservationsRepository.update(reservation.id, { expiresAt: deadline }),
+      );
+      expect(response.status).toBe(
+        mode === PaymentCheckoutMode.Simulated && method === PaymentMethod.Pix ? 200 : 201,
+      );
+      const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+      expect(payment).toMatchObject({
+        status: PaymentStatus.Failed,
+        provider: PaymentProvider.Fake,
+        approvedAt: null,
+        externalPaymentReference: null,
+      });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({ confirmedAt: null });
+      await expect(
+        eventSeatsRepository.findOneByOrFail({ id: item.eventSeatId! }),
+      ).resolves.toMatchObject({
+        soldAt: null,
+        holdReservationId: reservation.id,
+      });
+      await expect(ticketsRepository.countBy({ reservationItemId: item.id })).resolves.toBe(0);
+      await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+      expect(seatRealtimeGateway.emitSold).not.toHaveBeenCalled();
+      expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['reserva', 'evento'])(
     'registra estorno Stripe pendente no cancelamento de %s',

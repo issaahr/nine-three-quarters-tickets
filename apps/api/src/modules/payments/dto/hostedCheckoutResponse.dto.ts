@@ -20,6 +20,7 @@ export class HostedCheckoutResponseDto extends PaymentResponseDto {
   /**
    * Projeta o estado local e o link público sem expor o identificador interno da sessão no provedor.
    *
+   * @param checkout - Tentativa persistida, URL pública opcional e indicação de retomada projetadas na resposta HTTP.
    * @returns Resposta com URL nula enquanto indisponível, inclusive para compras gratuitas.
    */
   public static fromCheckout({

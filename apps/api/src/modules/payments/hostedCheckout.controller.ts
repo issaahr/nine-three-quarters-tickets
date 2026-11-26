@@ -1,4 +1,5 @@
 import {
+  applyDecorators,
   Body,
   Controller,
   Get,
@@ -13,6 +14,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
+import { RateLimit } from '../../rateLimit/rateLimit.decorator';
+import { RateLimitPolicy } from '../../rateLimit/rateLimitPolicy.enum';
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '../users/userRole.enum';
@@ -29,13 +32,16 @@ import {
 
 @ApiTags('Payments')
 @Controller('reservations/:reservationId/payments/hosted')
-@Roles(UserRole.Customer)
+@applyDecorators(
+  Roles(UserRole.Customer),
+  UseGuards(TrustedPaymentOriginGuard),
+  RateLimit(RateLimitPolicy.HostedCheckout),
+)
 export class HostedCheckoutController {
   public constructor(private readonly checkout: HostedCheckoutService) {}
 
   @Post()
   @Header('Cache-Control', 'private, no-store')
-  @UseGuards(TrustedPaymentOriginGuard)
   @ApiCreateHostedCheckout()
   public async start(
     @Req() request: AuthenticatedRequest,
@@ -63,7 +69,6 @@ export class HostedCheckoutController {
   @Post(':paymentId/resume')
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'private, no-store')
-  @UseGuards(TrustedPaymentOriginGuard)
   @ApiResumeHostedCheckout()
   public async resume(
     @Req() request: AuthenticatedRequest,

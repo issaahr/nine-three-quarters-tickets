@@ -28,7 +28,10 @@ export class HostedRefundReconciliationService {
     @Inject(hostedPaymentGatewayToken) private readonly gateway: HostedPaymentGateway | null,
   ) {}
 
-  /** Processa intenções de estorno persistidas. O cursor só limita a varredura, sem decidir o estado. */
+  /**
+   * Processa intenções de estorno persistidas. O cursor só limita a varredura, sem decidir o estado.
+   *
+   */
   public async reconcilePendingBatch(): Promise<void> {
     const gateway = this.gateway;
     if (!gateway || this.batchRunning) return;
@@ -60,7 +63,12 @@ export class HostedRefundReconciliationService {
     }
   }
 
-  /** Usa uma geração de envio persistida antes do I/O para que processos concorrentes usem a mesma chave. */
+  /**
+   * Usa uma geração de envio persistida antes do I/O para que processos concorrentes usem a mesma chave.
+   *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param candidate - Intenção persistida de estorno selecionada para conciliação.
+   */
   private async reconcile(gateway: HostedPaymentGateway, candidate: Refund): Promise<void> {
     const repository = this.dataSource.getRepository(Refund);
     const started = await repository.update(
@@ -96,7 +104,13 @@ export class HostedRefundReconciliationService {
     await this.applyOutcome(refund, outcome);
   }
 
-  /** Renova a chave após a retenção sem competir com outro processo que já retomou ou vinculou a intenção. */
+  /**
+   * Renova a chave após a retenção sem competir com outro processo que já retomou ou vinculou a intenção.
+   *
+   * @param refundId - Identificador da intenção de estorno cuja geração será renovada condicionalmente.
+   * @param priorSubmission - Geração de envio anteriormente lida, que deve continuar vigente para autorizar a renovação.
+   * @returns Nova geração persistida de envio, ou null quando outra operação já alterou a intenção.
+   */
   private async restartSubmission(refundId: string, priorSubmission: Date): Promise<Date | null> {
     const repository = this.dataSource.getRepository(Refund);
     const renewal = await repository.update(
@@ -117,7 +131,12 @@ export class HostedRefundReconciliationService {
     return current?.externalStartedAt ?? null;
   }
 
-  /** Aplica a confirmação externa sob lock sem reverter um resultado terminal por uma resposta antiga. */
+  /**
+   * Aplica a confirmação externa sob lock sem reverter um resultado terminal por uma resposta antiga.
+   *
+   * @param refund - Intenção persistida de estorno que será bloqueada antes de aplicar o resultado.
+   * @param outcome - Referência e estado do estorno previamente consultados e validados pelo adapter.
+   */
   private async applyOutcome(refund: Refund, outcome: HostedRefundOutcome): Promise<void> {
     await this.dataSource.transaction(async (manager) => {
       const repository = manager.getRepository(Refund);

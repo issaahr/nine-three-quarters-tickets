@@ -53,8 +53,10 @@ const apiPaymentIdempotencyKey = ApiHeader({
 
 /**
  * Agrupa a documentação da criação idempotente de uma tentativa de cartão.
+ *
+ * @returns Decorator composto com os contratos HTTP, de autorização e de erro da criação idempotente por cartão.
  */
-export function ApiCreateCardPayment() {
+export function ApiCreateCardPayment(): ReturnType<typeof applyDecorators> {
   return applyDecorators(
     ApiOperation({ summary: 'Inicia uma tentativa idempotente de pagamento por cartão' }),
     apiPaymentIdempotencyKey,
@@ -167,7 +169,9 @@ export function ApiCreateHostedCheckout() {
 export function ApiGetHostedCheckout() {
   return applyDecorators(
     ApiOperation({ summary: 'Consulta a tentativa persistida de checkout hospedado' }),
+    apiHostedCheckoutOrigin,
     ApiOkResponse({ type: HostedCheckoutResponseDto }),
+    ApiForbiddenResponse({ description: 'Papel ou origem sem acesso.' }),
     apiHostedCheckoutNotFound,
     apiHostedCheckoutUnavailable,
   );

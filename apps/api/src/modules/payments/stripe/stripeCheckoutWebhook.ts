@@ -18,6 +18,10 @@ export class StripeCheckoutWebhook {
   /**
    * Autentica os bytes recebidos antes de interpretar o evento.
    * O conteúdo assinado indica qual sessão consultar, sem comprovar o resultado da cobrança.
+   *
+   * @param payload - Bytes brutos recebidos no webhook antes de interpretar o JSON; pode estar ausente.
+   * @param signature - Cabeçalho Stripe-Signature original, rejeitado se ausente ou múltiplo.
+   * @returns Notificação autenticada, ou null quando o tipo de evento ou a referência local não permitem conciliá-la.
    */
   public parse(
     payload: Buffer | undefined,
@@ -54,7 +58,13 @@ export class StripeCheckoutWebhook {
     return { paymentId, externalReference: session.id };
   }
 
-  /** A janela da assinatura segue o relógio do servidor, independente do prazo de compra do PostgreSQL. */
+  /**
+   * A janela da assinatura segue o relógio do servidor, independente do prazo de compra do PostgreSQL.
+   *
+   * @param payload - Corpo bruto usado para calcular o HMAC sem alterar a representação recebida.
+   * @param signature - Cabeçalho único com timestamp e assinaturas a verificar em tempo constante.
+   * @returns true quando a assinatura corresponde ao corpo bruto e ao intervalo de tolerância aceito.
+   */
   private hasValidSignature(payload: Buffer, signature: string): boolean {
     const elements = signature.split(',').map((value) => value.trim());
     const timestamps = elements.filter((value) => /^t=\d+$/.test(value));

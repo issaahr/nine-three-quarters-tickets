@@ -20,6 +20,8 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 - Variáveis obrigatórias não possuem fallback silencioso.
 - A API valida conjuntamente sua configuração HTTP antes de iniciar.
 - A configuração de banco permanece separada porque também é consumida pelo CLI de migrations.
+- O carregador de banco exige `NODE_ENV` válido também no CLI, sem depender da validação HTTP. Somente desenvolvimento e teste permitem TLS desabilitado.
+- `DATABASE_TLS_MODE` é obrigatório para a API e para o CLI. O PostgreSQL local e o da CI usam `disable`. O deploy usa `verify-full` com as CAs padrão do Node ou a cadeia PEM opcional de `DATABASE_TLS_CA`. `require-unverified` mantém TLS sem verificar a identidade do servidor quando a compatibilidade com uma instalação anterior exigir escolha explícita. Parâmetros TLS no DSN são rejeitados para que a URL não sobrescreva a política.
 - Somente variáveis públicas são incorporadas ao bundle do Vite.
 - `PUBLIC_SIGNUP_ENABLED` é exposta explicitamente ao frontend e validada também pela API. Configure o mesmo valor nos dois processos.
 - Alterar a flag exige reiniciar a API e reiniciar o frontend em desenvolvimento ou reconstruí-lo em produção.
@@ -99,6 +101,8 @@ Consulte o [ADR 0006](adr/0006-prazo-autoritativo-no-cancelamento-transacional.m
 - Cartão e Pix fake continuam disponíveis na demonstração. `PAYMENT_PROVIDER=stripe` ativa o Checkout hospedado em sandbox com credenciais de teste exclusivas da API.
 - O método e o provedor são campos distintos. A API calcula valor e moeda e persiste a tentativa antes do I/O. Os limites do método incidem sobre o total positivo. Compras gratuitas são confirmadas localmente.
 - O retorno do Web consulta a tentativa persistida. O webhook autenticado e a reconciliação consultam a Stripe e convergem no mesmo fluxo transacional de confirmação. O PostgreSQL determina prazos, inventário e Tickets.
+- A confirmação de qualquer pagamento revalida o prazo pelo relógio do PostgreSQL depois das escritas. O vencimento antes da decisão provoca rollback da compra, inclusive para o fluxo fake e compras gratuitas.
+- As três rotas hospedadas compartilham uma quota local baseada no CUSTOMER autenticado, independentemente de IP e reserva. A quota não se aplica à entrega de webhooks.
 - A falha ambígua de criação pode ser recuperada buscando a sessão pelo ID da tentativa. Se um novo envio for seguro dentro da janela idempotente, usa a chave original e a URL de retorno persistida.
 - O estorno integral em sandbox nasce pendente e só é concluído após resposta externa confirmada. O I/O ocorre fora das transações de compra e cancelamento.
 
@@ -175,4 +179,5 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 - A CI utiliza valores concretos e determinísticos exclusivos para teste, definidos no próprio workflow. Nenhuma credencial real ou configuração de deploy é utilizada pelos jobs.
 - Valores destinados exclusivamente ao ambiente de teste não são tratados como GitHub Actions Secrets.
 - A CI não publica imagens e não executa `npm audit` como bloqueio de merge.
+- O workflow legado de CD no Heroku foi removido. O deploy em Vercel e Render é configurado separadamente nesses serviços.
 - Hooks locais não são obrigatórios; a CI é a autoridade dos checks exigidos para integração.

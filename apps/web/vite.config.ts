@@ -10,7 +10,11 @@ import { defineConfig } from 'vite';
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webEnvironmentPath = path.resolve(currentDirectory, '../../env/web.env');
 
-/** Lê apenas o arquivo público local. CI, deploy e Compose podem fornecer variáveis sem o arquivo. */
+/**
+ * Lê apenas o arquivo público local. CI, deploy e Compose podem fornecer variáveis sem o arquivo.
+ *
+ * @returns Variáveis do arquivo público local, ou objeto vazio quando o arquivo não existe.
+ */
 function readWebEnvironment(): NodeJS.Dict<string> {
   try {
     return parseEnv(readFileSync(webEnvironmentPath, 'utf8'));

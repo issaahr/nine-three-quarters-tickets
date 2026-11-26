@@ -415,6 +415,53 @@ describe('checkout hospedado', () => {
     expect(attempts[0].key).not.toBe(attempts[1].key);
   });
 
+  it('explica o limite do checkout e conserva a chave ao permitir nova tentativa', async () => {
+    const keys: Array<string | null> = [];
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
+      http.post(hostedPath, ({ request }) => {
+        keys.push(request.headers.get('idempotency-key'));
+        return keys.length === 1
+          ? HttpResponse.json({ code: 'RATE_LIMIT_EXCEEDED' }, { status: 429 })
+          : HttpResponse.json({ ...pendingPayment, method: PaymentMethod.Card, checkoutUrl });
+      }),
+    );
+    renderCheckout();
+    const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
+    await waitFor(() => expect(action).toBeEnabled());
+    await userEvent.click(action);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Muitas tentativas. Aguarde um momento antes de tentar novamente.',
+    );
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+    await userEvent.click(action);
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(keys).toEqual([expect.any(String), keys[0]]);
+  });
+
+  it('exibe a espera informada pela API após uma retomada que recebeu 429', async () => {
+    let hasOpenSession = true;
+    server.use(
+      http.get(hostedPath, () =>
+        HttpResponse.json({ ...pendingPayment, checkoutUrl: hasOpenSession ? checkoutUrl : null }),
+      ),
+      http.post(`${hostedPath}/${pendingPayment.id}/resume`, () =>
+        HttpResponse.json({ code: 'RATE_LIMIT_EXCEEDED' }, { status: 429 }),
+      ),
+    );
+    renderCheckout();
+    await userEvent.click(await screen.findByRole('button', { name: 'Retomar pagamento' }));
+    const rateLimitMessage = 'Muitas tentativas. Aguarde um momento antes de tentar novamente.';
+    expect(await screen.findByText(rateLimitMessage)).toHaveAttribute('role', 'alert');
+
+    hasOpenSession = false;
+    window.dispatchEvent(new Event('visibilitychange'));
+
+    expect(await screen.findByText(waitingMessage)).toHaveAttribute('role', 'status');
+    expect(screen.queryByText(rateLimitMessage)).not.toBeInTheDocument();
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+  });
+
   it('permite escolher outro método após falha terminal reconhecida pela API', async () => {
     const start = vi.fn();
     server.use(

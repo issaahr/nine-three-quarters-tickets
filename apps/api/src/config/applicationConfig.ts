@@ -1,5 +1,6 @@
 import { ConfigurationError } from '../errors/configuration.error';
 import { PaymentProvider } from '../modules/payments/paymentProvider.enum';
+import { ApplicationConfig, PaymentProviderConfig } from './applicationConfig.interfaces';
 import { getRequiredEnvironmentVariable } from './environment';
 import { NodeEnv } from './nodeEnv.enum';
 
@@ -9,6 +10,9 @@ type RuntimeEnvironment = (typeof supportedEnvironments)[number];
 
 /**
  * Restringe comportamentos dependentes do ambiente aos modos suportados pela aplicação.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Ambiente validado entre os modos suportados.
  */
 function getRuntimeEnvironment(environmentVariables: NodeJS.ProcessEnv): RuntimeEnvironment {
   const environment = getRequiredEnvironmentVariable('NODE_ENV', environmentVariables);
@@ -23,6 +27,9 @@ function getRuntimeEnvironment(environmentVariables: NodeJS.ProcessEnv): Runtime
 /**
  * Normaliza as origens CORS para comparação exata e rejeita URLs que incluam
  * caminho, query ou fragmento, pois esses componentes não fazem parte de uma origem.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Origens normalizadas e sem duplicatas para comparação exata no CORS.
  */
 function getCorsOrigins(environmentVariables: NodeJS.ProcessEnv): string[] {
   const configuredOrigins = getRequiredEnvironmentVariable('CORS_ORIGINS', environmentVariables)
@@ -60,6 +67,9 @@ function getCorsOrigins(environmentVariables: NodeJS.ProcessEnv): string[] {
 
 /**
  * Impede que uma chave HS256 claramente curta seja aceita por engano.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Segredo validado com ao menos 32 bytes para assinatura da sessão.
  */
 function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
   const secret = getRequiredEnvironmentVariable('JWT_SECRET', environmentVariables);
@@ -73,6 +83,9 @@ function getJwtSecret(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Mantém a credencial pública do Ticket independente do segredo usado pela sessão.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Segredo validado com ao menos 32 bytes para autenticar a credencial do Ticket.
  */
 function getTicketHmacSecret(environmentVariables: NodeJS.ProcessEnv): string {
   const secret = getRequiredEnvironmentVariable('TICKET_HMAC_SECRET', environmentVariables);
@@ -88,6 +101,9 @@ function getTicketHmacSecret(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Garante que a duração possa ser usada diretamente na assinatura e no cookie.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Duração positiva da sessão em segundos, usada na assinatura e no cookie.
  */
 function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number {
   const expiresInSeconds = Number(
@@ -105,6 +121,9 @@ function getJwtExpiresInSeconds(environmentVariables: NodeJS.ProcessEnv): number
 
 /**
  * Impede holds sem prazo ou longos o bastante para degradar a disponibilidade do inventário.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Duração positiva do hold em segundos, aplicada pelo backend ao prazo persistido.
  */
 function getReservationHoldDurationSeconds(environmentVariables: NodeJS.ProcessEnv): number {
   const holdDurationSeconds = Number(
@@ -123,6 +142,9 @@ function getReservationHoldDurationSeconds(environmentVariables: NodeJS.ProcessE
 /**
  * Define por quanto tempo uma tentativa CARD PENDING pode bloquear uma Reservation
  * antes de ser recuperada como falha técnica.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Prazo técnico positivo em segundos para recuperar tentativas de cartão fake órfãs.
  */
 function getPaymentCardPendingTimeoutSeconds(environmentVariables: NodeJS.ProcessEnv): number {
   const pendingTimeoutSeconds = Number(
@@ -138,10 +160,16 @@ function getPaymentCardPendingTimeoutSeconds(environmentVariables: NodeJS.Proces
   return pendingTimeoutSeconds;
 }
 
-function getPaymentProviderConfig(environmentVariables: NodeJS.ProcessEnv) {
+/**
+ * Mantém o modo fake como padrão e valida exclusivamente credenciais de teste no modo Stripe.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Configuração fake ou Stripe com credenciais de sandbox validadas.
+ */
+function getPaymentProviderConfig(environmentVariables: NodeJS.ProcessEnv): PaymentProviderConfig {
   const provider = environmentVariables.PAYMENT_PROVIDER?.toUpperCase();
   if (provider === undefined || provider === PaymentProvider.Fake) {
-    return { provider: PaymentProvider.Fake } as const;
+    return { provider: PaymentProvider.Fake };
   }
   if (provider !== PaymentProvider.Stripe) {
     throw new ConfigurationError('Variável de ambiente PAYMENT_PROVIDER deve ser fake ou stripe');
@@ -163,11 +191,14 @@ function getPaymentProviderConfig(environmentVariables: NodeJS.ProcessEnv) {
       'PAYMENT_STRIPE_WEBHOOK_SECRET deve ser um segredo de assinatura da Stripe',
     );
   }
-  return { provider: PaymentProvider.Stripe, secretKey, webhookSecret } as const;
+  return { provider: PaymentProvider.Stripe, secretKey, webhookSecret };
 }
 
 /**
  * Converte a porta uma única vez antes da criação da aplicação Nest.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Porta HTTP validada para iniciar o servidor.
  */
 function getPort(environmentVariables: NodeJS.ProcessEnv): number {
   const port = Number(getRequiredEnvironmentVariable('PORT', environmentVariables));
@@ -181,6 +212,9 @@ function getPort(environmentVariables: NodeJS.ProcessEnv): number {
 
 /**
  * Aceita somente booleanos explícitos para evitar habilitar cadastro público por engano.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Indicação explícita de que o cadastro público está habilitado.
  */
 function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolean {
   const configuredValue = getRequiredEnvironmentVariable(
@@ -199,6 +233,10 @@ function getPublicSignupEnabled(environmentVariables: NodeJS.ProcessEnv): boolea
 
 /**
  * Valida limites operacionais que precisam ser positivos e explicitamente configurados.
+ *
+ * @param name - Nome da variável cujo valor deve ser um inteiro estritamente positivo.
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Valor convertido em inteiro estritamente positivo.
  */
 function getPositiveInteger(name: string, environmentVariables: NodeJS.ProcessEnv): number {
   const value = Number(getRequiredEnvironmentVariable(name, environmentVariables));
@@ -212,6 +250,9 @@ function getPositiveInteger(name: string, environmentVariables: NodeJS.ProcessEn
 
 /**
  * Limita a confiança do Express à quantidade conhecida de proxies da topologia.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Quantidade inteira não negativa de proxies confiáveis da topologia.
  */
 function getTrustedProxyHops(environmentVariables: NodeJS.ProcessEnv): number {
   const trustedHops = Number(
@@ -229,6 +270,9 @@ function getTrustedProxyHops(environmentVariables: NodeJS.ProcessEnv): number {
 
 /**
  * Mantém a credencial da TMDb obrigatória e exclusivamente no backend.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Token obrigatório da TMDb, destinado exclusivamente ao backend.
  */
 function getTmdbAccessToken(environmentVariables: NodeJS.ProcessEnv): string {
   return getRequiredEnvironmentVariable('TMDB_API_READ_ACCESS_TOKEN', environmentVariables);
@@ -236,6 +280,9 @@ function getTmdbAccessToken(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Restringe o idioma ao formato regional aceito pelas consultas utilizadas na V1.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Idioma regional validado para consultas à TMDb.
  */
 function getTmdbLanguage(environmentVariables: NodeJS.ProcessEnv): string {
   const language = getRequiredEnvironmentVariable('TMDB_LANGUAGE', environmentVariables);
@@ -249,6 +296,9 @@ function getTmdbLanguage(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Impede que uma integração externa permaneça aguardando indefinidamente.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Limite positivo de espera das chamadas à TMDb em milissegundos.
  */
 function getTmdbRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv): number {
   const timeout = Number(
@@ -266,6 +316,9 @@ function getTmdbRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv): numbe
 
 /**
  * Aceita somente tamanhos de imagem reconhecíveis pela configuração da TMDb.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Tamanho de pôster validado para compor URLs de imagem da TMDb.
  */
 function getTmdbPosterSize(environmentVariables: NodeJS.ProcessEnv): string {
   const posterSize = getRequiredEnvironmentVariable('TMDB_POSTER_SIZE', environmentVariables);
@@ -279,12 +332,20 @@ function getTmdbPosterSize(environmentVariables: NodeJS.ProcessEnv): string {
 
 /**
  * Mantém a chave da Ticketmaster obrigatória e exclusivamente no backend.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Chave obrigatória da Ticketmaster, destinada exclusivamente ao backend.
  */
 function getTicketmasterApiKey(environmentVariables: NodeJS.ProcessEnv): string {
   return getRequiredEnvironmentVariable('TICKETMASTER_API_KEY', environmentVariables);
 }
 
-/** Restringe o locale ao formato regional aceito pela Ticketmaster. */
+/**
+ * Restringe o locale ao formato regional aceito pela Ticketmaster.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Locale regional validado para consultar a Ticketmaster.
+ */
 function getTicketmasterLocale(environmentVariables: NodeJS.ProcessEnv): string {
   const locale = getRequiredEnvironmentVariable('TICKETMASTER_LOCALE', environmentVariables);
 
@@ -297,6 +358,9 @@ function getTicketmasterLocale(environmentVariables: NodeJS.ProcessEnv): string 
 
 /**
  * Impede que a consulta de atrações permaneça aguardando indefinidamente.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Limite positivo de espera das chamadas à Ticketmaster em milissegundos.
  */
 function getTicketmasterRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv): number {
   const timeout = Number(
@@ -315,8 +379,11 @@ function getTicketmasterRequestTimeoutMs(environmentVariables: NodeJS.ProcessEnv
 /**
  * Lê e valida conjuntamente toda configuração exigida pelo servidor HTTP.
  * Configurações exclusivas do banco permanecem separadas para uso pelo CLI de migrations.
+ *
+ * @param environmentVariables - Variáveis do processo ou conjunto explícito do chamador, sem substituir valores obrigatórios ausentes.
+ * @returns Configuração HTTP validada antes de iniciar a API; as opções do banco são carregadas separadamente.
  */
-export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
+export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv): ApplicationConfig {
   const environment = getRuntimeEnvironment(environmentVariables);
 
   return {
@@ -346,6 +413,16 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         ),
         maxRequests: getPositiveInteger('RATE_LIMIT_CHECK_IN_MAX_REQUESTS', environmentVariables),
       },
+      hostedCheckout: {
+        windowSeconds: getPositiveInteger(
+          'RATE_LIMIT_HOSTED_CHECKOUT_WINDOW_SECONDS',
+          environmentVariables,
+        ),
+        maxRequests: getPositiveInteger(
+          'RATE_LIMIT_HOSTED_CHECKOUT_MAX_REQUESTS',
+          environmentVariables,
+        ),
+      },
     },
     reservations: {
       holdDurationSeconds: getReservationHoldDurationSeconds(environmentVariables),
@@ -374,14 +451,14 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
         name: 'accessToken',
         httpOnly: true,
         path: '/',
-        sameSite: environment === NodeEnv.Production ? ('none' as const) : ('lax' as const),
+        sameSite: environment === NodeEnv.Production ? 'none' : 'lax',
         secure: environment === NodeEnv.Production,
       },
     },
     tickets: {
       hmacSecret: getTicketHmacSecret(environmentVariables),
     },
-  } as const;
+  };
 }
 
 export const applicationConfig = loadApplicationConfig(process.env);

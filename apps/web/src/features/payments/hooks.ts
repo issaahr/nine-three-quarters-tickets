@@ -2,6 +2,7 @@ import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/re
 import axios from 'axios';
 import { useEffect, useRef } from 'react';
 
+import { isApiRateLimitError } from '@/lib/api';
 import { useAuth } from '../auth/hooks';
 import { ReservationDetail, ReservationStatus } from '../reservations/types';
 import {
@@ -15,6 +16,11 @@ import {
   resumeHostedCheckout,
   settleSimulatedPixPayment,
 } from './api';
+import type { HostedCheckoutFlow } from './hostedCheckout.interfaces';
+import type {
+  SimulatedCardPaymentFlow,
+  SimulatedPixPaymentFlow,
+} from './simulatedPayment.interfaces';
 import { CardPaymentFormValues } from './schemas';
 import {
   HostedCheckoutPayment,
@@ -68,8 +74,14 @@ async function invalidateCheckoutResult(
 /**
  * Reidrata a tentativa da API ao abrir a página e mantém a chave da primeira criação em falhas técnicas.
  * A consulta apenas acompanha a conciliação do backend. Somente uma ação explícita cria ou retoma.
+ *
+ * @param options - Identificadores da reserva acompanhada e do evento cujas consultas serão invalidadas após a operação.
+ * @returns Estado consultado, indicadores de envio e ação explícita para criar ou retomar o checkout.
  */
-export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOptions) {
+export function useHostedCheckout({
+  reservationId,
+  eventId,
+}: UseCardPaymentOptions): HostedCheckoutFlow {
   const queryClient = useQueryClient();
   const { user } = useAuth({ restoreSession: false });
   const submission = useRef<HostedCheckoutSubmission | null>(null);
@@ -80,7 +92,7 @@ export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOpti
     enabled: Boolean(user),
     queryFn: ({ signal }) => fetchHostedCheckout(reservationId, signal),
     refetchInterval: (query) =>
-      query.state.data?.status === PaymentStatus.Pending
+      query.state.data?.status === PaymentStatus.Pending && !isApiRateLimitError(query.state.error)
         ? hostedCheckoutPollingIntervalMilliseconds
         : false,
     retry: false,
@@ -106,6 +118,8 @@ export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOpti
         submission.current = null;
         return;
       }
+      // O guard rejeita antes da mutação e uma consulta imediata gastaria o mesmo limite.
+      if (isApiRateLimitError(error)) return;
       // O POST pode ter persistido a tentativa antes de falhar. Releia antes de habilitar outra ação.
       await Promise.all([
         paymentQuery.refetch(),
@@ -179,8 +193,14 @@ export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOpti
 
 /**
  * Mantém a chave estável em retry técnico e delega a idempotência definitiva à API.
+ *
+ * @param options - Identificadores da reserva a pagar e do evento cujo mapa será atualizado após uma aprovação.
+ * @returns Ação de envio idempotente, resultado, erro e indicador de processamento do cartão simulado.
  */
-export function useCardPayment({ reservationId, eventId }: UseCardPaymentOptions) {
+export function useCardPayment({
+  reservationId,
+  eventId,
+}: UseCardPaymentOptions): SimulatedCardPaymentFlow {
   const queryClient = useQueryClient();
   const idempotencyKeyRef = useRef<string | null>(null);
   const submittingRef = useRef(false);
@@ -249,12 +269,15 @@ export function useCardPayment({ reservationId, eventId }: UseCardPaymentOptions
 /**
  * Retoma o PIX pelo estado da API e solicita a conclusão enquanto a tentativa estiver PENDING.
  * O intervalo só agenda consultas. A elegibilidade e o prazo são avaliados pelo backend.
+ *
+ * @param options - Identificadores da reserva e do evento, com indicação de reserva ativa para habilitar o acompanhamento da API.
+ * @returns Estado e ações de criação e atualização do PIX simulado, com erros e indicadores de carregamento.
  */
 export function useSimulatedPixPayment({
   reservationId,
   eventId,
   isReservationActive,
-}: UseSimulatedPixPaymentOptions) {
+}: UseSimulatedPixPaymentOptions): SimulatedPixPaymentFlow {
   const queryClient = useQueryClient();
   const { user } = useAuth({ restoreSession: false });
   const idempotencyKey = useRef<string | null>(null);

@@ -20,6 +20,8 @@ describe('loadApplicationConfig', () => {
     RATE_LIMIT_CATALOG_MAX_REQUESTS: '30',
     RATE_LIMIT_CHECK_IN_WINDOW_SECONDS: '60',
     RATE_LIMIT_CHECK_IN_MAX_REQUESTS: '10',
+    RATE_LIMIT_HOSTED_CHECKOUT_WINDOW_SECONDS: '60',
+    RATE_LIMIT_HOSTED_CHECKOUT_MAX_REQUESTS: '30',
     TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
     TMDB_LANGUAGE: 'pt-BR',
     TMDB_REQUEST_TIMEOUT_MS: '5000',
@@ -73,6 +75,7 @@ describe('loadApplicationConfig', () => {
         auth: { windowSeconds: 60, maxRequests: 5 },
         catalog: { windowSeconds: 60, maxRequests: 30 },
         manualCheckIn: { windowSeconds: 60, maxRequests: 10 },
+        hostedCheckout: { windowSeconds: 60, maxRequests: 30 },
       },
       catalog: {
         tmdb: {

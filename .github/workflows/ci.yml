@@ -67,6 +67,7 @@ jobs:
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
       DATABASE_URL: postgresql://test:test@localhost:5432/nine_three_quarters_test
+      DATABASE_TLS_MODE: disable
       DEMO_USERS_PASSWORD: demo-password
       JWT_SECRET: ci-test-jwt-secret-with-at-least-32-bytes
       JWT_EXPIRES_IN_SECONDS: "3600"
@@ -83,6 +84,8 @@ jobs:
       RATE_LIMIT_CATALOG_MAX_REQUESTS: "100"
       RATE_LIMIT_CHECK_IN_WINDOW_SECONDS: "60"
       RATE_LIMIT_CHECK_IN_MAX_REQUESTS: "100"
+      RATE_LIMIT_HOSTED_CHECKOUT_WINDOW_SECONDS: "60"
+      RATE_LIMIT_HOSTED_CHECKOUT_MAX_REQUESTS: "100"
       TMDB_API_READ_ACCESS_TOKEN: ci-test-tmdb-token
       TMDB_LANGUAGE: pt-BR
       TMDB_REQUEST_TIMEOUT_MS: "5000"

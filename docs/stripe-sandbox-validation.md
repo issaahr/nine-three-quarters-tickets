@@ -4,6 +4,8 @@ A [S12](https://github.com/issaahr/nine-three-quarters-tickets/issues/35) usa o 
 
 ## Configuração local
 
+Para obter as credenciais, siga [Stripe no README](../README.md#stripe): selecione o sandbox no Dashboard, abra [Chaves de API](https://dashboard.stripe.com/apikeys), revele a chave secreta `sk_test_...` e copie-a para `PAYMENT_STRIPE_SECRET_KEY` em `env/api.env`. O segredo `PAYMENT_STRIPE_WEBHOOK_SECRET` é obtido separadamente: no desenvolvimento local, copie o `whsec_...` exibido pelo listener abaixo. Para a API publicada no Render, o README também explica como criar o destino HTTPS e revelar o segredo desse destino no Dashboard.
+
 1. Em uma conta com Pix habilitável, crie ou selecione o sandbox, confirme que cartão e Pix estão disponíveis nas configurações de métodos de pagamento e instale a Stripe CLI. Use o mesmo sandbox na CLI, no Dashboard e na API da aplicação. [Sandboxes da Stripe](https://docs.stripe.com/sandboxes) · [Configuração do Pix](https://docs.stripe.com/payments/pix/accept-a-payment?payment-ui=checkout) · [Instalação da Stripe CLI](https://docs.stripe.com/cli/install)
 2. Configure de forma privada a variável `STRIPE_API_KEY` no processo da CLI com a chave de teste do sandbox. Inicie o encaminhamento em um terminal separado. O comando encaminha os quatro eventos de sessão processados pela API e exibe o segredo de assinatura desse listener. [Stripe CLI `listen`](https://docs.stripe.com/cli/listen)
 
@@ -42,6 +44,8 @@ curl -i -H 'Content-Type: application/json' -d '{}' http://localhost:3000/paymen
 ```
 
 Em caso de falha técnica ao iniciar a sessão, volte à reserva. Se a tentativa já estiver registrada e elegível, use **Retomar pagamento**. O Web consulta o `GET /reservations/:reservationId/payments/hosted` e retoma a tentativa encontrada com `POST /reservations/:reservationId/payments/hosted/:paymentId/resume`. O navegador só redireciona com a URL devolvida pela nova resposta da API. O estado exibido no retorno vem da API.
+
+As rotas de checkout compartilham uma quota por cliente autenticado. Se receber `429` com `RATE_LIMIT_EXCEEDED`, aguarde antes de consultar ou retomar. O limite do cliente não se aplica ao webhook. No Render Free, a conciliação aguarda a API voltar se o serviço estiver hibernando. [Instâncias Free no Render](https://render.com/docs/free#spinning-down-on-idle)
 
 Uma falha de criação com resultado desconhecido mantém a tentativa pendente. A API busca a sessão pela identidade local e pode repetir a mesma chave dentro da janela segura quando conhece a URL original. Em tentativas legadas sem a URL original, a recuperação se limita à descoberta da sessão. Uma tentativa inconclusiva continua bloqueando outra tentativa da mesma reserva. Se o hold vencer, o inventário volta a ficar disponível.
 

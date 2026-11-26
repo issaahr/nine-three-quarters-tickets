@@ -61,7 +61,12 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
     clearInterval(this.timer);
   }
 
-  /** Consulta o estado atual indicado pela notificação e conclui a transação antes do ACK. */
+  /**
+   * Consulta o estado atual indicado pela notificação e conclui a transação antes do ACK.
+   *
+   * @param paymentId - Identificador obrigatório da tentativa local informado pela notificação autenticada.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
+   */
   public async reconcileNotification(paymentId: string, externalReference: string): Promise<void> {
     if (!this.gateway) return;
     const payment = await this.dataSource.getRepository(Payment).findOneBy({
@@ -76,6 +81,7 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
   /**
    * Revisa o estado persistido em lotes sem depender do cliente ou da entrega de webhooks.
    * O cursor só limita a varredura. Uma falha ou reinício não altera a situação da tentativa no banco.
+   *
    */
   public async reconcilePendingBatch(): Promise<void> {
     const gateway = this.gateway;
@@ -86,7 +92,12 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
     ]);
   }
 
-  /** Uma busca de sessão órfã lenta não impede a conciliação das tentativas já vinculadas. */
+  /**
+   * Uma busca de sessão órfã lenta não impede a conciliação das tentativas já vinculadas.
+   *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param progress - Cursor e indicador de execução do lote de tentativas vinculadas ou ainda sem sessão conhecida.
+   */
   private async reconcileBatch(
     gateway: HostedPaymentGateway,
     progress: ReconciliationBatchProgress,
@@ -124,7 +135,13 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
     }
   }
 
-  /** A consulta remota sempre antecede os locks transacionais da finalização. */
+  /**
+   * A consulta remota sempre antecede os locks transacionais da finalização.
+   *
+   * @param gateway - Adapter do provedor habilitado para executar ou consultar a operação externa.
+   * @param payment - Tentativa persistida cujos dados delimitam a operação.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
+   */
   private async reconcile(
     gateway: HostedPaymentGateway,
     payment: Payment,
@@ -167,7 +184,12 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
     };
   }
 
-  /** Usa os prazos persistidos para decidir se uma sessão aberta deve ser encerrada. */
+  /**
+   * Usa os prazos persistidos para decidir se uma sessão aberta deve ser encerrada.
+   *
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @returns true quando o prazo persistido ou o estado da reserva e do evento impedem continuar o checkout.
+   */
   private async checkoutExpired(reservationId: string): Promise<boolean> {
     const reservation = await this.dataSource.getRepository(Reservation).findOneOrFail({
       where: { id: reservationId },

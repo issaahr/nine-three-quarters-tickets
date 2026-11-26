@@ -14,7 +14,12 @@ export class PaymentRepository {
    * Limita a consulta às tentativas do titular da reserva, incluindo compras gratuitas locais.
    * Carrega a reserva e a ocorrência para verificar se o link ainda pode ser oferecido.
    *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @param provider - Provedor da tentativa; a consulta também admite compras gratuitas locais.
    * @param paymentId - Quando omitido, prioriza a tentativa ativa e depois o resultado mais recente.
+   * @returns Tentativa do titular com reserva e evento, ou null quando nenhuma tentativa corresponde aos critérios.
    */
   public findHostedForCheckout(
     manager: EntityManager,
@@ -56,7 +61,9 @@ export class PaymentRepository {
   /**
    * Grava a referência externa apenas se nenhuma chamada concorrente já tiver feito o vínculo.
    *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
    * @param payment - Tentativa local gravada antes da chamada ao provedor.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
    * @returns Resultado da atualização condicional. O chamador relê o vínculo vencedor antes de expor a URL.
    */
   public attachExternalReference(

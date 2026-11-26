@@ -1079,6 +1079,8 @@ WebSocket não é necessário para PIX.
 
 Uma Reservation só é confirmada após pagamento APPROVED.
 
+Na confirmação fake, hospedada ou gratuita, a última leitura do relógio do PostgreSQL revalida o prazo após as escritas. Se o prazo acabar enquanto uma escrita aguarda um lock, a aplicação reverte a compra e registra a tentativa como falha. Uma cobrança externa confirmada nesse caso também gera a intenção de estorno integral.
+
 No checkout hospedado, a consulta autoritativa ao provedor valida ambiente de teste, identidade da tentativa, método, valor e moeda. O webhook autenticado e o worker usam a mesma finalização. Chamadas externas ocorrem fora da transação. A aplicação revalida o prazo pelo relógio do PostgreSQL e adquire locks de Event, Reservation e Payment nessa ordem antes de consolidar inventário e emitir Tickets. Se a cobrança ocorreu sem reserva válida, a tentativa local pode ficar `FAILED` com a referência da cobrança confirmada e uma intenção de estorno integral.
 
 Durante a transaction de finalização:

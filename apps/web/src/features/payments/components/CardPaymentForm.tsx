@@ -56,13 +56,18 @@ function getPaymentErrorMessage(error: unknown): string | null {
   return 'Não foi possível concluir o pagamento. Você pode tentar novamente.';
 }
 
-/** Formulário de cartão simulado, sem persistir dados sensíveis no estado remoto. */
+/**
+ * Formulário de cartão simulado, sem persistir dados sensíveis no estado remoto.
+ *
+ * @param props - Total em centavos, fluxo de cartão simulado, ação de cancelamento e indicador de bloqueio do formulário.
+ * @returns Formulário React com os estados da tentativa simulada e as ações de pagamento e cancelamento.
+ */
 export function CardPaymentForm({
   totalPriceCents,
   paymentFlow,
   cancelAction,
   disabled,
-}: CardPaymentFormProps) {
+}: CardPaymentFormProps): ReactNode {
   const { submit, payment, error, isPaying } = paymentFlow;
   const [isCvvVisible, setIsCvvVisible] = useState(false);
   const {

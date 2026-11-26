@@ -23,7 +23,13 @@ function hostedCheckoutPath(reservationId: string): string {
   return `/reservations/${reservationId}/payments/hosted`;
 }
 
-/** A API distingue a falta de tentativa de falhas de acesso, rede ou conciliação. */
+/**
+ * A API distingue a falta de tentativa de falhas de acesso, rede ou conciliação.
+ *
+ * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+ * @param signal - Sinal de cancelamento da consulta quando ela deixa de ser necessária.
+ * @returns Tentativa hospedada visível na API, ou null quando a reserva ainda não possui tentativa.
+ */
 export async function fetchHostedCheckout(
   reservationId: string,
   signal: AbortSignal,
@@ -62,7 +68,12 @@ export async function resumeHostedCheckout(
   return response.data;
 }
 
-/** A rejeição do total ocorre antes de criar uma tentativa e permite escolher outro método. */
+/**
+ * A rejeição do total ocorre antes de criar uma tentativa e permite escolher outro método.
+ *
+ * @param error - Falha HTTP ainda sem classificação como rejeição do limite de valor.
+ * @returns true quando a API identifica rejeição do total para o método solicitado.
+ */
 export function isCheckoutAmountUnsupported(error: unknown): boolean {
   return (
     axios.isAxiosError<{ code?: string }>(error) &&
@@ -99,7 +110,13 @@ export async function createSimulatedPixPayment(
   return response.data;
 }
 
-/** Uma reserva sem tentativa PIX é um estado esperado ao abrir o checkout. */
+/**
+ * Uma reserva sem tentativa PIX é um estado esperado ao abrir o checkout.
+ *
+ * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+ * @param signal - Sinal de cancelamento da consulta quando ela deixa de ser necessária.
+ * @returns Tentativa PIX simulada visível na API, ou null quando ela ainda não existe.
+ */
 export async function fetchSimulatedPixPayment(
   reservationId: string,
   signal: AbortSignal,

@@ -54,6 +54,14 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
 
   public constructor(private readonly secretKey: string) {}
 
+  /**
+   * Valida o intervalo conhecido antes de abrir a sessão. A rede do cartão ainda pode aplicar
+   * um limite próprio depois que o cliente escolher o cartão hospedado.
+   *
+   * @param amountCents - Total positivo em centavos da moeda.
+   * @param currency - Moeda da tentativa, que deve ser BRL.
+   * @param method - Meio de pagamento da tentativa, que deve ser cartão ou Pix.
+   */
   public assertCheckoutAmount(
     amountCents: number,
     currency: PaymentCurrency,
@@ -134,6 +142,10 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   /**
    * Percorre a janela de criação e rejeita vínculos múltiplos ou malformados.
    * A listagem sem correspondência não prova que uma falha anterior foi definitiva.
+   *
+   * @param request - Dados persistidos da intenção local usados para validar a operação e a resposta externa.
+   * @param createdAt - Instante persistido de criação da tentativa que delimita a busca da sessão.
+   * @returns Sessão validada ou null quando a busca concluída ainda não encontrou correspondência.
    */
   public async findCheckout(
     request: HostedPaymentRequest,
@@ -184,6 +196,10 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   /**
    * Verifica a situação atual da sessão e do PaymentIntent antes de conciliar a tentativa local.
    * Uma sessão sem cobrança mantém a tentativa pendente enquanto o provedor ainda pode cobrar.
+   *
+   * @param request - Dados persistidos da intenção local usados para validar a operação e a resposta externa.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
+   * @returns Situação consultada da cobrança, distinguindo confirmação, pendência e encerramento sem cobrança.
    */
   public async retrievePaymentOutcome(
     request: HostedPaymentRequest,
@@ -235,6 +251,10 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   /**
    * Relê o resultado porque a sessão pode já ter sido encerrada ou paga enquanto expirava.
    * Uma falha do POST, sozinha, não determina se o provedor pode cobrar.
+   *
+   * @param request - Dados persistidos da intenção local usados para validar a operação e a resposta externa.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
+   * @returns Situação observada após solicitar a expiração, incluindo eventual cobrança concorrente.
    */
   public async expireCheckout(
     request: HostedPaymentRequest,
@@ -253,6 +273,13 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     return this.retrievePaymentOutcome(request, externalReference);
   }
 
+  /**
+   * Solicita o estorno integral usando a geração persistida para repetir a mesma operação.
+   *
+   * @param request - Identidade da intenção de estorno, cobrança externa, valor integral e moeda persistidos.
+   * @param submissionStartedAt - Instante da geração de envio que compõe a chave idempotente.
+   * @returns Referência opaca da Stripe e estado verificado da intenção.
+   */
   public async createRefund(
     request: HostedRefundRequest,
     submissionStartedAt: Date,
@@ -269,7 +296,12 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     return this.readRefund(payload, request);
   }
 
-  /** O metadado identifica a mesma intenção mesmo após a retenção da chave idempotente. */
+  /**
+   * O metadado identifica a mesma intenção mesmo após a retenção da chave idempotente.
+   *
+   * @param request - Identidade da intenção de estorno, cobrança externa, valor integral e moeda persistidos.
+   * @returns Estorno da intenção local ou null após concluir a busca sem correspondência.
+   */
   public async findRefund(request: HostedRefundRequest): Promise<HostedRefundOutcome | null> {
     const query = new URLSearchParams({
       payment_intent: request.externalPaymentReference,
@@ -313,6 +345,13 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     }
   }
 
+  /**
+   * Valida vínculo, total e moeda antes de aceitar a situação do estorno já registrado.
+   *
+   * @param request - Identidade da intenção de estorno, cobrança externa, valor integral e moeda persistidos.
+   * @param externalReference - Identificador opaco persistido da Stripe.
+   * @returns Referência e estado do estorno após validar sua correspondência com a intenção persistida.
+   */
   public async retrieveRefund(
     request: HostedRefundRequest,
     externalReference: string,
@@ -326,9 +365,11 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   /**
    * Valida o vínculo, o valor e o ambiente da sessão antes de expor a resposta ao checkout.
    *
+   * @param endpoint - Endereço da API Stripe montado pelo adapter, sem controle pelo cliente HTTP da aplicação.
+   * @param request - Dados persistidos da intenção local usados para validar a operação e a resposta externa.
+   * @param init - Método, corpo e cabeçalhos; o adapter aplica autenticação e limite de espera.
    * @param expectedReference - Na consulta, restringe a resposta ao identificador já persistido.
    * @returns Campos usados para retomar ou conciliar a sessão externa.
-   * @throws {@link HostedCheckoutUnavailableError} se a chamada falhar ou a sessão divergir da tentativa.
    */
   private async requestSession(
     endpoint: string,
@@ -375,7 +416,13 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     };
   }
 
-  /** Mantém credenciais no endpoint original e transforma falhas de transporte em resultado recuperável. */
+  /**
+   * Mantém credenciais no endpoint original e transforma falhas de transporte em resultado recuperável.
+   *
+   * @param endpoint - Endereço da API Stripe montado pelo adapter, sem controle pelo cliente HTTP da aplicação.
+   * @param init - Método, corpo e cabeçalhos; o adapter aplica autenticação e limite de espera.
+   * @returns Corpo JSON recebido da Stripe, ainda sem validação específica da sessão ou do estorno.
+   */
   private async requestStripe(endpoint: string, init: RequestInit = {}): Promise<unknown> {
     try {
       const headers = new Headers(init.headers);
@@ -394,7 +441,14 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     }
   }
 
-  /** O estorno só pode avançar se pertencer à mesma cobrança, intenção, moeda e valor integral. */
+  /**
+   * O estorno só pode avançar se pertencer à mesma cobrança, intenção, moeda e valor integral.
+   *
+   * @param payload - Corpo JSON do estorno, ainda sem validação de estrutura ou de vínculo com a intenção.
+   * @param request - Identidade da intenção de estorno, cobrança externa, valor integral e moeda persistidos.
+   * @param expectedReference - Identificador externo esperado quando a operação já possui vínculo persistido.
+   * @returns Referência e estado do estorno após validar cobrança, intenção, total e moeda.
+   */
   private readRefund(
     payload: unknown,
     request: HostedRefundRequest,
