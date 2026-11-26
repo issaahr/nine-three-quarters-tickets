@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, DataSource, EntityManager, In, Repository } from 'typeorm';
 
+import { getDatabaseClockTimestamp } from '../../../database/databaseClock';
 import { Event } from '../event.entity';
 import { AdmissionMode } from '../admissionMode.enum';
 import { EventStatus } from '../eventStatus.enum';
@@ -68,7 +69,9 @@ export class EventRepository {
   }
 
   /**
-   * Cancela a ocorrência e desfaz, no mesmo commit, holds, vendas e reembolsos relacionados.
+   * Cancela a ocorrência, libera o inventário e registra os reembolsos no mesmo commit.
+   * Valida o início do Event após bloquear a ocorrência, suas Reservations e os Payments ativos.
+   * Revalida o prazo após as escritas, pois Tickets, EventSeats e Refunds também podem causar espera.
    *
    * @param organizerId - Identificador do organizador que solicita o cancelamento.
    * @param eventId - Identificador do Event futuro a ser cancelado.
@@ -82,48 +85,54 @@ export class EventRepository {
       const paymentsRepository = manager.getRepository(Payment);
       const refundsRepository = manager.getRepository(Refund);
       const ticketsRepository = manager.getRepository(Ticket);
-      const now = await this.getDatabaseTimestamp(manager);
       const event = await eventsRepository.findOne({
         where: { id: eventId, organizerId },
         lock: { mode: 'pessimistic_write' },
       });
 
       if (!event) throw new EventNotFoundError();
-      if (event.status !== EventStatus.Published || event.startsAt.getTime() <= now.getTime())
+      if (event.status !== EventStatus.Published) {
         throw new EventCannotBeCancelledError();
+      }
 
-      event.status = EventStatus.Cancelled;
-      event.cancelledByUserId = organizerId;
-      await eventsRepository.save(event);
       const reservations = await reservationsRepository.find({
         where: { eventId },
         lock: { mode: 'pessimistic_write' },
         order: { id: 'ASC' },
       });
+      const payments = await this.lockActivePaymentsForCancellation(manager, eventId);
+      const startsAt = event.startsAt.getTime();
+      const now = await getDatabaseClockTimestamp(manager);
+      if (startsAt <= now.getTime()) {
+        throw new EventCannotBeCancelledError();
+      }
+
+      event.status = EventStatus.Cancelled;
+      event.cancelledByUserId = organizerId;
+      await eventsRepository.save(event);
       const releasedEventSeatIds: string[] = [];
+      const paymentByReservationId = new Map(
+        payments.map((payment) => [payment.reservationId, payment]),
+      );
 
       for (const reservation of reservations) {
         if (reservation.cancelledAt) continue;
+        const payment = paymentByReservationId.get(reservation.id);
         const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
         const eventSeatIds = items.flatMap((item) => (item.eventSeatId ? [item.eventSeatId] : []));
         if (!reservation.confirmedAt) {
           reservation.cancelledAt = now;
           await reservationsRepository.save(reservation);
           releasedEventSeatIds.push(...(await this.releaseHeldSeats(manager, reservation.id)));
-          await paymentsRepository
-            .createQueryBuilder()
-            .update(Payment)
-            .set({ status: PaymentStatus.Failed, failedAt: now })
-            .where('"reservationId" = :reservationId', { reservationId: reservation.id })
-            .andWhere('"status" = :status', { status: PaymentStatus.Pending })
-            .execute();
+          if (payment?.status === PaymentStatus.Pending) {
+            await paymentsRepository.update(payment.id, {
+              status: PaymentStatus.Failed,
+              failedAt: now,
+            });
+          }
           continue;
         }
-        const payment = await paymentsRepository.findOne({
-          where: { reservationId: reservation.id, status: PaymentStatus.Approved },
-          lock: { mode: 'pessimistic_write' },
-        });
-        if (!payment) throw new EventCannotBeCancelledError();
+        if (payment?.status !== PaymentStatus.Approved) throw new EventCannotBeCancelledError();
         const itemIds = items.map((item) => item.id);
         await ticketsRepository.update({ reservationItemId: In(itemIds) }, { cancelledAt: now });
         releasedEventSeatIds.push(...(await this.releaseSoldSeats(manager, eventSeatIds)));
@@ -141,8 +150,40 @@ export class EventRepository {
           );
         }
       }
+
+      if (startsAt <= (await getDatabaseClockTimestamp(manager)).getTime()) {
+        throw new EventCannotBeCancelledError();
+      }
+
       return { event, releasedEventSeatIds };
     });
+  }
+
+  /**
+   * Bloqueia os Payments que podem ser encerrados ou reembolsados antes da leitura do relógio.
+   * Limita o lock às linhas de Payment e segue a ordem de suas Reservations para evitar inversões.
+   *
+   * @param manager - Manager da transação que já bloqueou o Event e suas Reservations.
+   * @param eventId - Ocorrência cujas Reservations ainda não canceladas serão processadas.
+   * @returns Payments ativos bloqueados até o fim da transação.
+   */
+  private lockActivePaymentsForCancellation(
+    manager: EntityManager,
+    eventId: string,
+  ): Promise<Payment[]> {
+    return manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .innerJoin('payment.reservation', 'reservation')
+      .where('reservation.eventId = :eventId', { eventId })
+      .andWhere('reservation.cancelledAt IS NULL')
+      .andWhere('payment.status IN (:...statuses)', {
+        statuses: [PaymentStatus.Pending, PaymentStatus.Approved],
+      })
+      .orderBy('payment.reservationId', 'ASC')
+      .addOrderBy('payment.id', 'ASC')
+      .setLock('pessimistic_write', undefined, ['payment'])
+      .getMany();
   }
 
   /**
@@ -185,17 +226,6 @@ export class EventRepository {
       .returning('"id"')
       .execute();
     return (result.raw as Array<{ id: string }>).map(({ id }) => id);
-  }
-
-  /**
-   * Obtém o instante autoritativo do PostgreSQL na mesma conexão transacional.
-   *
-   * @param manager - EntityManager vinculado à transação em curso.
-   * @returns Instante corrente fornecido pelo PostgreSQL.
-   */
-  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
-    const rows = (await manager.query('SELECT CURRENT_TIMESTAMP AS "now"')) as Array<{ now: Date }>;
-    return new Date(rows[0].now);
   }
 
   /**

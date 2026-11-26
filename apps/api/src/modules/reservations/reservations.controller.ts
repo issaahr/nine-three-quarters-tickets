@@ -10,12 +10,14 @@ import {
   Query,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TrustedOriginGuard } from '../auth/guards/trustedOrigin.guard';
 import { UserRole } from '../users/userRole.enum';
 import { CreateReservationRequestDto } from './dto/createReservationRequest.dto';
 import { CreateReservationResponseDto } from './dto/createReservationResponse.dto';
@@ -99,12 +101,13 @@ export class ReservationsController {
   }
 
   /**
-   * Cancela uma Reservation ativa e libera seu inventário no mesmo commit.
+   * Cancela uma Reservation elegível e libera seu inventário no mesmo commit.
    */
   @Post(':reservationId/cancel')
   @HttpCode(HttpStatus.OK)
-  @Roles(UserRole.Customer)
   @ApiCancelReservation()
+  @UseGuards(TrustedOriginGuard)
+  @Roles(UserRole.Customer)
   public async cancel(
     @Req() request: AuthenticatedRequest,
     @Param('reservationId', ParseUUIDPipe) reservationId: string,

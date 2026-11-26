@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager, In, IsNull, MoreThan } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { getDatabaseClockTimestamp } from '../../database/databaseClock';
 import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
@@ -30,6 +31,7 @@ import { ReservationRepository } from './repositories/reservation.repository';
 import { ReservationItem } from './reservationItem.entity';
 import { Reservation } from './reservation.entity';
 import { ReservationStatus } from './reservationStatus.enum';
+import { purchaseCancellationWindowMilliseconds } from './reservations.constants';
 
 @Injectable()
 export class ReservationsService {
@@ -187,11 +189,13 @@ export class ReservationsService {
   }
 
   /**
-   * Cancela uma Reservation ainda ativa e libera o inventário correspondente à sua modalidade.
+   * Cancela uma Reservation elegível e libera o inventário correspondente à sua modalidade.
    *
    * O bloqueio da Reservation serializa cancelamentos concorrentes e a condição no UPDATE impede que
    * um EventSeat reatribuído seja liberado por engano.
-   * O delta realtime contém apenas os EventSeats efetivamente liberados e sai depois do commit.
+   * O prazo é validado com o relógio do PostgreSQL após os locks de Event e Reservation,
+   * incluindo o lock de Payment na compra confirmada. Uma nova leitura após as escritas
+   * reverte toda a operação se uma espera posterior ultrapassou o prazo. O delta realtime sai após o commit.
    *
    * @param customerId - Identidade CUSTOMER validada pelo cookie da sessão.
    * @param reservationId - Identificador da Reservation que deve ser cancelada.
@@ -203,7 +207,6 @@ export class ReservationsService {
         const eventsRepository = manager.getRepository(Event);
         const reservationsRepository = manager.getRepository(Reservation);
         const reservationItemsRepository = manager.getRepository(ReservationItem);
-        const now = await this.getDatabaseTimestamp(manager);
         const reservationReference = await reservationsRepository.findOne({
           select: { id: true, eventId: true },
           where: { id: reservationId, customerId },
@@ -231,7 +234,9 @@ export class ReservationsService {
         }
 
         if (!reservation.confirmedAt) {
-          if (reservation.expiresAt.getTime() <= now.getTime()) {
+          const expiresAt = reservation.expiresAt.getTime();
+          const now = await getDatabaseClockTimestamp(manager);
+          if (expiresAt <= now.getTime()) {
             throw new ReservationNotActiveError();
           }
 
@@ -242,6 +247,10 @@ export class ReservationsService {
             reservationId,
           );
           const items = await reservationItemsRepository.findBy({ reservationId });
+
+          if (expiresAt <= (await getDatabaseClockTimestamp(manager)).getTime()) {
+            throw new ReservationNotActiveError();
+          }
 
           return {
             detail: { reservation, items, status: ReservationStatus.Cancelled },
@@ -258,17 +267,20 @@ export class ReservationsService {
         const ticketsRepository = manager.getRepository(Ticket);
         const tickets = await ticketsRepository.find({ where: { reservationItemId: In(itemIds) } });
 
-        if (
-          !event ||
-          !payment ||
-          event.startsAt.getTime() <= now.getTime() ||
-          payment.approvedAt!.getTime() + 7 * 24 * 60 * 60 * 1000 <= now.getTime() ||
-          tickets.some((ticket) => ticket.checkedInAt)
-        ) {
+        if (!payment?.approvedAt || tickets.some((ticket) => ticket.checkedInAt)) {
           throw new CancellationNotAllowedError();
         }
 
         // Uma compra confirmada só pode ser cancelada antes do evento e dentro da janela de reembolso.
+        const eligibleUntil = Math.min(
+          event.startsAt.getTime(),
+          payment.approvedAt.getTime() + purchaseCancellationWindowMilliseconds,
+        );
+        const now = await getDatabaseClockTimestamp(manager);
+        if (eligibleUntil <= now.getTime()) {
+          throw new CancellationNotAllowedError();
+        }
+
         const cancelledTicketCount = await this.reservationRepository.cancelTickets(
           manager,
           itemIds,
@@ -301,6 +313,10 @@ export class ReservationsService {
               failedAt: null,
             }),
           );
+        }
+
+        if (eligibleUntil <= (await getDatabaseClockTimestamp(manager)).getTime()) {
+          throw new CancellationNotAllowedError();
         }
 
         return {

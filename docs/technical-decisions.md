@@ -63,7 +63,7 @@ Consulte o [ADR 0004](adr/0004-materializacao-transacional-do-inventario-seated.
 - `Reservation`, seus `ReservationItem` e a aquisição de todos os `EventSeat` solicitados são persistidos na mesma transação PostgreSQL.
 - A aquisição utiliza um `UPDATE` condicional que aceita somente assentos não vendidos e sem hold válido; divergência entre a quantidade solicitada e a quantidade afetada reverte a transação inteira.
 - O preço de cada item é fotografado de `Event.priceCents` durante a criação e não é aceito do frontend.
-- `CURRENT_TIMESTAMP` do PostgreSQL determina criação, validade e expiração; a duração do hold vem de `RESERVATION_HOLD_DURATION_SECONDS`.
+- A criação da Reservation e o cálculo de `expiresAt` usam `CURRENT_TIMESTAMP` do PostgreSQL. A duração do hold vem de `RESERVATION_HOLD_DURATION_SECONDS`.
 - A correção da expiração não depende de scheduler: um hold com `holdExpiresAt` vencido pode ser substituído por uma nova aquisição válida.
 - A reserva ativa por CUSTOMER/Event é uma política de fluxo. Não são usados advisory lock, lock artificial de User ou infraestrutura adicional para transformá-la em invariante crítica.
 - Cancelamento de Reservation, cancelamento de Event e finalização de Payment adquirem locks na ordem `Event → Reservation → Payment → Ticket/EventSeat/Refund`; referências podem ser lidas antes sem lock, mas toda decisão é revalidada depois dos locks.
@@ -85,6 +85,12 @@ Consulte o [ADR 0005](adr/0005-aquisicao-atomica-e-expiracao-de-holds-seated.md)
 - Expiração e cancelamento liberam capacidade por timestamps persistidos, sem unidades artificiais, scheduler ou `EventSector`.
 - A confirmação de Payment valida holds de assento somente para itens que possuem `eventSeatId`; todos os itens confirmados recebem Tickets individuais pelo fluxo comum.
 - Cancelamento, Refund e Gate operam sobre ReservationItems e Tickets genéricos, sem branches por categoria `SHOW`.
+
+## Prazo dos cancelamentos
+
+Nos cancelamentos de Reservation e de Event, para `SEATED` e `GENERAL_ADMISSION`, o PostgreSQL fornece o instante da decisão. A última consulta da transação revalida o prazo com `clock_timestamp()` após as escritas. Se o limite foi atingido, a operação retorna `409` e reverte todas as alterações.
+
+Consulte o [ADR 0006](adr/0006-prazo-autoritativo-no-cancelamento-transacional.md).
 
 ## Descoberta pública de Events
 

@@ -19,6 +19,14 @@ Papéis controlam operações sensíveis e não podem depender de estado ou rote
 - Verificações de papel no frontend servem somente para navegação e apresentação.
 - Logout expira o cookie no navegador.
 
+### Proteção contra CSRF
+
+As rotas abaixo exigem que o cabeçalho `Origin` corresponda exatamente a uma das origens em `CORS_ORIGINS`. Após autenticar e verificar o papel do usuário, a API retorna `403` quando a origem está ausente, tem o valor `null` ou está fora da lista. A verificação de propriedade continua obrigatória antes da mutação.
+
+- `POST /reservations/:reservationId/payments/pix/:paymentId/settle`
+- `POST /reservations/:reservationId/cancel`
+- `POST /organizer/me/events/:eventId/cancel`
+
 ## Consequências
 
 - Scripts executados no frontend não conseguem ler o token diretamente.

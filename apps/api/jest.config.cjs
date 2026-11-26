@@ -5,7 +5,6 @@ process.env.JWT_EXPIRES_IN_SECONDS = '900';
 process.env.TICKET_HMAC_SECRET = 'test-only-ticket-secret-with-at-least-32-bytes';
 process.env.RESERVATION_HOLD_DURATION_SECONDS = '600';
 process.env.PAYMENT_CARD_PENDING_TIMEOUT_SECONDS = '60';
-process.env.CORS_ORIGINS = 'http://localhost:5173';
 process.env.PUBLIC_SIGNUP_ENABLED = 'true';
 process.env.TRUST_PROXY_HOPS = '0';
 process.env.RATE_LIMIT_AUTH_WINDOW_SECONDS = '60';

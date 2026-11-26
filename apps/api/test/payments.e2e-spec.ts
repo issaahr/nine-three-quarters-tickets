@@ -3,10 +3,11 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import request from 'supertest';
-import { DataSource, In, Repository } from 'typeorm';
+import request, { type Response as HttpResponse, type Test as HttpRequest } from 'supertest';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
@@ -47,7 +48,12 @@ class ControlledPaymentGateway implements PaymentGateway {
 }
 
 describe('Payments', () => {
-  const checkoutOrigin = 'http://localhost:5173';
+  const checkoutOrigin = applicationConfig.corsOrigins[0];
+  const sevenDaysInMilliseconds = 7 * 24 * 60 * 60 * 1000;
+  const lockPollAttempts = 100;
+  const lockPollIntervalMilliseconds = 20;
+  const deadlineAfterLockObservedMilliseconds = 50;
+  const deadlineBeforeRequestMilliseconds = 2_000;
   let app: INestApplication;
   let dataSource: DataSource;
   let eventsRepository: Repository<Event>;
@@ -91,6 +97,7 @@ describe('Payments', () => {
     ticketCredentialService = app.get(TicketCredentialService);
     seatRealtimeGateway = app.get(SeatRealtimeGateway);
     jest.spyOn(seatRealtimeGateway, 'emitSold').mockImplementation();
+    jest.spyOn(seatRealtimeGateway, 'emitReleased').mockImplementation();
     venueSeatsRepository = dataSource.getRepository(VenueSeat);
     customer = await dataSource
       .getRepository(User)
@@ -110,6 +117,7 @@ describe('Payments', () => {
     paymentGateway.processCard.mockReset();
     paymentGateway.processCard.mockResolvedValue({ status: CardPaymentGatewayStatus.Approved });
     jest.mocked(seatRealtimeGateway.emitSold).mockClear();
+    jest.mocked(seatRealtimeGateway.emitReleased).mockClear();
   });
 
   afterAll(async () => {
@@ -285,16 +293,86 @@ describe('Payments', () => {
   }
 
   async function waitForBlockedTransaction(pid: number): Promise<void> {
-    for (let attempt = 0; attempt < 100; attempt++) {
+    for (let attempt = 0; attempt < lockPollAttempts; attempt++) {
       const [{ blocked }] = (await dataSource.query(
         'SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))) AS blocked',
         [pid],
       )) as Array<{ blocked: boolean }>;
       if (blocked) return;
-      await delay(20);
+      await delay(lockPollIntervalMilliseconds);
     }
 
     throw new Error('Nenhuma transação aguardou o lock observado');
+  }
+
+  async function cancelAfterDeadline(
+    cancellation: HttpRequest,
+    acquireLock: (manager: EntityManager) => Promise<unknown>,
+    setDeadline: (manager: EntityManager, deadline: Date) => Promise<unknown>,
+  ): Promise<HttpResponse> {
+    const locker = dataSource.createQueryRunner();
+    await locker.connect();
+    let response: Promise<HttpResponse> | undefined;
+
+    try {
+      await locker.startTransaction();
+      await acquireLock(locker.manager);
+      const [{ pid }] = (await locker.query('SELECT pg_backend_pid() AS pid')) as Array<{
+        pid: number;
+      }>;
+      response = cancellation.then((result) => result);
+      await waitForBlockedTransaction(pid);
+
+      // Coloca o prazo entre o início da transação bloqueada e a liberação do lock.
+      const [{ deadline }] = (await locker.query(
+        `SELECT date_trunc('milliseconds', clock_timestamp()) + $1::int * interval '1 millisecond' AS deadline`,
+        [deadlineAfterLockObservedMilliseconds],
+      )) as Array<{ deadline: Date }>;
+      await setDeadline(locker.manager, deadline);
+      await locker.query('SELECT pg_sleep_until($1::timestamptz)', [deadline]);
+      await locker.commitTransaction();
+      return await response;
+    } finally {
+      if (locker.isTransactionActive) await locker.rollbackTransaction();
+      await locker.release();
+      await response;
+    }
+  }
+
+  async function cancelWaitingPastDeadline(
+    cancellation: HttpRequest,
+    acquireLock: (manager: EntityManager) => Promise<unknown>,
+    setDeadline: (manager: EntityManager, deadline: Date) => Promise<unknown>,
+  ): Promise<HttpResponse> {
+    const locker = dataSource.createQueryRunner();
+    await locker.connect();
+    let response: Promise<HttpResponse> | undefined;
+
+    try {
+      await locker.startTransaction();
+      await acquireLock(locker.manager);
+      const [{ pid, deadline }] = (await locker.query(
+        `SELECT pg_backend_pid() AS pid,
+                date_trunc('milliseconds', clock_timestamp()) + $1::int * interval '1 millisecond' AS deadline`,
+        [deadlineBeforeRequestMilliseconds],
+      )) as Array<{ pid: number; deadline: Date }>;
+      await setDeadline(locker.manager, deadline);
+      response = cancellation.then((result) => result);
+      await waitForBlockedTransaction(pid);
+
+      const [{ beforeDeadline }] = (await locker.query(
+        'SELECT clock_timestamp() < $1::timestamptz AS "beforeDeadline"',
+        [deadline],
+      )) as Array<{ beforeDeadline: boolean }>;
+      expect(beforeDeadline).toBe(true);
+      await locker.query('SELECT pg_sleep_until($1::timestamptz)', [deadline]);
+      await locker.commitTransaction();
+      return await response;
+    } finally {
+      if (locker.isTransactionActive) await locker.rollbackTransaction();
+      await locker.release();
+      await response;
+    }
   }
 
   async function createConfirmedReservation(cookie: string): Promise<Reservation> {
@@ -759,6 +837,7 @@ describe('Payments', () => {
       if (state === 'cancelada') {
         await request(app.getHttpServer())
           .post(`/reservations/${reservation.id}/cancel`)
+          .set('Origin', checkoutOrigin)
           .set('Cookie', cookie)
           .expect(200);
       } else {
@@ -883,6 +962,347 @@ describe('Payments', () => {
     expect(seatRealtimeGateway.emitSold).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['reserva', 'evento'])(
+    'bloqueia origens não confiáveis no cancelamento de %s e aceita a origem da Web em outro domínio',
+    async (target) => {
+      const customerCookie = await authenticate();
+      const reservation = await createConfirmedReservation(customerCookie);
+      const isEventCancellation = target === 'evento';
+      const cookie = isEventCancellation ? await authenticate(organizer) : customerCookie;
+      const path = isEventCancellation
+        ? `/organizer/me/events/${reservation.eventId}/cancel`
+        : `/reservations/${reservation.id}/cancel`;
+      const apiHost = 'api.example.invalid';
+      const cancelRequest = () =>
+        request(app.getHttpServer()).post(path).set('Host', apiHost).set('Cookie', cookie);
+
+      await request(app.getHttpServer()).post(path).set('Origin', checkoutOrigin).expect(401);
+      for (const origin of [undefined, 'null', 'https://untrusted.example.invalid']) {
+        const cancellation = cancelRequest().type('form');
+        if (origin !== undefined) cancellation.set('Origin', origin);
+
+        const response = await cancellation.expect(403);
+        expect(response.body.code).toBe('ORIGIN_NOT_ALLOWED');
+      }
+
+      const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      const ticket = await ticketsRepository.findOneByOrFail({ reservationItemId: item.id });
+      const seat = await eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId });
+      await expect(
+        eventsRepository.findOneByOrFail({ id: reservation.eventId }),
+      ).resolves.toMatchObject({
+        status: EventStatus.Published,
+      });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({
+        cancelledAt: null,
+      });
+      expect(payment.status).toBe(PaymentStatus.Approved);
+      expect(ticket.cancelledAt).toBeNull();
+      expect(seat.soldAt).not.toBeNull();
+      await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+
+      await cancelRequest()
+        .set('Origin', checkoutOrigin)
+        .expect('Access-Control-Allow-Origin', checkoutOrigin)
+        .expect('Access-Control-Allow-Credentials', 'true')
+        .expect(200);
+      await expect(
+        eventsRepository.findOneByOrFail({ id: reservation.eventId }),
+      ).resolves.toMatchObject({
+        status: isEventCancellation ? EventStatus.Cancelled : EventStatus.Published,
+      });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({
+        cancelledAt: expect.any(Date),
+      });
+      await expect(ticketsRepository.findOneByOrFail({ id: ticket.id })).resolves.toMatchObject({
+        cancelledAt: expect.any(Date),
+      });
+      await expect(eventSeatsRepository.findOneByOrFail({ id: seat.id })).resolves.toMatchObject({
+        soldAt: null,
+      });
+      await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(1);
+    },
+  );
+
+  it('recusa o cancelamento de uma reserva cujo hold vence enquanto aguarda o lock', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const cancellation = request(app.getHttpServer())
+      .post(`/reservations/${reservation.id}/cancel`)
+      .set('Origin', checkoutOrigin)
+      .set('Cookie', cookie);
+
+    const response = await cancelAfterDeadline(
+      cancellation,
+      (manager) =>
+        manager.getRepository(Reservation).findOneOrFail({
+          where: { id: reservation.id },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      async (manager, expiresAt) => {
+        await manager.getRepository(Reservation).update(reservation.id, { expiresAt });
+        await manager
+          .getRepository(EventSeat)
+          .update({ holdReservationId: reservation.id }, { holdExpiresAt: expiresAt });
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('RESERVATION_NOT_ACTIVE');
+    await expect(
+      reservationsRepository.findOneByOrFail({ id: reservation.id }),
+    ).resolves.toMatchObject({ cancelledAt: null });
+    await expect(
+      eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId }),
+    ).resolves.toMatchObject({ holdReservationId: reservation.id, soldAt: null });
+  });
+
+  it('recusa o cancelamento de uma compra se a janela de sete dias termina no lock do Payment', async () => {
+    const cookie = await authenticate();
+    const reservation = await createConfirmedReservation(cookie);
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    const cancellation = request(app.getHttpServer())
+      .post(`/reservations/${reservation.id}/cancel`)
+      .set('Origin', checkoutOrigin)
+      .set('Cookie', cookie);
+
+    const response = await cancelAfterDeadline(
+      cancellation,
+      (manager) =>
+        manager.getRepository(Payment).findOneOrFail({
+          where: { id: payment.id },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      (manager, deadline) =>
+        manager.getRepository(Payment).update(payment.id, {
+          approvedAt: new Date(deadline.getTime() - sevenDaysInMilliseconds),
+        }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('CANCELLATION_NOT_ALLOWED');
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+    await expect(
+      reservationsRepository.findOneByOrFail({ id: reservation.id }),
+    ).resolves.toMatchObject({ cancelledAt: null });
+    await expect(
+      ticketsRepository.findOneByOrFail({ reservationItemId: item.id }),
+    ).resolves.toMatchObject({ cancelledAt: null });
+    await expect(
+      eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId }),
+    ).resolves.toMatchObject({ soldAt: expect.any(Date) });
+    await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+  });
+
+  it('recusa o cancelamento pelo organizador quando o evento começa durante a espera do lock', async () => {
+    const [customerCookie, organizerCookie] = await Promise.all([
+      authenticate(),
+      authenticate(organizer),
+    ]);
+    const reservation = await createConfirmedReservation(customerCookie);
+    const cancellation = request(app.getHttpServer())
+      .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+      .set('Origin', checkoutOrigin)
+      .set('Cookie', organizerCookie);
+
+    const response = await cancelAfterDeadline(
+      cancellation,
+      (manager) =>
+        manager.getRepository(Event).findOneOrFail({
+          where: { id: reservation.eventId },
+          lock: { mode: 'pessimistic_write' },
+        }),
+      (manager, startsAt) => manager.getRepository(Event).update(reservation.eventId, { startsAt }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('EVENT_CANNOT_BE_CANCELLED');
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    await expect(
+      eventsRepository.findOneByOrFail({ id: reservation.eventId }),
+    ).resolves.toMatchObject({ status: EventStatus.Published, cancelledByUserId: null });
+    await expect(
+      reservationsRepository.findOneByOrFail({ id: reservation.id }),
+    ).resolves.toMatchObject({ cancelledAt: null });
+    await expect(
+      ticketsRepository.findOneByOrFail({ reservationItemId: item.id }),
+    ).resolves.toMatchObject({ cancelledAt: null });
+    await expect(
+      eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId }),
+    ).resolves.toMatchObject({ soldAt: expect.any(Date) });
+    await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+  });
+
+  it.each([PaymentStatus.Pending, PaymentStatus.Approved])(
+    'recusa o cancelamento de evento iniciado enquanto aguarda um Payment %s',
+    async (paymentStatus) => {
+      const [customerCookie, organizerCookie] = await Promise.all([
+        authenticate(),
+        authenticate(organizer),
+      ]);
+      const isApproved = paymentStatus === PaymentStatus.Approved;
+      const reservation = isApproved
+        ? await createConfirmedReservation(customerCookie)
+        : await createActiveReservation();
+      if (!isApproved) {
+        await paymentsService.createSimulatedPixPayment(customer.id, reservation.id, randomUUID());
+      }
+      const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+      const cancellation = request(app.getHttpServer())
+        .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+        .set('Origin', checkoutOrigin)
+        .set('Cookie', organizerCookie);
+      const response = await cancelWaitingPastDeadline(
+        cancellation,
+        (manager) =>
+          manager.getRepository(Payment).findOneOrFail({
+            where: { id: payment.id },
+            lock: { mode: 'pessimistic_write' },
+          }),
+        (_manager, startsAt) => eventsRepository.update(reservation.eventId, { startsAt }),
+      );
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('EVENT_CANNOT_BE_CANCELLED');
+
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      await expect(
+        eventsRepository.findOneByOrFail({ id: reservation.eventId }),
+      ).resolves.toMatchObject({ status: EventStatus.Published, cancelledByUserId: null });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({ cancelledAt: null });
+      await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+        status: paymentStatus,
+      });
+      await expect(
+        eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId }),
+      ).resolves.toMatchObject({
+        holdReservationId: isApproved ? null : reservation.id,
+        soldAt: isApproved ? expect.any(Date) : null,
+      });
+      await expect(ticketsRepository.findBy({ reservationItemId: item.id })).resolves.toEqual(
+        isApproved ? [expect.objectContaining({ cancelledAt: null })] : [],
+      );
+      await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+    },
+    10_000,
+  );
+
+  it.each([
+    { target: 'reserva', lock: 'assento', limit: 'hold' },
+    { target: 'reserva', lock: 'ingresso', limit: 'início do evento' },
+    { target: 'reserva', lock: 'assento', limit: 'janela de sete dias' },
+    { target: 'reserva', lock: 'estorno', limit: 'janela de sete dias' },
+    { target: 'evento', lock: 'ingresso', limit: 'início do evento' },
+    { target: 'evento', lock: 'assento', limit: 'início do evento' },
+    { target: 'evento', lock: 'estorno', limit: 'início do evento' },
+  ] as const)(
+    'reverte espera tardia de $lock no cancelamento de $target ao ultrapassar $limit',
+    async ({ target, lock, limit }) => {
+      const customerCookie = await authenticate();
+      const isHold = limit === 'hold';
+      const isEvent = target === 'evento';
+      const reservation = isHold
+        ? await createActiveReservation()
+        : await createConfirmedReservation(customerCookie);
+      const item = await reservationItemsRepository.findOneByOrFail({
+        reservationId: reservation.id,
+      });
+      const seat = await eventSeatsRepository.findOneByOrFail({ eventId: reservation.eventId });
+      const payment = await paymentsRepository.findOneBy({ reservationId: reservation.id });
+      const cancellation = request(app.getHttpServer())
+        .post(
+          isEvent
+            ? `/organizer/me/events/${reservation.eventId}/cancel`
+            : `/reservations/${reservation.id}/cancel`,
+        )
+        .set('Origin', checkoutOrigin)
+        .set('Cookie', isEvent ? await authenticate(organizer) : customerCookie);
+
+      const response = await cancelWaitingPastDeadline(
+        cancellation,
+        (manager) => {
+          switch (lock) {
+            case 'ingresso':
+              return manager.getRepository(Ticket).findOneOrFail({
+                where: { reservationItemId: item.id },
+                lock: { mode: 'pessimistic_write' },
+              });
+            case 'assento':
+              return manager.getRepository(EventSeat).findOneOrFail({
+                where: { id: seat.id },
+                lock: { mode: 'pessimistic_write' },
+              });
+            case 'estorno':
+              return manager.query('LOCK TABLE "refunds" IN SHARE MODE');
+          }
+        },
+        async (manager, deadline) => {
+          switch (limit) {
+            case 'hold':
+              await reservationsRepository.update(reservation.id, { expiresAt: deadline });
+              await manager.getRepository(EventSeat).update(seat.id, { holdExpiresAt: deadline });
+              break;
+            case 'janela de sete dias':
+              if (!payment) throw new Error('A compra do cenário precisa ter Payment');
+              await paymentsRepository.update(payment.id, {
+                approvedAt: new Date(deadline.getTime() - sevenDaysInMilliseconds),
+              });
+              break;
+            case 'início do evento':
+              await eventsRepository.update(reservation.eventId, { startsAt: deadline });
+              break;
+          }
+        },
+      );
+
+      expect(response.status).toBe(409);
+      const errorCode = isEvent
+        ? 'EVENT_CANNOT_BE_CANCELLED'
+        : isHold
+          ? 'RESERVATION_NOT_ACTIVE'
+          : 'CANCELLATION_NOT_ALLOWED';
+      expect(response.body.code).toBe(errorCode);
+      await expect(
+        eventsRepository.findOneByOrFail({ id: reservation.eventId }),
+      ).resolves.toMatchObject({ status: EventStatus.Published, cancelledByUserId: null });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({ cancelledAt: null });
+      await expect(eventSeatsRepository.findOneByOrFail({ id: seat.id })).resolves.toMatchObject({
+        holdReservationId: seat.holdReservationId,
+        soldAt: seat.soldAt,
+      });
+      await expect(ticketsRepository.findBy({ reservationItemId: item.id })).resolves.toEqual(
+        isHold ? [] : [expect.objectContaining({ cancelledAt: null })],
+      );
+      if (payment) {
+        await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject(
+          {
+            status: PaymentStatus.Approved,
+          },
+        );
+        await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+      }
+      expect(seatRealtimeGateway.emitReleased).not.toHaveBeenCalled();
+    },
+    10_000,
+  );
+
   it('serializa cancelamentos concorrentes do CUSTOMER sem duplicar Refund', async () => {
     const customerCookie = await authenticate();
     const reservation = await createConfirmedReservation(customerCookie);
@@ -890,9 +1310,11 @@ describe('Payments', () => {
     const responses = await Promise.all([
       request(app.getHttpServer())
         .post(`/reservations/${reservation.id}/cancel`)
+        .set('Origin', checkoutOrigin)
         .set('Cookie', customerCookie),
       request(app.getHttpServer())
         .post(`/reservations/${reservation.id}/cancel`)
+        .set('Origin', checkoutOrigin)
         .set('Cookie', customerCookie),
     ]);
     const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
@@ -923,9 +1345,11 @@ describe('Payments', () => {
     const [customerResponse, organizerResponse] = await Promise.all([
       request(app.getHttpServer())
         .post(`/reservations/${reservation.id}/cancel`)
+        .set('Origin', checkoutOrigin)
         .set('Cookie', customerCookie),
       request(app.getHttpServer())
         .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+        .set('Origin', checkoutOrigin)
         .set('Cookie', organizerCookie),
     ]);
     const persistedEvent = await eventsRepository.findOneByOrFail({ id: reservation.eventId });
@@ -985,6 +1409,7 @@ describe('Payments', () => {
     await gatewayStarted;
     const organizerResponsePromise = request(app.getHttpServer())
       .post(`/organizer/me/events/${reservation.eventId}/cancel`)
+      .set('Origin', checkoutOrigin)
       .set('Cookie', organizerCookie)
       .then((response) => response);
     resolveGateway({ status: CardPaymentGatewayStatus.Approved });

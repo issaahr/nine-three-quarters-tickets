@@ -10,17 +10,19 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { AuthenticatedRequest } from '../auth/auth.types';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { TrustedOriginGuard } from '../auth/guards/trustedOrigin.guard';
 import { UserRole } from '../users/userRole.enum';
 import { OrganizerEventResponseDto } from './dto/organizerEventResponse.dto';
 import { OrganizerEventsPageResponseDto } from './dto/organizerEventsPageResponse.dto';
 import { OrganizerEventsQueryDto } from './dto/organizerEventsQuery.dto';
 import { UpdateEventPriceRequestDto } from './dto/updateEventPriceRequest.dto';
-import { ApiListOrganizerEvents } from './events.swagger';
+import { ApiCancelOrganizerEvent, ApiListOrganizerEvents } from './events.swagger';
 import { EventsService } from './events.service';
 
 @ApiTags('Organizer Events')
@@ -65,6 +67,8 @@ export class OrganizerEventsController {
    */
   @Post(':eventId/cancel')
   @HttpCode(HttpStatus.OK)
+  @ApiCancelOrganizerEvent()
+  @UseGuards(TrustedOriginGuard)
   @Roles(UserRole.Organizer)
   public async cancel(
     @Req() request: AuthenticatedRequest,

@@ -8,8 +8,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory } from '../events/types';
+import { PaymentMethod } from '../payments/types';
 import { server } from '@/test/server';
-import { TicketStatus } from './types';
+import { TicketPurchasesPage, TicketStatus } from './types';
 
 const apiUrl = 'http://api.test';
 
@@ -132,6 +133,48 @@ describe('Meus ingressos', () => {
       'href',
       '/customer/tickets/v1.ticket-1.signature',
     );
+  });
+
+  it('lista o ingresso de uma compra confirmada via PIX', async () => {
+    const purchases = {
+      items: [
+        {
+          reservationId: 'reservation-pix',
+          confirmedAt: '2030-08-02T12:00:00.000Z',
+          paymentMethod: PaymentMethod.Pix,
+          event: {
+            id: 'event-pix',
+            title: 'Show pago via PIX',
+            category: EventCategory.Show,
+            admissionMode: AdmissionMode.GeneralAdmission,
+            startsAt: '2030-09-01T22:30:00.000Z',
+            venueName: 'Teatro Margem',
+            venueCity: 'Recife',
+            venueTimeZone: 'America/Recife',
+          },
+          tickets: [
+            {
+              publicId: 'ticket-pix',
+              credential: 'v1.ticket-pix.signature',
+              manualCode: 'ABCD-PQRS',
+              status: TicketStatus.Valid,
+              issuedAt: '2030-08-02T12:00:00.000Z',
+              seatLabel: null,
+            },
+          ],
+        },
+      ],
+      page: 1,
+      hasMore: false,
+    } satisfies TicketPurchasesPage;
+    server.use(http.get(`${apiUrl}/tickets`, () => HttpResponse.json(purchases)));
+
+    renderTickets();
+
+    expect(await screen.findByRole('heading', { name: 'Show pago via PIX' })).toBeInTheDocument();
+    const ticketLink = screen.getByRole('link', { name: /Entrada geral/ });
+    expect(ticketLink).toHaveTextContent('ABCD-PQRS');
+    expect(ticketLink).toHaveAttribute('href', '/customer/tickets/v1.ticket-pix.signature');
   });
 
   it('explica quando o cliente ainda não possui compras confirmadas', async () => {

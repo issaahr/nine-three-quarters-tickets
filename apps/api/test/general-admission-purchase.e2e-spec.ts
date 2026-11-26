@@ -6,6 +6,7 @@ import request from 'supertest';
 import { DataSource, In, Repository } from 'typeorm';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import { CatalogSource } from '../src/modules/catalog/catalogSource.enum';
 import { AdmissionMode } from '../src/modules/events/admissionMode.enum';
@@ -235,12 +236,12 @@ describe('compra GENERAL_ADMISSION', () => {
     const first = await request(app.getHttpServer())
       .post(settlementPath)
       .set('Cookie', customerOneCookie)
-      .set('Origin', 'http://localhost:5173')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .expect(200);
     const retry = await request(app.getHttpServer())
       .post(settlementPath)
       .set('Cookie', customerOneCookie)
-      .set('Origin', 'http://localhost:5173')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .expect(200);
 
     const reservation = await reservationsRepository.findOneByOrFail({ id: reservationId });
@@ -273,6 +274,7 @@ describe('compra GENERAL_ADMISSION', () => {
 
     const cancellation = await request(app.getHttpServer())
       .post(`/reservations/${reservationId}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', customerOneCookie)
       .expect(200);
     const payment = await paymentsRepository.findOneByOrFail({ reservationId });
@@ -300,6 +302,7 @@ describe('compra GENERAL_ADMISSION', () => {
 
     await request(app.getHttpServer())
       .post(`/organizer/me/events/${event.id}/cancel`)
+      .set('Origin', applicationConfig.corsOrigins[0])
       .set('Cookie', organizerCookie)
       .expect(200);
 

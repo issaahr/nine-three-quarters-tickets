@@ -1,4 +1,5 @@
 import { AdmissionMode, EventCategory } from '../events/types';
+import { PaymentMethod } from '../payments/types';
 
 export enum TicketStatus {
   Valid = 'VALID',
@@ -34,7 +35,7 @@ export interface TicketPurchase {
   tickets: TicketItem[];
   canCancel?: boolean;
   eligibleUntil?: string | null;
-  paymentMethod?: 'CARD' | null;
+  paymentMethod?: PaymentMethod | null;
 }
 
 export interface TicketsFilters {

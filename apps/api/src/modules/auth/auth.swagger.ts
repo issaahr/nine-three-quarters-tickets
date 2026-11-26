@@ -6,6 +6,8 @@ import {
   ApiOperation,
   ApiConflictResponse,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiHeader,
   ApiNotFoundResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -15,6 +17,20 @@ import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse
 import { LoginResponseDto } from './dto/loginResponse.dto';
 import { SessionResponseDto } from './dto/sessionResponse.dto';
 import { SignupResponseDto } from './dto/signupResponse.dto';
+
+export function ApiTrustedOrigin() {
+  return applyDecorators(
+    ApiHeader({
+      name: 'Origin',
+      required: true,
+      description: 'Origem HTTPS da Web ou origem local presente em CORS_ORIGINS.',
+    }),
+    ApiForbiddenResponse({
+      type: ApplicationErrorResponseDto,
+      description: 'Papel sem acesso ou origem ausente ou não autorizada.',
+    }),
+  );
+}
 
 export function ApiSignup() {
   return applyDecorators(
