@@ -9,6 +9,8 @@ A [S12](https://github.com/issaahr/nine-three-quarters-tickets/issues/35) integr
 
 A prova de capacidade confirmou criação idempotente, consulta, webhook, expiração e estorno integral para ambos os métodos. O prazo da sessão Stripe e o prazo do Pix são independentes do hold. [Prova avulsa e validação integrada](../stripe-sandbox-validation.md)
 
+O mapa dos serviços e os diagramas da implementação estão em [Arquitetura de pagamentos](../architecture.md#pagamentos).
+
 ## Decisão
 
 - Selecionar o modo fake ou o Stripe Checkout hospedado por configuração da API. Manter a integração restrita a chaves e objetos de teste. Em desenvolvimento, somente a API recebe as credenciais de `env/api.env`. Cartão e Pix do sandbox são informados diretamente à Stripe.

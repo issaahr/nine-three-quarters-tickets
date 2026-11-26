@@ -339,11 +339,11 @@ Na migração, revise a URL do provedor em privado. Remova parâmetros TLS como 
 
 Defina `PAYMENT_PROVIDER=fake` em `env/api.env` para a demonstração local. Esse também é o comportamento quando a variável é omitida. O modo `stripe` exige a chave de sandbox `PAYMENT_STRIPE_SECRET_KEY` e o segredo de assinatura `PAYMENT_STRIPE_WEBHOOK_SECRET`. A primeira origem de `CORS_ORIGINS` monta o endereço de retorno de novas tentativas. [Obter as credenciais Stripe](#stripe)
 
-A Stripe CLI encaminha eventos locais a `POST /payments/webhooks/stripe`. A API concilia pagamentos e estornos pendentes e pode localizar uma sessão mesmo quando a resposta de criação e o webhook se perdem. O guia descreve configuração, migração de credenciais e o roteiro de teste. [Guia de validação](docs/stripe-sandbox-validation.md) · [ADR 0007](docs/adr/0007-stripe-checkout-hospedado-no-sandbox.md)
+A Stripe CLI encaminha eventos locais a `POST /payments/webhooks/stripe`. A API concilia pagamentos e estornos pendentes e pode localizar uma sessão mesmo quando a resposta de criação e o webhook se perdem. Consulte o [roteiro e as evidências de validação](docs/stripe-sandbox-validation.md), o [mapa dos serviços e diagramas de pagamentos](docs/architecture.md#pagamentos) e a [ADR 0007](docs/adr/0007-stripe-checkout-hospedado-no-sandbox.md).
 
 Início, consulta e retomada do checkout hospedado compartilham o limite configurado por CUSTOMER autenticado. Clientes HTTP que recebem `429` com `RATE_LIMIT_EXCEEDED` podem consultar o cabeçalho `Retry-After-HostedCheckout`. Se a própria consulta atingir a quota, a tela pausa a atualização periódica até uma nova consulta. O webhook da Stripe tem seu próprio contrato de assinatura.
 
-Compras gratuitas são confirmadas localmente. Para totais positivos em BRL, o checkout hospedado exige pelo menos R$ 0,50, com teto de R$ 999.999,99 no Pix e de R$ 21.474.836,47 no cartão pela capacidade local de armazenamento. A rede do cartão pode aplicar um teto menor. [Limites de valores da Stripe](https://docs.stripe.com/currencies#minimum-and-maximum-charge-amounts)
+Compras gratuitas são confirmadas localmente. Totais positivos em BRL precisam atender aos limites do método e do armazenamento local, descritos no [escopo técnico](docs/application-scope.md#23-paymentgateway).
 
 ### Integrações externas
 

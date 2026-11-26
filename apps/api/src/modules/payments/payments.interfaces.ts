@@ -10,11 +10,6 @@ export interface HostedPaymentObservation {
   outcome: HostedPaymentOutcome;
 }
 
-/** Projeção do timestamp autoritativo retornado pela conexão PostgreSQL. */
-export interface DatabaseTimestampRow {
-  now: Date;
-}
-
 /** Resultado da criação ou recuperação idempotente de uma tentativa de pagamento. */
 export interface PaymentInitiation {
   payment: Payment;

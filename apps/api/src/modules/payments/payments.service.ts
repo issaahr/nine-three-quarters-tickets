@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { getDatabaseClockTimestamp } from '../../database/databaseClock';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
 import { ReservationItem } from '../reservations/reservationItem.entity';
@@ -21,11 +22,7 @@ import {
   simulatedPixCompletionDelayMs,
 } from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
-import {
-  DatabaseTimestampRow,
-  PaymentInitiation,
-  SimulatedPixPaymentInitiation,
-} from './payments.interfaces';
+import { PaymentInitiation, SimulatedPixPaymentInitiation } from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
@@ -252,7 +249,7 @@ export class PaymentsService {
         throw new ReservationNotFoundError();
       }
 
-      const now = await this.getDatabaseTimestamp(manager);
+      const now = await getDatabaseClockTimestamp(manager);
       const staleBefore = new Date(
         now.getTime() - applicationConfig.payments.cardPendingTimeoutSeconds * 1000,
       );
@@ -344,19 +341,5 @@ export class PaymentsService {
 
       return { payment, created: true };
     });
-  }
-
-  /**
-   * Lê o relógio do PostgreSQL após o lock, pois o prazo da Reservation pode vencer durante a espera.
-   *
-   * @param manager - Manager vinculado à transação que utilizará o timestamp.
-   * @returns Instante atual calculado pelo PostgreSQL.
-   */
-  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
-    const timestampRows = (await manager.query(
-      'SELECT clock_timestamp() AS "now"',
-    )) as DatabaseTimestampRow[];
-
-    return new Date(timestampRows[0].now);
   }
 }

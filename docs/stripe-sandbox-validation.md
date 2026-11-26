@@ -2,32 +2,12 @@
 
 A [S12](https://github.com/issaahr/nine-three-quarters-tickets/issues/35) usa o Stripe Checkout hospedado para cartão e Pix em BRL. O modo Stripe usa chaves e objetos de teste. O modo fake permanece disponível para a demonstração local.
 
-## Configuração local
+## Preparar o ambiente
 
-Para obter as credenciais, siga [Stripe no README](../README.md#stripe): selecione o sandbox no Dashboard, abra [Chaves de API](https://dashboard.stripe.com/apikeys), revele a chave secreta `sk_test_...` e copie-a para `PAYMENT_STRIPE_SECRET_KEY` em `env/api.env`. O segredo `PAYMENT_STRIPE_WEBHOOK_SECRET` é obtido separadamente: no desenvolvimento local, copie o `whsec_...` exibido pelo listener abaixo. Para a API publicada no Render, o README também explica como criar o destino HTTPS e revelar o segredo desse destino no Dashboard.
-
-1. Em uma conta com Pix habilitável, crie ou selecione o sandbox, confirme que cartão e Pix estão disponíveis nas configurações de métodos de pagamento e instale a Stripe CLI. Use o mesmo sandbox na CLI, no Dashboard e na API da aplicação. [Sandboxes da Stripe](https://docs.stripe.com/sandboxes) · [Configuração do Pix](https://docs.stripe.com/payments/pix/accept-a-payment?payment-ui=checkout) · [Instalação da Stripe CLI](https://docs.stripe.com/cli/install)
-2. Configure de forma privada a variável `STRIPE_API_KEY` no processo da CLI com a chave de teste do sandbox. Inicie o encaminhamento em um terminal separado. O comando encaminha os quatro eventos de sessão processados pela API e exibe o segredo de assinatura desse listener. [Stripe CLI `listen`](https://docs.stripe.com/cli/listen)
-
-   ```bash
-   stripe listen --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,checkout.session.expired --forward-to http://localhost:3000/payments/webhooks/stripe
-   ```
-
-3. Crie os três arquivos locais em `env/` conforme o [README](../README.md#1-configurar-o-ambiente). Defina `VITE_API_URL=http://localhost:3000` em `env/web.env`. Em `env/api.env`, preencha as demais variáveis do backend e as opções abaixo. Revele a chave secreta `sk_test_...` do sandbox e use o segredo `whsec_...` do listener ativo. Um webhook criado pelo Dashboard tem seu próprio segredo. [Chaves da Stripe](https://docs.stripe.com/keys) · [Assinaturas de webhooks](https://docs.stripe.com/webhooks/signatures)
-
-   ```env
-   PAYMENT_PROVIDER=stripe
-   PAYMENT_STRIPE_SECRET_KEY=<chave-sk_test-do-sandbox>
-   PAYMENT_STRIPE_WEBHOOK_SECRET=<segredo-whsec-do-listener>
-   CORS_ORIGINS=http://localhost:5173
-   ```
-
-   Em instalações existentes, migre as chaves manualmente do antigo arquivo compartilhado ou do antigo `.stripe-api.env` para `env/api.env`. O Web recebe apenas os valores públicos de `env/web.env`. [Migração da configuração](../README.md#1-configurar-o-ambiente)
-
-4. Abra a Web na origem exata de `CORS_ORIGINS`. A primeira origem monta o retorno para `/customer/reservations/:reservationId` nas novas tentativas. As sessões já criadas conservam o endereço original. Ao trocar a primeira origem, mantenha a rota anterior acessível enquanto houver sessões em uso. Use o mesmo host na Web e na API quando rodar localmente. Com Docker Compose, mantenha o host `postgres` em `DATABASE_URL` e use `docker compose up --build -d`. A CLI no host alcança a porta publicada da API. Com a API executada via Node.js, use `localhost` em `DATABASE_URL` e inicie o PostgreSQL, a API e a Web conforme o README. [Execução com Docker ou Node.js](../README.md#como-executar)
-5. Para testar com dados locais, crie eventos com preço positivo em BRL, de assentos numerados e de entrada geral, ou execute a seed de demonstração após a inicialização da API. Use uma conta `CUSTOMER` para pagar e uma conta `ORGANIZER` para cancelar um evento próprio. [Seed e usuários de demonstração](../README.md#dados-locais-e-testes)
-
-O `GET /payments/configuration` autenticado como `CUSTOMER` informa o modo `HOSTED` ou `SIMULATED` e os métodos disponíveis. Para voltar à demonstração, defina `PAYMENT_PROVIDER=fake` em `env/api.env` e reinicie a API. Em Compose, aplique as alterações recriando o serviço com `docker compose up -d --force-recreate api`.
+1. Configure os arquivos de `env/` e inicie PostgreSQL, API e Web conforme [Como executar](../README.md#como-executar). Para os detalhes de conexão com banco externo, consulte [TLS do PostgreSQL](../README.md#tls-do-postgresql).
+2. Siga [Stripe no README](../README.md#stripe) para selecionar o sandbox, habilitar cartão e Pix, obter as duas credenciais e iniciar o listener local. Mantenha a CLI no mesmo sandbox da API e o terminal do listener aberto durante a validação dos webhooks.
+3. Abra o Web na origem configurada em `CORS_ORIGINS`. Para conferir o ambiente ativo, consulte `GET /payments/configuration` autenticado como `CUSTOMER`: o modo deve ser `HOSTED`, com cartão e Pix disponíveis.
+4. Crie eventos com preço positivo em BRL nas modalidades de assentos numerados e entrada geral, ou utilize a [seed de demonstração](../README.md#dados-locais-e-testes). Separe uma conta `CUSTOMER` para comprar e uma conta `ORGANIZER` para cancelar um evento próprio.
 
 ## Reprodução pelo Web
 
@@ -43,13 +23,11 @@ Para controlar a validação da assinatura em um ambiente Stripe já iniciado, e
 curl -i -H 'Content-Type: application/json' -d '{}' http://localhost:3000/payments/webhooks/stripe
 ```
 
-Em caso de falha técnica ao iniciar a sessão, volte à reserva. Se a tentativa já estiver registrada e elegível, use **Retomar pagamento**. O Web consulta o `GET /reservations/:reservationId/payments/hosted` e retoma a tentativa encontrada com `POST /reservations/:reservationId/payments/hosted/:paymentId/resume`. O navegador só redireciona com a URL devolvida pela nova resposta da API. O estado exibido no retorno vem da API.
+Em caso de falha técnica ao iniciar a sessão, volte à reserva e use **Retomar pagamento** quando a ação estiver disponível. Confira que a retomada preserva o ID da tentativa e a sessão externa. Se receber `429` com `RATE_LIMIT_EXCEEDED`, aguarde o intervalo indicado por `Retry-After-HostedCheckout` antes de tentar novamente.
 
-As rotas de checkout compartilham uma quota por cliente autenticado. Se receber `429` com `RATE_LIMIT_EXCEEDED`, aguarde antes de consultar ou retomar. O limite do cliente não se aplica ao webhook. No Render Free, a conciliação aguarda a API voltar se o serviço estiver hibernando. [Instâncias Free no Render](https://render.com/docs/free#spinning-down-on-idle)
+Para validar os limites do método, use os valores descritos em [PaymentGateway no escopo técnico](application-scope.md#23-paymentgateway). Um total incompatível deve retornar `422` com `PAYMENT_AMOUNT_UNSUPPORTED`, sem criar tentativa. Valide também uma reserva gratuita: a confirmação deve ocorrer localmente, sem criar sessão ou estorno na Stripe.
 
-Uma falha de criação com resultado desconhecido mantém a tentativa pendente. A API busca a sessão pela identidade local e pode repetir a mesma chave dentro da janela segura quando conhece a URL original. Em tentativas legadas sem a URL original, a recuperação se limita à descoberta da sessão. Uma tentativa inconclusiva continua bloqueando outra tentativa da mesma reserva. Se o hold vencer, o inventário volta a ficar disponível.
-
-O checkout hospedado valida o total positivo antes de criar a tentativa. No sandbox em BRL, o mínimo é R$ 0,50 e o máximo Pix é R$ 999.999,99. Para cartão, o teto local é R$ 21.474.836,47 pela representação dos centavos, sujeito aos limites da rede escolhida na Stripe. Um valor incompatível retorna HTTP `422` com `PAYMENT_AMOUNT_UNSUPPORTED`. O cliente pode selecionar outro método sem retomar a tentativa rejeitada. Reservas gratuitas são confirmadas localmente. [Limites de valores da Stripe](https://docs.stripe.com/currencies#minimum-and-maximum-charge-amounts)
+O mapa dos serviços e os fluxos de retomada, conciliação e estorno estão em [Arquitetura de pagamentos](architecture.md#pagamentos). As opções para voltar ao modo fake estão no [README](../README.md#stripe-checkout-em-sandbox).
 
 ## Resultados da integração
 
@@ -81,33 +59,4 @@ Na prova inicial de 26 de novembro de 2026, sessões avulsas de R$ 5,00 foram cr
 | Expiração com QR PIX já emitido | Antes da chamada, a sessão estava `open` e `unpaid`, com PaymentIntent `requires_action` e QR presente. A expiração da sessão levou o PaymentIntent a `canceled` e removeu o QR da resposta da API. O receptor recebeu `payment_intent.canceled` e `checkout.session.expired`.                                                                             |
 | Estorno integral                | A API confirmou o estorno de R$ 5,00 de cada pagamento. A repetição com a mesma chave recuperou o mesmo Refund. No PIX, o receptor viu `refund.created` com `pending` e depois `refund.updated` com `succeeded`. O `GET` confirmou `succeeded` para ambos.                                                                                                 |
 
-### Reprodução da prova avulsa
-
-1. Use um [sandbox da Stripe](https://docs.stripe.com/sandboxes) com cartão e PIX habilitados. A configuração local usa `PAYMENT_STRIPE_SECRET_KEY` com a chave `sk_test_...`. Para executar os comandos a seguir, passe essa chave à CLI pela variável `STRIPE_API_KEY` no ambiente do processo.
-2. Para receber eventos, rode `stripe listen --all-snapshot --forward-to http://127.0.0.1:4242/stripe`. Passe o `whsec_...` exibido ao receptor local. Verifique `Stripe-Signature` com o corpo bruto recebido antes de decodificar e registrar o evento. Registre tipo, status, valor e moeda, correlacionando os eventos à sessão e ao pagamento. Envie também uma requisição sem assinatura para verificar a rejeição. [Stripe CLI](https://docs.stripe.com/cli/listen) · [Verificação de assinatura](https://docs.stripe.com/webhooks/signatures)
-3. Crie a sessão no terminal. Execute uma vez com `method=card` e outra com `method=pix`, usando uma chave de idempotência distinta para cada sessão. Para testar a retomada, repita o comando com os mesmos parâmetros e a mesma chave e compare o ID devolvido.
-
-   ```bash
-   method=card
-   attempt_key='<uuid-da-tentativa>'
-   stripe post /v1/checkout/sessions \
-     --stripe-version 2026-11-18.endive \
-     --idempotency "$attempt_key" \
-     -d 'mode=payment' \
-     -d "allowed_payment_method_types[0]=$method" \
-     -d 'line_items[0][price_data][currency]=brl' \
-     -d 'line_items[0][price_data][unit_amount]=500' \
-     -d 'line_items[0][price_data][product_data][name]=9¾ Tickets S12 sandbox' \
-     -d 'line_items[0][quantity]=1' \
-     -d 'success_url=http://localhost:5173/events'
-   ```
-
-4. Abra a `url` devolvida. Para cartão, use o número `4242 4242 4242 4242`, validade futura e CVC de teste. Para PIX, use `succeed_immediately@example.com`. Se o Checkout pedir um identificador fiscal, use `000.000.000-00`. Consulte a sessão com `stripe get /v1/checkout/sessions/<id>` e confira o PaymentIntent e os eventos recebidos. [Cartões de teste](https://docs.stripe.com/testing) · [PIX de teste](https://docs.stripe.com/payments/pix/accept-a-payment?payment-ui=checkout)
-5. Para o cenário de PIX pendente, crie outra sessão com `-d 'payment_method_options[pix][expires_after_seconds]=60'` e use `fill_never@example.com`. Depois que o QR aparecer, consulte a sessão com `stripe get /v1/checkout/sessions/<id> --expand payment_intent`, expire-a com `stripe post /v1/checkout/sessions/<id>/expire` e consulte novamente. Verifique o estado da sessão e do PaymentIntent. A expiração manual está disponível quando a sessão ainda está `open`. [Expiração de sessão](https://docs.stripe.com/api/checkout/sessions/expire)
-6. Para cada pagamento aprovado, crie um estorno integral com `stripe post /v1/refunds --idempotency <chave-do-estorno> -d 'payment_intent=<id>'`. Repita com os mesmos parâmetros e confira o mesmo ID. Acompanhe `refund.updated` e consulte `stripe get /v1/refunds/<id>` até o status terminal. [Estornos da Stripe](https://docs.stripe.com/api/refunds)
-
-## Comportamento da integração
-
-- Nesta versão da API, a criação usa `allowed_payment_method_types`. A resposta informa o conjunto compatível em `payment_method_types`. A aplicação deve conferir se o método pretendido foi aceito. [Mudança na API Stripe Endive](https://docs.stripe.com/changelog/endive/2026-09-30/remove-payment-method-types-checkout-sessions)
-- A expiração automática da sessão tem mínimo de 30 minutos. O Pix tem prazo próprio, que pode ser configurado a partir de 60 segundos e começa na confirmação do PaymentIntent. O hold continua regido por `Reservation.expiresAt` e pelo relógio do PostgreSQL. O backend solicita a expiração da sessão quando ainda aberta e concilia o resultado. Caso uma cobrança seja aprovada sem reserva válida, a aplicação registra o estorno integral e deixa de emitir Tickets. [Criação da sessão](https://docs.stripe.com/api/checkout/sessions/create) · [Validade do Pix](https://docs.stripe.com/payments/pix/accept-a-payment?payment-ui=checkout)
-- Os eventos são sinais para conciliar o estado atual. O retorno do navegador apresenta o estado da API. `Refund` só chega a `COMPLETED` após a confirmação externa. As referências e os estados da Stripe são interpretados no adaptador de pagamentos. [Webhooks da Stripe](https://docs.stripe.com/webhooks) · [Escopo da aplicação](application-scope.md)
+O receptor HTTP temporário utilizado nessa prova não faz parte do repositório. Os resultados acima permanecem como evidência histórica da escolha do provedor. Para reproduzir a integração atual, utilize [Reprodução pelo Web](#reprodução-pelo-web), que recebe os eventos no endpoint da própria aplicação.
