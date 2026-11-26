@@ -11,9 +11,13 @@ import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
-import { paymentGatewayToken } from './payments.constants';
+import { paymentGatewayToken, simulatedPixCompletionDelayMs } from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
-import { DatabaseTimestampRow, PaymentInitiation } from './payments.interfaces';
+import {
+  DatabaseTimestampRow,
+  PaymentInitiation,
+  SimulatedPixPaymentInitiation,
+} from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
@@ -41,7 +45,7 @@ export class PaymentsService {
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
    * @param card - Dados transitórios validados, encaminhados ao gateway após o commit do PENDING.
-   * @returns Payment existente para a mesma chave ou novo Payment PENDING persistido.
+   * @returns Payment existente para a mesma chave ou resultado do processamento da nova tentativa.
    */
   public async processCardPayment(
     customerId: string,
@@ -49,9 +53,14 @@ export class PaymentsService {
     idempotencyKey: string,
     card: CreateCardPaymentRequestDto,
   ): Promise<Payment> {
-    const initiation = await this.startCardPayment(customerId, reservationId, idempotencyKey);
+    const initiation = await this.startPayment(
+      customerId,
+      reservationId,
+      idempotencyKey,
+      PaymentMethod.Card,
+    );
 
-    if (!initiation.shouldProcess) {
+    if (!initiation.created) {
       return initiation.payment;
     }
 
@@ -84,22 +93,51 @@ export class PaymentsService {
   }
 
   /**
-   * Cria ou recupera a tentativa PENDING que representa uma intenção de pagamento.
+   * Persiste a tentativa de PIX com o instante de conclusão calculado pelo relógio do PostgreSQL.
+   * O conteúdo do QR simulado deriva do identificador persistido, de modo que o retry é estável.
+   *
+   * @param customerId - Identidade do CUSTOMER que deve possuir a Reservation.
+   * @param reservationId - Reservation cuja tentativa de pagamento será persistida.
+   * @param idempotencyKey - Chave estável da tentativa, compartilhada entre os métodos por Reservation.
+   * @returns Payment original ou recém-criado. O QR só acompanha um Payment de PIX.
+   */
+  public async createSimulatedPixPayment(
+    customerId: string,
+    reservationId: string,
+    idempotencyKey: string,
+  ): Promise<SimulatedPixPaymentInitiation> {
+    const { payment } = await this.startPayment(
+      customerId,
+      reservationId,
+      idempotencyKey,
+      PaymentMethod.Pix,
+    );
+
+    return {
+      payment,
+      qrCodePayload: payment.method === PaymentMethod.Pix ? `ntq:pix:simulado:${payment.id}` : null,
+    };
+  }
+
+  /**
+   * Serializa a criação de tentativas de cartão e PIX pelo lock da Reservation.
+   * A busca da chave precede a validação de nova tentativa, para preservar retries do Payment original.
    *
    * @param customerId - Identidade do CUSTOMER autenticado que deve possuir a Reservation.
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
-   * @returns Payment e indicação de que somente a request criadora deve chamar o gateway.
+   * @param method - Método usado quando a chave ainda não possui um Payment.
+   * @returns Payment e indicação de criação, que permite ao cartão chamar o gateway uma única vez.
    */
-  private async startCardPayment(
+  private async startPayment(
     customerId: string,
     reservationId: string,
     idempotencyKey: string,
+    method: PaymentMethod,
   ): Promise<PaymentInitiation> {
     return this.dataSource.transaction(async (manager) => {
       const reservationsRepository = manager.getRepository(Reservation);
       const reservationItemsRepository = manager.getRepository(ReservationItem);
-      const now = await this.getDatabaseTimestamp(manager);
       const reservation = await reservationsRepository.findOne({
         where: { id: reservationId, customerId },
         lock: { mode: 'pessimistic_write' },
@@ -109,10 +147,11 @@ export class PaymentsService {
         throw new ReservationNotFoundError();
       }
 
+      const now = await this.getDatabaseTimestamp(manager);
       const staleBefore = new Date(
         now.getTime() - applicationConfig.payments.cardPendingTimeoutSeconds * 1000,
       );
-      const orphanedPayments = await this.paymentRepository.expireOrphanedPending(
+      const orphanedPayments = await this.paymentRepository.expireOrphanedCardPayments(
         manager,
         reservation.id,
         staleBefore,
@@ -120,7 +159,9 @@ export class PaymentsService {
       );
 
       if (orphanedPayments.affected) {
-        this.logger.warn(`Payments PENDING órfãos recuperados para Reservation ${reservation.id}`);
+        this.logger.warn(
+          `Pagamentos de cartão órfãos recuperados para Reservation ${reservation.id}`,
+        );
       }
 
       const idempotentPayment = await this.paymentRepository.findByReservationAndIdempotencyKey(
@@ -130,7 +171,7 @@ export class PaymentsService {
       );
 
       if (idempotentPayment) {
-        return { payment: idempotentPayment, shouldProcess: false };
+        return { payment: idempotentPayment, created: false };
       }
 
       const activePayment = await this.paymentRepository.findActiveByReservation(
@@ -161,28 +202,32 @@ export class PaymentsService {
       const payment = await paymentsRepository.save(
         paymentsRepository.create({
           reservationId: reservation.id,
-          method: PaymentMethod.Card,
+          method,
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
           approvedAt: null,
           failedAt: null,
+          simulationCompletionAt:
+            method === PaymentMethod.Pix
+              ? new Date(now.getTime() + simulatedPixCompletionDelayMs)
+              : null,
         }),
       );
 
-      return { payment, shouldProcess: true };
+      return { payment, created: true };
     });
   }
 
   /**
-   * Obtém o instante autoritativo da conexão PostgreSQL da transação atual.
+   * Lê o relógio do PostgreSQL após o lock, pois o prazo da Reservation pode vencer durante a espera.
    *
    * @param manager - Manager vinculado à transação que utilizará o timestamp.
    * @returns Instante atual calculado pelo PostgreSQL.
    */
   private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
     const timestampRows = (await manager.query(
-      'SELECT CURRENT_TIMESTAMP AS "now"',
+      'SELECT clock_timestamp() AS "now"',
     )) as DatabaseTimestampRow[];
 
     return new Date(timestampRows[0].now);

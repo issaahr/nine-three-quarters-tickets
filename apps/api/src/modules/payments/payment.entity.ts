@@ -14,6 +14,10 @@ import { PaymentStatus } from './paymentStatus.enum';
 })
 @Check('paymentsAmountCentsNonNegative', '"amountCents" >= 0')
 @Check(
+  'paymentsSimulationCompletionMatchesMethod',
+  `("method" = '${PaymentMethod.Pix}') = ("simulationCompletionAt" IS NOT NULL)`,
+)
+@Check(
   'paymentsLifecycleConsistent',
   `("status" = '${PaymentStatus.Approved}' AND "approvedAt" IS NOT NULL AND "failedAt" IS NULL) OR
    ("status" = '${PaymentStatus.Failed}' AND "approvedAt" IS NULL AND "failedAt" IS NOT NULL) OR
@@ -41,6 +45,9 @@ export class Payment extends BaseEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   public failedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  public simulationCompletionAt!: Date | null;
 
   // Relations
   @ManyToOne(() => Reservation, { onDelete: 'RESTRICT' })

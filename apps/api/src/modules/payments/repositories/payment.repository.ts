@@ -3,6 +3,7 @@ import { EntityManager, In, UpdateResult } from 'typeorm';
 
 import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
+import { PaymentMethod } from '../paymentMethod.enum';
 import { SoldEventSeatRow } from '../payments.interfaces';
 import { PaymentStatus } from '../paymentStatus.enum';
 
@@ -36,7 +37,8 @@ export class PaymentRepository {
   }
 
   /**
-   * Finaliza tentativas PENDING cuja criação ultrapassou a janela técnica permitida.
+   * Encerra tentativas de cartão fake que excederam a janela técnica de processamento.
+   * O PIX aguarda o settlement mesmo após essa janela.
    *
    * @param manager - Manager vinculado à transação que bloqueou a Reservation.
    * @param reservationId - Reservation cujas tentativas podem ser recuperadas.
@@ -44,7 +46,7 @@ export class PaymentRepository {
    * @param now - Instante autoritativo do PostgreSQL usado como failedAt.
    * @returns Resultado da atualização condicional executada dentro da transação.
    */
-  public expireOrphanedPending(
+  public expireOrphanedCardPayments(
     manager: EntityManager,
     reservationId: string,
     staleBefore: Date,
@@ -56,6 +58,7 @@ export class PaymentRepository {
       .update(Payment)
       .set({ status: PaymentStatus.Failed, failedAt: now })
       .where('"reservationId" = :reservationId', { reservationId })
+      .andWhere('"method" = :method', { method: PaymentMethod.Card })
       .andWhere('"status" = :status', { status: PaymentStatus.Pending })
       .andWhere('"createdAt" <= :staleBefore', { staleBefore })
       .execute();

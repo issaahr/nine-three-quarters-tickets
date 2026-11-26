@@ -14,9 +14,12 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { PaymentInProgressError } from '../src/modules/payments/errors/paymentInProgress.error';
+import { ReservationAlreadyPaidError } from '../src/modules/payments/errors/reservationAlreadyPaid.error';
 import { Payment } from '../src/modules/payments/payment.entity';
 import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 import { paymentGatewayToken } from '../src/modules/payments/payments.constants';
+import { PaymentsService } from '../src/modules/payments/payments.service';
 import {
   CardPaymentGatewayRequest,
   CardPaymentGatewayResult,
@@ -60,6 +63,7 @@ describe('Payments', () => {
   let organizer: User;
   let venue: Venue;
   let paymentGateway: ControlledPaymentGateway;
+  let paymentsService: PaymentsService;
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
@@ -75,6 +79,7 @@ describe('Payments', () => {
     await app.init();
 
     dataSource = app.get(DataSource);
+    paymentsService = app.get(PaymentsService);
     eventsRepository = dataSource.getRepository(Event);
     eventSeatsRepository = dataSource.getRepository(EventSeat);
     paymentsRepository = dataSource.getRepository(Payment);
@@ -375,6 +380,129 @@ describe('Payments', () => {
     expect(recoveredPayment).toMatchObject({ status: PaymentStatus.Failed });
     expect(recoveredPayment.failedAt).not.toBeNull();
     expect(newPaymentResponse.body.status).toBe(PaymentStatus.Approved);
+  });
+
+  it('persiste uma única tentativa PIX em retries simultâneos, com prazo e QR estáveis', async () => {
+    const reservation = await createActiveReservation(undefined, 2);
+    const idempotencyKey = randomUUID();
+    const [{ now: before }] = (await dataSource.query('SELECT clock_timestamp() AS now')) as Array<{
+      now: Date;
+    }>;
+
+    const [first, retry] = await Promise.all([
+      paymentsService.createSimulatedPixPayment(customer.id, reservation.id, idempotencyKey),
+      paymentsService.createSimulatedPixPayment(customer.id, reservation.id, idempotencyKey),
+    ]);
+
+    const [{ now: after }] = (await dataSource.query('SELECT clock_timestamp() AS now')) as Array<{
+      now: Date;
+    }>;
+    const persisted = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    expect(persisted).toMatchObject({
+      id: first.payment.id,
+      method: PaymentMethod.Pix,
+      status: PaymentStatus.Pending,
+      idempotencyKey,
+      amountCents: 5180,
+      approvedAt: null,
+      failedAt: null,
+      simulationCompletionAt: expect.any(Date),
+    });
+    expect(persisted.simulationCompletionAt?.getTime()).toBeGreaterThanOrEqual(
+      before.getTime() + 15_000,
+    );
+    expect(persisted.simulationCompletionAt?.getTime()).toBeLessThanOrEqual(
+      after.getTime() + 15_000,
+    );
+    expect(first.qrCodePayload).toBe(`ntq:pix:simulado:${persisted.id}`);
+    expect(retry).toEqual({ payment: persisted, qrCodePayload: first.qrCodePayload });
+    expect(await paymentsRepository.countBy({ reservationId: reservation.id })).toBe(1);
+    await expect(
+      paymentsRepository.update(persisted.id, { simulationCompletionAt: null }),
+    ).rejects.toMatchObject({
+      driverError: { constraint: 'paymentsSimulationCompletionMatchesMethod' },
+    });
+    expect(paymentGateway.processCard).not.toHaveBeenCalled();
+  });
+
+  it('preserva o PIX PENDING após a janela técnica do cartão e reutiliza a chave entre métodos', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    const idempotencyKey = randomUUID();
+    const { payment } = await paymentsService.createSimulatedPixPayment(
+      customer.id,
+      reservation.id,
+      idempotencyKey,
+    );
+    await paymentsRepository.update(payment.id, { createdAt: new Date('2000-01-01T00:00:00Z') });
+
+    const conflict = await createPaymentRequest(reservation.id, randomUUID(), cookie).expect(409);
+    const retry = await createPaymentRequest(reservation.id, idempotencyKey, cookie).expect(201);
+    const persisted = await paymentsRepository.findOneByOrFail({ id: payment.id });
+
+    expect(conflict.body.code).toBe('PAYMENT_IN_PROGRESS');
+    expect(retry.body).toMatchObject({
+      id: payment.id,
+      method: PaymentMethod.Pix,
+      status: PaymentStatus.Pending,
+    });
+    expect(persisted.status).toBe(PaymentStatus.Pending);
+    expect(persisted.simulationCompletionAt).toEqual(payment.simulationCompletionAt);
+    expect(paymentGateway.processCard).not.toHaveBeenCalled();
+  });
+
+  it('serializa a criação concorrente de cartão e PIX com chaves diferentes', async () => {
+    const reservation = await createActiveReservation();
+    const [card, pix] = await Promise.allSettled([
+      paymentsService.processCardPayment(customer.id, reservation.id, randomUUID(), {
+        cardNumber: '4242424242424242',
+        cardholderName: 'Ana Beatriz Souza',
+        expiry: '08/29',
+        cvv: '123',
+      }),
+      paymentsService.createSimulatedPixPayment(customer.id, reservation.id, randomUUID()),
+    ]);
+
+    const persisted = await paymentsRepository.findBy({ reservationId: reservation.id });
+    expect(persisted).toHaveLength(1);
+    const winner = persisted[0];
+    await expect(
+      paymentsRepository.insert({
+        reservationId: reservation.id,
+        method: PaymentMethod.Card,
+        status: PaymentStatus.Pending,
+        idempotencyKey: randomUUID(),
+        amountCents: winner.amountCents,
+        simulationCompletionAt: null,
+      }),
+    ).rejects.toMatchObject({
+      driverError: { constraint: 'paymentsActiveReservationUnique' },
+    });
+
+    if (winner.method === PaymentMethod.Card) {
+      expect(card).toMatchObject({
+        status: 'fulfilled',
+        value: { id: winner.id, status: PaymentStatus.Approved, simulationCompletionAt: null },
+      });
+      expect(pix.status).toBe('rejected');
+      if (pix.status === 'rejected') {
+        expect(
+          pix.reason instanceof PaymentInProgressError ||
+            pix.reason instanceof ReservationAlreadyPaidError,
+        ).toBe(true);
+      }
+      expect(paymentGateway.processCard).toHaveBeenCalledTimes(1);
+    } else {
+      expect(pix).toMatchObject({
+        status: 'fulfilled',
+        value: { payment: { id: winner.id, status: PaymentStatus.Pending } },
+      });
+      expect(card).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(PaymentInProgressError),
+      });
+      expect(paymentGateway.processCard).not.toHaveBeenCalled();
+    }
   });
 
   it('rejeita Reservation expirada sem criar Payment', async () => {
