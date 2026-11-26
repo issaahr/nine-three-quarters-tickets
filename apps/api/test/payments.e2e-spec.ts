@@ -25,6 +25,7 @@ import { HostedPaymentReconciliationService } from '../src/modules/payments/host
 import { Payment } from '../src/modules/payments/payment.entity';
 import { PaymentCurrency } from '../src/modules/payments/paymentCurrency.enum';
 import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
+import { PaymentCheckoutMode } from '../src/modules/payments/paymentCheckoutMode.enum';
 import { PaymentProvider } from '../src/modules/payments/paymentProvider.enum';
 import {
   hostedPaymentGatewayToken,
@@ -351,6 +352,19 @@ describe('Payments', () => {
       .set('Idempotency-Key', idempotencyKey);
   }
 
+  it('divulga o modo hospedado ao CUSTOMER sem expor credenciais ou configuração interna', async () => {
+    const cookie = await authenticate();
+    const result = await request(app.getHttpServer())
+      .get('/payments/configuration')
+      .set('Cookie', cookie)
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    expect(result.body).toEqual({
+      mode: PaymentCheckoutMode.Hosted,
+      methods: [PaymentMethod.Card, PaymentMethod.Pix],
+    });
+  });
+
   it('retoma o mesmo checkout após timeout, por consulta e retry sem a chave do cliente', async () => {
     const reservation = await createActiveReservation(undefined, 2);
     const cookie = await authenticate();
@@ -389,6 +403,7 @@ describe('Payments', () => {
       id: persisted.id,
       status: PaymentStatus.Pending,
       checkoutUrl: null,
+      canResume: true,
     });
     expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(1);
     await startHostedRequest(reservation.id, cookie)
@@ -406,6 +421,7 @@ describe('Payments', () => {
       method: PaymentMethod.Pix,
       currency: PaymentCurrency.Brl,
       checkoutUrl: redirect.checkoutUrl,
+      canResume: false,
     });
     expect(resumed.body).not.toHaveProperty('externalReference');
     expect(hostedGateway.createCheckout.mock.calls[1]).toEqual(
@@ -438,6 +454,7 @@ describe('Payments', () => {
       amountCents: 0,
       status: PaymentStatus.Approved,
       checkoutUrl: null,
+      canResume: false,
     });
     await expect(
       reservationsRepository.findOneByOrFail({ id: reservation.id }),
@@ -464,7 +481,11 @@ describe('Payments', () => {
       .send({ method: PaymentMethod.Card })
       .expect(201);
 
-    expect(response.body).toMatchObject({ status: PaymentStatus.Pending, checkoutUrl: null });
+    expect(response.body).toMatchObject({
+      status: PaymentStatus.Pending,
+      checkoutUrl: null,
+      canResume: false,
+    });
     await expect(
       paymentsRepository.findOneByOrFail({ id: response.body.id }),
     ).resolves.toMatchObject({

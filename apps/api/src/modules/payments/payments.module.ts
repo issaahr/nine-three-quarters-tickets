@@ -17,6 +17,7 @@ import { HostedCheckoutController } from './hostedCheckout.controller';
 import { HostedCheckoutService } from './hostedCheckout.service';
 import { HostedPaymentReconciliationService } from './hostedPaymentReconciliation.service';
 import { Payment } from './payment.entity';
+import { PaymentCheckoutConfigurationController } from './paymentCheckoutConfiguration.controller';
 import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentProvider } from './paymentProvider.enum';
 import {
@@ -38,7 +39,12 @@ import { StripeCheckoutWebhookController } from './stripe/stripeCheckoutWebhook.
     TicketsModule,
     RealtimeModule,
   ],
-  controllers: [PaymentsController, HostedCheckoutController, StripeCheckoutWebhookController],
+  controllers: [
+    PaymentsController,
+    HostedCheckoutController,
+    PaymentCheckoutConfigurationController,
+    StripeCheckoutWebhookController,
+  ],
   providers: [
     PaymentsService,
     PaymentFinalizationService,

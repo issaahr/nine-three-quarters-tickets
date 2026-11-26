@@ -1,7 +1,66 @@
 import axios from 'axios';
 
 import { api } from '@/lib/api';
-import { CardPaymentRequest, Payment, SimulatedPixPayment } from './types';
+import {
+  CardPaymentRequest,
+  HostedCheckoutPayment,
+  Payment,
+  PaymentCheckoutConfiguration,
+  PaymentMethod,
+  SimulatedPixPayment,
+} from './types';
+
+export async function fetchCheckoutConfiguration(
+  signal: AbortSignal,
+): Promise<PaymentCheckoutConfiguration> {
+  const response = await api.get<PaymentCheckoutConfiguration>('/payments/configuration', {
+    signal,
+  });
+  return response.data;
+}
+
+function hostedCheckoutPath(reservationId: string): string {
+  return `/reservations/${reservationId}/payments/hosted`;
+}
+
+/** A API distingue a falta de tentativa de falhas de acesso, rede ou conciliação. */
+export async function fetchHostedCheckout(
+  reservationId: string,
+  signal: AbortSignal,
+): Promise<HostedCheckoutPayment | null> {
+  try {
+    const response = await api.get<HostedCheckoutPayment>(hostedCheckoutPath(reservationId), {
+      signal,
+    });
+    return response.data;
+  } catch (error) {
+    if (isPaymentNotFound(error)) return null;
+    throw error;
+  }
+}
+
+export async function createHostedCheckout(
+  reservationId: string,
+  method: PaymentMethod,
+  idempotencyKey: string,
+): Promise<HostedCheckoutPayment> {
+  const response = await api.post<HostedCheckoutPayment>(
+    hostedCheckoutPath(reservationId),
+    { method },
+    { headers: { 'Idempotency-Key': idempotencyKey } },
+  );
+  return response.data;
+}
+
+export async function resumeHostedCheckout(
+  reservationId: string,
+  paymentId: string,
+): Promise<HostedCheckoutPayment> {
+  const response = await api.post<HostedCheckoutPayment>(
+    `${hostedCheckoutPath(reservationId)}/${paymentId}/resume`,
+  );
+  return response.data;
+}
 
 export async function createCardPayment(
   reservationId: string,
@@ -43,15 +102,17 @@ export async function fetchSimulatedPixPayment(
     );
     return response.data;
   } catch (error) {
-    if (
-      axios.isAxiosError<{ code?: string }>(error) &&
-      error.response?.status === 404 &&
-      error.response.data?.code === 'PAYMENT_NOT_FOUND'
-    ) {
-      return null;
-    }
+    if (isPaymentNotFound(error)) return null;
     throw error;
   }
+}
+
+function isPaymentNotFound(error: unknown): boolean {
+  return (
+    axios.isAxiosError<{ code?: string }>(error) &&
+    error.response?.status === 404 &&
+    error.response.data?.code === 'PAYMENT_NOT_FOUND'
+  );
 }
 
 export async function settleSimulatedPixPayment(

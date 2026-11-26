@@ -83,13 +83,13 @@ export class HostedCheckoutService {
   ): Promise<HostedCheckout> {
     const payment = await this.findAttempt(gateway, customerId, reservationId, paymentId);
     const now = await getDatabaseClockTimestamp(this.dataSource.manager);
-    if (!this.canCheckout(payment, now)) return { payment, checkoutUrl: null };
+    if (!this.canCheckout(payment, now)) return { payment, checkoutUrl: null, canResume: false };
 
     if (payment.amountCents === 0) {
       const result = allowCreation
         ? await this.paymentsService.confirmFreeHostedPayment(customerId, payment)
         : payment;
-      return { payment: result, checkoutUrl: null };
+      return { payment: result, checkoutUrl: null, canResume: !allowCreation };
     }
 
     const request = {
@@ -98,13 +98,11 @@ export class HostedCheckoutService {
       currency: payment.currency,
       method: payment.method,
     };
-    if (!payment.externalReference && !allowCreation) return { payment, checkoutUrl: null };
-    // Após a janela idempotente, repetir uma criação sem vínculo pode abrir outra sessão.
-    if (
-      !payment.externalReference &&
-      now.getTime() - payment.createdAt.getTime() >= gateway.creationRetryWindowMs
-    ) {
-      throw new HostedCheckoutUnavailableError();
+    if (!payment.externalReference) {
+      // Após a janela idempotente, repetir uma criação sem vínculo pode abrir outra sessão.
+      const canResume = now.getTime() - payment.createdAt.getTime() < gateway.creationRetryWindowMs;
+      if (!allowCreation) return { payment, checkoutUrl: null, canResume };
+      if (!canResume) throw new HostedCheckoutUnavailableError();
     }
 
     const redirect = payment.externalReference
@@ -127,6 +125,7 @@ export class HostedCheckoutService {
     return {
       payment: current,
       checkoutUrl: this.canCheckout(current, checkedAt) ? redirect.checkoutUrl : null,
+      canResume: false,
     };
   }
 

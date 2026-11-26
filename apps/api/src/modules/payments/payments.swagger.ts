@@ -16,8 +16,17 @@ import { ApplicationErrorResponseDto } from '../../errors/applicationErrorRespon
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
 import { HostedCheckoutResponseDto } from './dto/hostedCheckoutResponse.dto';
+import { PaymentCheckoutConfigurationResponseDto } from './dto/paymentCheckoutConfigurationResponse.dto';
 import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
 import { stripeWebhookSignatureHeader } from './stripe/stripeCheckout.constants';
+
+export function ApiGetPaymentCheckoutConfiguration() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Consulta o modo e os métodos habilitados no checkout do CUSTOMER' }),
+    ApiOkResponse({ type: PaymentCheckoutConfigurationResponseDto }),
+    ApiForbiddenResponse({ description: 'Papel sem acesso ao checkout do CUSTOMER.' }),
+  );
+}
 
 export function ApiStripeCheckoutWebhook() {
   return applyDecorators(

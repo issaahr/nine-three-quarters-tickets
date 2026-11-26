@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { useEffect, useRef } from 'react';
 
@@ -6,12 +6,22 @@ import { useAuth } from '../auth/hooks';
 import { ReservationDetail, ReservationStatus } from '../reservations/types';
 import {
   createCardPayment,
+  createHostedCheckout,
   createSimulatedPixPayment,
+  fetchCheckoutConfiguration,
+  fetchHostedCheckout,
   fetchSimulatedPixPayment,
+  resumeHostedCheckout,
   settleSimulatedPixPayment,
 } from './api';
 import { CardPaymentFormValues } from './schemas';
-import { Payment, PaymentMethod, PaymentStatus, SimulatedPixPayment } from './types';
+import {
+  HostedCheckoutPayment,
+  Payment,
+  PaymentMethod,
+  PaymentStatus,
+  SimulatedPixPayment,
+} from './types';
 
 interface UseCardPaymentOptions {
   reservationId: string;
@@ -23,6 +33,139 @@ interface UseSimulatedPixPaymentOptions extends UseCardPaymentOptions {
 }
 
 const pixSettlementIntervalMilliseconds = 2_000;
+const hostedCheckoutPollingIntervalMilliseconds = 5_000;
+
+export function useCheckoutConfiguration(enabled: boolean) {
+  const { user } = useAuth({ restoreSession: false });
+  return useQuery({
+    queryKey: ['payments', 'configuration', user?.id],
+    queryFn: ({ signal }) => fetchCheckoutConfiguration(signal),
+    enabled: enabled && Boolean(user),
+  });
+}
+
+interface HostedCheckoutSubmission {
+  method: PaymentMethod;
+  idempotencyKey: string;
+  previousPaymentId: string | undefined;
+}
+
+async function invalidateCheckoutResult(
+  queryClient: QueryClient,
+  reservationId: string,
+  eventId: string,
+): Promise<void> {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['reservations', 'detail', reservationId] }),
+    queryClient.invalidateQueries({ queryKey: ['reservations', 'active', eventId] }),
+    queryClient.invalidateQueries({ queryKey: ['tickets', 'owned'] }),
+    queryClient.invalidateQueries({ queryKey: ['events', 'detail', eventId] }),
+    queryClient.invalidateQueries({ queryKey: ['events', 'seat-map', eventId] }),
+  ]);
+}
+
+/**
+ * Reidrata a tentativa da API ao abrir a página e mantém a chave da primeira criação em falhas técnicas.
+ * A consulta apenas acompanha a conciliação do backend. Somente uma ação explícita cria ou retoma.
+ */
+export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOptions) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth({ restoreSession: false });
+  const submission = useRef<HostedCheckoutSubmission | null>(null);
+  const submitting = useRef(false);
+  const queryKey = ['payments', 'hosted', user?.id, reservationId] as const;
+  const paymentQuery = useQuery({
+    queryKey,
+    enabled: Boolean(user),
+    queryFn: ({ signal }) => fetchHostedCheckout(reservationId, signal),
+    refetchInterval: (query) =>
+      query.state.data?.status === PaymentStatus.Pending
+        ? hostedCheckoutPollingIntervalMilliseconds
+        : false,
+    retry: false,
+  });
+
+  const operation = useMutation({
+    mutationFn: (attempt: HostedCheckoutSubmission | string) =>
+      typeof attempt === 'string'
+        ? resumeHostedCheckout(reservationId, attempt)
+        : createHostedCheckout(reservationId, attempt.method, attempt.idempotencyKey),
+    onSuccess: async (payment) => {
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData(queryKey, payment);
+      submission.current = null;
+      if (payment.status === PaymentStatus.Pending && !payment.checkoutUrl && !payment.canResume) {
+        await queryClient.invalidateQueries({
+          queryKey: ['reservations', 'detail', reservationId],
+        });
+      }
+    },
+    onError: async () => {
+      // O POST pode ter persistido a tentativa antes de falhar. Releia antes de habilitar outra ação.
+      await Promise.all([
+        paymentQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['reservations', 'detail', reservationId] }),
+      ]);
+    },
+  });
+
+  const payment = paymentQuery.data;
+  const paymentId = payment?.id;
+  const paymentStatus = payment?.status;
+  useEffect(() => {
+    if (!paymentId || paymentStatus === PaymentStatus.Pending) return;
+
+    void invalidateCheckoutResult(queryClient, reservationId, eventId);
+  }, [eventId, paymentId, paymentStatus, queryClient, reservationId]);
+
+  const submit = async (
+    method: PaymentMethod,
+    resumePaymentId?: string,
+  ): Promise<HostedCheckoutPayment | undefined> => {
+    if (submitting.current || !paymentQuery.isSuccess) return;
+    const latest = queryClient.getQueryData<HostedCheckoutPayment | null>(queryKey);
+    if (latest === undefined || latest?.status === PaymentStatus.Approved) return;
+
+    submitting.current = true;
+    try {
+      if (resumePaymentId) {
+        // A URL exibida pode ter ficado obsoleta. O POST confirma a mesma tentativa antes de navegar.
+        if (
+          latest?.id !== resumePaymentId ||
+          latest.status !== PaymentStatus.Pending ||
+          (!latest.canResume && !latest.checkoutUrl)
+        ) {
+          return;
+        }
+        return await operation.mutateAsync(resumePaymentId);
+      }
+      if (latest?.status === PaymentStatus.Pending) return;
+      if (submission.current?.previousPaymentId !== latest?.id) submission.current = null;
+      submission.current ??= {
+        method,
+        idempotencyKey: crypto.randomUUID(),
+        previousPaymentId: latest?.id,
+      };
+      return await operation.mutateAsync(submission.current);
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  return {
+    submit,
+    payment,
+    paymentQuery,
+    isSubmitting: operation.isPending,
+    submissionError: operation.error,
+    uncertainMethod:
+      operation.isError &&
+      typeof operation.variables !== 'string' &&
+      operation.variables?.previousPaymentId === paymentId
+        ? operation.variables?.method
+        : undefined,
+  };
+}
 
 /**
  * Mantém a chave estável em retry técnico e delega a idempotência definitiva à API.
@@ -153,13 +296,7 @@ export function useSimulatedPixPayment({
   useEffect(() => {
     if (!payment || payment.status === PaymentStatus.Pending) return;
 
-    void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['reservations', 'detail', reservationId] }),
-      queryClient.invalidateQueries({ queryKey: ['reservations', 'active', eventId] }),
-      queryClient.invalidateQueries({ queryKey: ['tickets', 'owned'] }),
-      queryClient.invalidateQueries({ queryKey: ['events', 'detail', eventId] }),
-      queryClient.invalidateQueries({ queryKey: ['events', 'seat-map', eventId] }),
-    ]);
+    void invalidateCheckoutResult(queryClient, reservationId, eventId);
   }, [eventId, payment, queryClient, reservationId]);
 
   const create = async (): Promise<void> => {

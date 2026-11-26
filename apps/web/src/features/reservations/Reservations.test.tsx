@@ -3,18 +3,30 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from '@/App';
 import { UserRole } from '../auth/types';
 import { AdmissionMode, EventCategory, EventStatus } from '../events/types';
-import { PaymentMethod, PaymentStatus, SimulatedPixPayment } from '../payments/types';
+import { navigateToHostedCheckout } from '../payments/hostedCheckoutNavigation';
+import {
+  HostedCheckoutPayment,
+  PaymentCheckoutMode,
+  PaymentMethod,
+  PaymentStatus,
+  SimulatedPixPayment,
+} from '../payments/types';
 import { server } from '@/test/server';
 
 const apiUrl = 'http://api.test';
 const reservationId = 'reservation-checkout';
 const eventId = 'event-checkout';
 const pixPath = `${apiUrl}/reservations/${reservationId}/payments/pix`;
+const hostedPath = `${apiUrl}/reservations/${reservationId}/payments/hosted`;
+const configurationPath = `${apiUrl}/payments/configuration`;
+const checkoutUrl = 'https://checkout.stripe.com/fixture';
+
+vi.mock('../payments/hostedCheckoutNavigation', () => ({ navigateToHostedCheckout: vi.fn() }));
 const eventDetail = {
   id: eventId,
   title: 'Sessão reservada',
@@ -48,7 +60,7 @@ const pendingPix: SimulatedPixPayment = {
   qrCodePayload: 'ntq:pix:simulado:pix-1',
 };
 
-function mockReservationStatus(getStatus: () => 'ACTIVE' | 'CONFIRMED' | 'EXPIRED') {
+function mockReservationStatus(getStatus: () => 'ACTIVE' | 'CONFIRMED' | 'EXPIRED' | 'CANCELLED') {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   server.use(
     http.get(`${apiUrl}/reservations/${reservationId}`, () => {
@@ -59,7 +71,7 @@ function mockReservationStatus(getStatus: () => 'ACTIVE' | 'CONFIRMED' | 'EXPIRE
         status,
         expiresAt,
         confirmedAt: status === 'CONFIRMED' ? '2030-08-01T12:00:00.000Z' : null,
-        cancelledAt: null,
+        cancelledAt: status === 'CANCELLED' ? '2030-08-01T12:00:00.000Z' : null,
         items: reservationItems,
       });
     }),
@@ -78,7 +90,7 @@ function createPaymentResponse(status: 'APPROVED' | 'DECLINED' | 'FAILED') {
   };
 }
 
-function renderCheckout() {
+function renderCheckout(search = '') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -89,7 +101,7 @@ function renderCheckout() {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/customer/reservations/${reservationId}`]}>
+      <MemoryRouter initialEntries={[`/customer/reservations/${reservationId}${search}`]}>
         <App />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -103,7 +115,14 @@ async function findReadyCardPayButton() {
 }
 
 beforeEach(() => {
+  vi.mocked(navigateToHostedCheckout).mockClear();
   server.use(
+    http.get(configurationPath, () =>
+      HttpResponse.json({
+        mode: PaymentCheckoutMode.Simulated,
+        methods: [PaymentMethod.Card, PaymentMethod.Pix],
+      }),
+    ),
     http.get(pixPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
     http.get(`${apiUrl}/events/${eventId}`, () => HttpResponse.json(eventDetail)),
     http.get(`${apiUrl}/events/${eventId}/seats`, () =>
@@ -113,6 +132,210 @@ beforeEach(() => {
       ]),
     ),
   );
+});
+
+describe('checkout hospedado', () => {
+  const pendingPayment: HostedCheckoutPayment = {
+    id: 'hosted-payment',
+    method: PaymentMethod.Pix,
+    reservationId,
+    status: PaymentStatus.Pending,
+    amountCents: 5180,
+    approvedAt: null,
+    failedAt: null,
+    checkoutUrl: null,
+    canResume: false,
+  };
+
+  function enableHosted(methods = [PaymentMethod.Card, PaymentMethod.Pix]) {
+    server.use(
+      http.get(configurationPath, () =>
+        HttpResponse.json({ mode: PaymentCheckoutMode.Hosted, methods }),
+      ),
+    );
+  }
+
+  beforeEach(() => {
+    enableHosted();
+    mockReservationStatus(() => 'ACTIVE');
+  });
+
+  it('oferece apenas os métodos habilitados e envia só o método para abrir o checkout', async () => {
+    enableHosted([PaymentMethod.Pix]);
+    const starts: Array<{ body: unknown; key: string | null }> = [];
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
+      http.post(hostedPath, async ({ request }) => {
+        starts.push({ body: await request.json(), key: request.headers.get('idempotency-key') });
+        return HttpResponse.json({ ...pendingPayment, checkoutUrl });
+      }),
+    );
+
+    renderCheckout();
+    const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
+    await waitFor(() => expect(action).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Pix' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Cartão de crédito' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('timer', { name: 'Tempo restante da reserva' })).toBeInTheDocument();
+
+    await userEvent.dblClick(action);
+
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(starts).toEqual([{ body: { method: PaymentMethod.Pix }, key: expect.any(String) }]);
+  });
+
+  it('retoma a tentativa órfã do GET usando o ID local e sem iniciar outro pagamento', async () => {
+    const start = vi.fn();
+    const resume = vi.fn();
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ ...pendingPayment, canResume: true })),
+      http.post(hostedPath, () => {
+        start();
+        return new HttpResponse(null, { status: 500 });
+      }),
+      http.post(`${hostedPath}/${pendingPayment.id}/resume`, () => {
+        resume();
+        return HttpResponse.json({ ...pendingPayment, checkoutUrl });
+      }),
+    );
+
+    renderCheckout('?status=paid&paymentId=unauthorized');
+    const action = await screen.findByRole('button', { name: 'Retomar pagamento' });
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    expect(screen.queryByText('Pagamento confirmado')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pix' })).toBeDisabled();
+    await userEvent.click(action);
+
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('reabre a sessão existente somente com a URL revalidada pela API', async () => {
+    const currentUrl = 'https://checkout.stripe.com/revalidated';
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ ...pendingPayment, checkoutUrl })),
+      http.post(`${hostedPath}/${pendingPayment.id}/resume`, () =>
+        HttpResponse.json({ ...pendingPayment, checkoutUrl: currentUrl }),
+      ),
+    );
+
+    renderCheckout();
+    const action = await screen.findByRole('button', { name: 'Retomar pagamento' });
+
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+    await userEvent.click(action);
+    await waitFor(() =>
+      expect(navigateToHostedCheckout).toHaveBeenCalledExactlyOnceWith(currentUrl),
+    );
+  });
+
+  it('descarta a URL anterior se o hold expirar antes de retomar a sessão', async () => {
+    let isExpired = false;
+    mockReservationStatus(() => (isExpired ? 'EXPIRED' : 'ACTIVE'));
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ ...pendingPayment, checkoutUrl })),
+      http.post(`${hostedPath}/${pendingPayment.id}/resume`, () => {
+        isExpired = true;
+        return HttpResponse.json(pendingPayment);
+      }),
+    );
+
+    renderCheckout();
+    await userEvent.click(await screen.findByRole('button', { name: 'Retomar pagamento' }));
+
+    expect(await screen.findByRole('heading', { name: 'Sua reserva expirou' })).toBeInTheDocument();
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+  });
+
+  it('aguarda uma sessão fechada e exibe ingressos somente após a confirmação da API', async () => {
+    let approved = false;
+    mockReservationStatus(() => (approved ? 'CONFIRMED' : 'ACTIVE'));
+    server.use(
+      http.get(hostedPath, () =>
+        HttpResponse.json(
+          approved
+            ? {
+                ...pendingPayment,
+                status: PaymentStatus.Approved,
+                approvedAt: '2030-08-01T12:00:00.000Z',
+              }
+            : pendingPayment,
+        ),
+      ),
+    );
+
+    renderCheckout('?status=paid');
+    expect(await screen.findByText('Aguardando confirmação do pagamento.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retomar pagamento' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Ver meus ingressos' })).not.toBeInTheDocument();
+    approved = true;
+    await userEvent.click(screen.getByRole('button', { name: 'Atualizar situação do pagamento' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Pagamento confirmado' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver meus ingressos' })).toBeInTheDocument();
+    expect(navigateToHostedCheckout).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza a chave e mantém o método após uma falha de transporte sem tentativa encontrada', async () => {
+    const attempts: Array<{ method: PaymentMethod; key: string | null }> = [];
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
+      http.post(hostedPath, async ({ request }) => {
+        const { method } = (await request.json()) as { method: PaymentMethod };
+        attempts.push({ method, key: request.headers.get('idempotency-key') });
+        return attempts.length === 1
+          ? new HttpResponse(null, { status: 503 })
+          : HttpResponse.json({ ...pendingPayment, method, checkoutUrl });
+      }),
+    );
+
+    renderCheckout();
+    const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
+    await waitFor(() => expect(action).toBeEnabled());
+    await userEvent.click(action);
+    expect(
+      await screen.findByText('Não foi possível abrir o checkout. Tente novamente.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Pix' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Ir para o pagamento' }));
+
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(attempts).toEqual([
+      { method: PaymentMethod.Card, key: expect.any(String) },
+      attempts[0],
+    ]);
+  });
+
+  it('permite escolher outro método após falha terminal reconhecida pela API', async () => {
+    const start = vi.fn();
+    server.use(
+      http.get(hostedPath, () =>
+        HttpResponse.json({ ...pendingPayment, status: PaymentStatus.Failed }),
+      ),
+      http.post(hostedPath, async ({ request }) => {
+        const data = await request.json();
+        start(data);
+        return HttpResponse.json({ ...pendingPayment, id: 'fresh-attempt', checkoutUrl });
+      }),
+    );
+
+    renderCheckout();
+    expect(
+      await screen.findByText('O pagamento não foi concluído. Você pode tentar novamente.'),
+    ).toBeInTheDocument();
+    const pix = screen.getByRole('button', { name: 'Pix' });
+    expect(pix).toBeEnabled();
+    await userEvent.click(pix);
+    await userEvent.click(screen.getByRole('button', { name: 'Ir para o pagamento' }));
+
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(start).toHaveBeenCalledExactlyOnceWith({ method: PaymentMethod.Pix });
+  });
 });
 
 describe('checkout de Reservation', () => {
@@ -366,6 +589,46 @@ describe('checkout de Reservation', () => {
 });
 
 describe('PIX simulado no checkout', () => {
+  it('continua consultando o PIX pendente quando o cancelamento oculta o painel', async () => {
+    let cancelled = false;
+    const settlement = vi.fn();
+    mockReservationStatus(() => (cancelled ? 'CANCELLED' : 'ACTIVE'));
+    server.use(
+      http.get(pixPath, () => HttpResponse.json(pendingPix)),
+      http.post(`${pixPath}/${pendingPix.id}/settle`, () => {
+        settlement(cancelled);
+        return HttpResponse.json(
+          cancelled ? { ...pendingPix, status: PaymentStatus.Failed } : pendingPix,
+        );
+      }),
+      http.post(`${apiUrl}/reservations/${reservationId}/cancel`, () => {
+        cancelled = true;
+        return HttpResponse.json({
+          id: reservationId,
+          eventId,
+          status: 'CANCELLED',
+          expiresAt: new Date().toISOString(),
+          confirmedAt: null,
+          cancelledAt: new Date().toISOString(),
+          items: reservationItems,
+        });
+      }),
+    );
+
+    renderCheckout();
+    await screen.findByRole('img', { name: 'Código QR do PIX simulado' });
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar reserva' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar cancelamento' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sua reserva foi cancelada' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('img', { name: 'Código QR do PIX simulado' }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(settlement).toHaveBeenCalledWith(true), { timeout: 4_000 });
+  });
+
   it('gera o QR e retoma a tentativa após reload até a confirmação autoritativa', async () => {
     const user = userEvent.setup();
     let persisted: SimulatedPixPayment | null = null;

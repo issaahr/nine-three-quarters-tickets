@@ -29,6 +29,7 @@ export interface SimulatedPixPaymentInitiation {
 export interface HostedCheckout {
   payment: Payment;
   checkoutUrl: string | null;
+  canResume: boolean;
 }
 
 /** Projeção mínima retornada pelo PostgreSQL para cada EventSeat vendido. */

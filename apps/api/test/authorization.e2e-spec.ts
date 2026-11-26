@@ -13,6 +13,8 @@ import {
   showCatalogProviderToken,
 } from '../src/modules/catalog/catalog.constants';
 import { UserRole } from '../src/modules/users/userRole.enum';
+import { PaymentCheckoutMode } from '../src/modules/payments/paymentCheckoutMode.enum';
+import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 
 @Controller('test/authorization')
 class AuthorizationTestController {
@@ -74,6 +76,25 @@ describe('Autenticação e autorização', () => {
 
     return cookie.split(';', 1)[0];
   }
+
+  it('divulga somente modo e métodos simulados ao CUSTOMER autenticado', async () => {
+    await request(app.getHttpServer()).get('/payments/configuration').expect(401);
+    const organizerCookie = await login('organizer.demo@ntq.local');
+    await request(app.getHttpServer())
+      .get('/payments/configuration')
+      .set('Cookie', organizerCookie)
+      .expect(403);
+    const customerCookie = await login('customer.one.demo@ntq.local');
+    const result = await request(app.getHttpServer())
+      .get('/payments/configuration')
+      .set('Cookie', customerCookie)
+      .expect('Cache-Control', 'private, no-store')
+      .expect(200);
+    expect(result.body).toEqual({
+      mode: PaymentCheckoutMode.Simulated,
+      methods: [PaymentMethod.Card, PaymentMethod.Pix],
+    });
+  });
 
   it('retorna 401 quando o cookie está ausente', async () => {
     const response = await request(app.getHttpServer())

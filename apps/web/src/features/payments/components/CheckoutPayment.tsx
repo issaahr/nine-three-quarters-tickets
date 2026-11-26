@@ -1,12 +1,13 @@
-import { CreditCard, QrCode } from 'lucide-react';
 import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { useReservationMutations } from '../../reservations/hooks';
-import { useCardPayment, useSimulatedPixPayment } from '../hooks';
-import { PaymentMethod, PaymentStatus } from '../types';
+import { useCardPayment, useCheckoutConfiguration, useSimulatedPixPayment } from '../hooks';
+import { PaymentCheckoutMode, PaymentMethod, PaymentStatus } from '../types';
 import { CardPaymentForm } from './CardPaymentForm';
+import { CheckoutPaymentMethods } from './CheckoutPaymentMethods';
+import { HostedCheckoutPaymentPanel } from './HostedCheckoutPaymentPanel';
 import { SimulatedPixPanel } from './SimulatedPixPanel';
+import { useCheckoutCancellation } from './useCheckoutCancellation';
 
 interface CheckoutPaymentProps {
   reservationId: string;
@@ -16,146 +17,117 @@ interface CheckoutPaymentProps {
   isGeneralAdmission: boolean;
 }
 
-export function CheckoutPayment({
-  reservationId,
-  eventId,
-  totalPriceCents,
-  isReservationActive,
-  isGeneralAdmission,
-}: CheckoutPaymentProps) {
-  const card = useCardPayment({ reservationId, eventId });
-  const pix = useSimulatedPixPayment({ reservationId, eventId, isReservationActive });
-  const { cancel, cancelError, isCancelling } = useReservationMutations(eventId);
-  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>();
-  const [isCancellationOpen, setIsCancellationOpen] = useState(false);
-  const isPixApproved = pix.payment?.status === PaymentStatus.Approved;
-  const hasLivePix = pix.payment?.status === PaymentStatus.Pending || isPixApproved;
-  const isCardInProgress = card.isPaying || card.payment?.status === PaymentStatus.Pending;
-  const method = hasLivePix
-    ? PaymentMethod.Pix
-    : (selectedMethod ?? (pix.payment ? PaymentMethod.Pix : PaymentMethod.Card));
-  const canCancel = !isCardInProgress && !pix.isCreating && !isCancelling && !isPixApproved;
-  const canChangeMethod = !hasLivePix && canCancel && !isCancellationOpen;
-  const isPaymentDisabled = isCancelling || isCancellationOpen;
+interface SimulatedCheckoutPaymentProps extends CheckoutPaymentProps {
+  methods: PaymentMethod[];
+}
 
-  if (!isReservationActive) {
+export function CheckoutPayment(props: CheckoutPaymentProps) {
+  const configuration = useCheckoutConfiguration(props.isReservationActive);
+  // O PIX simulado pode concluir uma tentativa pendente enquanto a reserva já está inativa.
+  if (!props.isReservationActive && configuration.data?.mode !== PaymentCheckoutMode.Simulated) {
     return null;
   }
 
-  const confirmCancellation = async (): Promise<void> => {
-    try {
-      await cancel(reservationId);
-      setIsCancellationOpen(false);
-    } catch {
-      // O erro da mutation permanece disponível para uma nova tentativa de cancelamento.
-    }
-  };
-
-  const cancelAction = (
-    <Button
-      type="button"
-      variant="outline"
-      disabled={!canCancel}
-      onClick={() => setIsCancellationOpen(true)}
-      className="h-auto rounded-[4px] border-border py-3 text-sm font-semibold"
-    >
-      Cancelar reserva
-    </Button>
-  );
-
   return (
-    <section className="mt-8 border-t border-border pt-7" aria-labelledby="payment-heading">
+    <section
+      className="mt-8 border-t border-border pt-7"
+      aria-labelledby="payment-heading"
+      hidden={!props.isReservationActive}
+    >
       <h2 id="payment-heading" className="m-0 font-heading text-2xl font-semibold">
         Pagamento
       </h2>
-      <div
-        role="group"
-        aria-label="Método de pagamento"
-        className="mt-5 grid gap-3 min-[420px]:grid-cols-2"
-      >
-        <Button
-          type="button"
-          variant={method === PaymentMethod.Card ? 'default' : 'outline'}
-          aria-pressed={method === PaymentMethod.Card}
-          disabled={!canChangeMethod}
-          onClick={() => setSelectedMethod(PaymentMethod.Card)}
-          className="h-auto rounded-[4px] py-3"
-        >
-          <CreditCard aria-hidden="true" />
-          Cartão de crédito
-        </Button>
-        <Button
-          type="button"
-          variant={method === PaymentMethod.Pix ? 'default' : 'outline'}
-          aria-pressed={method === PaymentMethod.Pix}
-          disabled={!canChangeMethod}
-          onClick={() => setSelectedMethod(PaymentMethod.Pix)}
-          className="h-auto rounded-[4px] py-3"
-        >
-          <QrCode aria-hidden="true" />
-          PIX simulado
-        </Button>
-      </div>
-
-      {pix.isChecking && (
+      {configuration.isPending && (
         <p role="status" className="mb-0 mt-4 text-sm text-muted-foreground">
-          Consultando pagamento em andamento...
+          Carregando opções de pagamento...
         </p>
       )}
-
-      {method === PaymentMethod.Card ? (
-        <CardPaymentForm
-          totalPriceCents={totalPriceCents}
-          paymentFlow={card}
-          cancelAction={cancelAction}
-          disabled={isPaymentDisabled || pix.isChecking}
-        />
-      ) : (
-        <SimulatedPixPanel
-          paymentFlow={pix}
-          cancelAction={cancelAction}
-          disabled={isPaymentDisabled}
-        />
-      )}
-
-      {isCancellationOpen && (
-        <div className="mt-4 border border-border bg-muted p-4" role="alert">
-          <p className="m-0 text-sm leading-6">
-            {isGeneralAdmission
-              ? 'Cancelar esta reserva libera os ingressos imediatamente. Deseja continuar?'
-              : 'Cancelar esta reserva libera os assentos imediatamente. Deseja continuar?'}
+      {configuration.isError && (
+        <div className="mt-4">
+          <p role="alert" className="text-sm text-destructive">
+            Não foi possível carregar as opções de pagamento.
           </p>
-          <div className="mt-3 flex justify-end gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsCancellationOpen(false)}
-              disabled={isCancelling}
-              className="rounded-[4px]"
-            >
-              Voltar
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => void confirmCancellation()}
-              disabled={!canCancel}
-              className="rounded-[4px]"
-            >
-              {isCancelling ? 'Cancelando...' : 'Confirmar cancelamento'}
-            </Button>
-          </div>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={configuration.isFetching}
+            onClick={() => void configuration.refetch()}
+          >
+            Tentar novamente
+          </Button>
         </div>
       )}
-      {cancelError && (
-        <p role="alert" className="mb-0 mt-4 text-sm text-destructive">
-          Não foi possível cancelar a reserva. Tente novamente.
-        </p>
+      {configuration.isSuccess && configuration.data.mode === PaymentCheckoutMode.Simulated && (
+        <SimulatedCheckoutPayment {...props} methods={configuration.data.methods} />
+      )}
+      {configuration.isSuccess && configuration.data.mode === PaymentCheckoutMode.Hosted && (
+        <HostedCheckoutPaymentPanel {...props} methods={configuration.data.methods} />
       )}
       <p className="mb-0 mt-4 text-center text-xs leading-5 text-muted-foreground">
         A compra pode ser cancelada integralmente em até sete dias da aprovação do pagamento, desde
         que o evento ainda não tenha começado e nenhum ingresso tenha sido utilizado.
       </p>
     </section>
+  );
+}
+
+function SimulatedCheckoutPayment({
+  reservationId,
+  eventId,
+  totalPriceCents,
+  isReservationActive,
+  isGeneralAdmission,
+  methods,
+}: SimulatedCheckoutPaymentProps) {
+  const card = useCardPayment({ reservationId, eventId });
+  const pix = useSimulatedPixPayment({ reservationId, eventId, isReservationActive });
+  const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>();
+  const isPixApproved = pix.payment?.status === PaymentStatus.Approved;
+  const hasLivePix = pix.payment?.status === PaymentStatus.Pending || isPixApproved;
+  const isCardInProgress = card.isPaying || card.payment?.status === PaymentStatus.Pending;
+  const preferredMethod = hasLivePix
+    ? PaymentMethod.Pix
+    : (selectedMethod ?? (pix.payment ? PaymentMethod.Pix : PaymentMethod.Card));
+  const method = methods.includes(preferredMethod) ? preferredMethod : methods[0];
+  const hasPaymentInProgress = isCardInProgress || pix.isCreating || isPixApproved;
+  const cancellation = useCheckoutCancellation({
+    reservationId,
+    eventId,
+    isGeneralAdmission,
+    disabled: hasPaymentInProgress,
+  });
+  if (!isReservationActive) return null;
+
+  return (
+    <>
+      <CheckoutPaymentMethods
+        methods={methods}
+        selectedMethod={method}
+        onSelect={setSelectedMethod}
+        disabled={hasLivePix || hasPaymentInProgress || cancellation.isBlockingPayment}
+        simulated
+      />
+      {pix.isChecking && (
+        <p role="status" className="mb-0 mt-4 text-sm text-muted-foreground">
+          Consultando pagamento em andamento...
+        </p>
+      )}
+      {method === PaymentMethod.Card && (
+        <CardPaymentForm
+          totalPriceCents={totalPriceCents}
+          paymentFlow={card}
+          cancelAction={cancellation.action}
+          disabled={cancellation.isBlockingPayment || pix.isChecking}
+        />
+      )}
+      {method === PaymentMethod.Pix && (
+        <SimulatedPixPanel
+          paymentFlow={pix}
+          cancelAction={cancellation.action}
+          disabled={cancellation.isBlockingPayment}
+        />
+      )}
+      {cancellation.confirmation}
+    </>
   );
 }
