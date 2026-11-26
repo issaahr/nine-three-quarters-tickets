@@ -1,6 +1,8 @@
 export enum StripeCheckoutObject {
   Session = 'checkout.session',
   PaymentIntent = 'payment_intent',
+  Refund = 'refund',
+  List = 'list',
 }
 
 export enum StripeCheckoutMode {
@@ -34,4 +36,12 @@ export enum StripeCheckoutEventType {
   AsyncPaymentSucceeded = 'checkout.session.async_payment_succeeded',
   AsyncPaymentFailed = 'checkout.session.async_payment_failed',
   Expired = 'checkout.session.expired',
+}
+
+export enum StripeRefundStatus {
+  Pending = 'pending',
+  RequiresAction = 'requires_action',
+  Succeeded = 'succeeded',
+  Failed = 'failed',
+  Canceled = 'canceled',
 }

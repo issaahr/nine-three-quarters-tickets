@@ -6,6 +6,8 @@ import { AdmissionMode } from '../events/admissionMode.enum';
 import { Event } from '../events/event.entity';
 import { EventStatus } from '../events/eventStatus.enum';
 import { SeatRealtimeGateway } from '../realtime/seatRealtime.gateway';
+import { Refund } from '../refunds/refund.entity';
+import { RefundStatus } from '../refunds/refundStatus.enum';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { TicketsService } from '../tickets/tickets.service';
@@ -64,7 +66,7 @@ export class PaymentFinalizationService {
 
   /**
    * Concilia um resultado consultado fora da transação. Uma cobrança tardia deixa a referência
-   * persistida junto à falha local para que o estorno possa ser tratado depois.
+   * e a intenção de estorno persistidas junto à falha local.
    */
   public finalizeHostedPayment(observation: HostedPaymentObservation): Promise<Payment> {
     return this.applyOutcome(
@@ -161,8 +163,10 @@ export class PaymentFinalizationService {
             payment.status = PaymentStatus.Failed;
             payment.failedAt = now;
             this.logger.warn(`Payment ${payment.id} não pôde confirmar a Reservation`);
+            const failedPayment = await paymentsRepository.save(payment);
+            if (hosted) await this.ensureHostedRefund(manager, failedPayment);
             return {
-              payment: await paymentsRepository.save(payment),
+              payment: failedPayment,
               eventId: null,
               soldEventSeatIds: [],
             };
@@ -278,9 +282,13 @@ export class PaymentFinalizationService {
         payment.externalPaymentReference = outcome.externalPaymentReference;
         return null;
       }
-      if (payment.status === PaymentStatus.Failed && !payment.externalPaymentReference) {
-        payment.externalPaymentReference = outcome.externalPaymentReference;
-        return payments.save(payment);
+      if (payment.status === PaymentStatus.Failed) {
+        if (!payment.externalPaymentReference) {
+          payment.externalPaymentReference = outcome.externalPaymentReference;
+          payment = await payments.save(payment);
+        }
+        await this.ensureHostedRefund(manager, payment);
+        return payment;
       }
     } else if (
       outcome.status === HostedPaymentOutcomeStatus.Closed &&
@@ -292,6 +300,21 @@ export class PaymentFinalizationService {
     }
 
     return needsLink ? payments.save(payment) : payment;
+  }
+
+  /**
+   * Guarda a intenção no mesmo commit da falha local. O lock de Payment serializa todos os caminhos
+   * que podem registrar estorno para a cobrança.
+   */
+  private async ensureHostedRefund(manager: EntityManager, payment: Payment): Promise<void> {
+    if (!payment.externalPaymentReference || payment.amountCents <= 0) return;
+    const refunds = manager.getRepository(Refund);
+    if (await refunds.existsBy({ paymentId: payment.id })) return;
+    await refunds.insert({
+      paymentId: payment.id,
+      amountCents: payment.amountCents,
+      status: RefundStatus.Pending,
+    });
   }
 
   private isPurchaseUnavailable(

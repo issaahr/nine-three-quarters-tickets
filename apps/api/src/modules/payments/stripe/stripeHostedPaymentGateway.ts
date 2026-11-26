@@ -1,9 +1,12 @@
+import { RefundStatus } from '../../refunds/refundStatus.enum';
 import { HostedCheckoutUnavailableError } from '../errors/hostedCheckoutUnavailable.error';
 import {
   HostedPaymentGateway,
   HostedPaymentOutcome,
   HostedPaymentRedirect,
   HostedPaymentRequest,
+  HostedRefundOutcome,
+  HostedRefundRequest,
 } from '../hostedPaymentGateway.interfaces';
 import { HostedPaymentOutcomeStatus } from '../hostedPaymentOutcomeStatus.enum';
 import { PaymentMethod } from '../paymentMethod.enum';
@@ -16,15 +19,20 @@ import {
   StripeCheckoutSessionStatus,
   StripePaymentMethod,
   StripePaymentIntentStatus,
+  StripeRefundStatus,
 } from './stripeCheckout.enums';
 import { StripeCheckoutSession } from './stripeCheckout.interfaces';
 
 const stripeApiVersion = '2026-11-18.endive';
-const stripeCheckoutSessionsUrl = 'https://api.stripe.com/v1/checkout/sessions';
+const stripeApiUrl = 'https://api.stripe.com/v1';
+const stripeCheckoutSessionsUrl = `${stripeApiUrl}/checkout/sessions`;
+const stripeRefundsUrl = `${stripeApiUrl}/refunds`;
+const stripeRefundPageSize = 100;
 const stripeCheckoutOrigin = 'https://checkout.stripe.com';
 const stripeCheckoutUiMode = 'hosted_page';
 const stripeRequestTimeoutMs = 10_000;
 const stripePixExpirationSeconds = 600;
+const stripeIdempotencyRetentionMs = 24 * 60 * 60 * 1000;
 // Mantém margem para a repetição chegar à Stripe antes do limite de retenção de 24 horas.
 const stripeCreationRetryWindowMs = 23 * 60 * 60 * 1000;
 const stripeCheckoutProductName = 'Ingressos 9¾ Tickets';
@@ -34,6 +42,7 @@ const stripeCheckoutAdaptivePricingEnabled = false;
 export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   public readonly provider = PaymentProvider.Stripe;
   public readonly creationRetryWindowMs = stripeCreationRetryWindowMs;
+  public readonly refundIdempotencyRetentionMs = stripeIdempotencyRetentionMs;
 
   public constructor(private readonly secretKey: string) {}
 
@@ -89,7 +98,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     externalReference: string,
   ): Promise<HostedPaymentRedirect> {
     const session = await this.requestSession(
-      `${stripeCheckoutSessionsUrl}/${encodeURIComponent(externalReference)}`,
+      this.checkoutSessionUrl(externalReference),
       request,
       {},
       externalReference,
@@ -107,7 +116,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   ): Promise<HostedPaymentOutcome> {
     const query = new URLSearchParams({ 'expand[]': StripeCheckoutObject.PaymentIntent });
     const session = await this.requestSession(
-      `${stripeCheckoutSessionsUrl}/${encodeURIComponent(externalReference)}?${query}`,
+      `${this.checkoutSessionUrl(externalReference)}?${query}`,
       request,
       {},
       externalReference,
@@ -142,7 +151,101 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     )
       return { status: HostedPaymentOutcomeStatus.Closed };
 
-    return { status: HostedPaymentOutcomeStatus.Pending };
+    return {
+      status: HostedPaymentOutcomeStatus.Pending,
+      canExpire: session.status === StripeCheckoutSessionStatus.Open,
+    };
+  }
+
+  /**
+   * Relê o resultado porque a sessão pode já ter sido encerrada ou paga enquanto expirava.
+   * Uma falha do POST, sozinha, não determina se o provedor pode cobrar.
+   */
+  public async expireCheckout(
+    request: HostedPaymentRequest,
+    externalReference: string,
+  ): Promise<HostedPaymentOutcome> {
+    try {
+      await this.requestSession(
+        `${this.checkoutSessionUrl(externalReference)}/expire`,
+        request,
+        { method: 'POST' },
+        externalReference,
+      );
+    } catch (error) {
+      if (!(error instanceof HostedCheckoutUnavailableError)) throw error;
+    }
+    return this.retrievePaymentOutcome(request, externalReference);
+  }
+
+  public async createRefund(
+    request: HostedRefundRequest,
+    submissionStartedAt: Date,
+  ): Promise<HostedRefundOutcome> {
+    const payload = await this.requestStripe(stripeRefundsUrl, {
+      method: 'POST',
+      headers: { 'Idempotency-Key': `refund-${request.refundId}-${submissionStartedAt.getTime()}` },
+      body: new URLSearchParams({
+        payment_intent: request.externalPaymentReference,
+        amount: String(request.amountCents),
+        'metadata[refundId]': request.refundId,
+      }),
+    });
+    return this.readRefund(payload, request);
+  }
+
+  /** O metadado identifica a mesma intenção mesmo após a retenção da chave idempotente. */
+  public async findRefund(request: HostedRefundRequest): Promise<HostedRefundOutcome | null> {
+    const query = new URLSearchParams({
+      payment_intent: request.externalPaymentReference,
+      limit: String(stripeRefundPageSize),
+    });
+    const seenCursors = new Set<string>();
+    while (true) {
+      const page = this.record(await this.requestStripe(`${stripeRefundsUrl}?${query}`));
+      if (
+        !page ||
+        page.object !== StripeCheckoutObject.List ||
+        typeof page.has_more !== 'boolean' ||
+        !Array.isArray(page.data)
+      ) {
+        throw new HostedCheckoutUnavailableError();
+      }
+      let cursor: string | undefined;
+      for (const item of page.data as unknown[]) {
+        const refund = this.record(item);
+        if (
+          !refund ||
+          refund.object !== StripeCheckoutObject.Refund ||
+          refund.livemode === true ||
+          !this.hasOpaqueId(refund.id) ||
+          refund.payment_intent !== request.externalPaymentReference ||
+          refund.currency !== request.currency.toLowerCase()
+        ) {
+          throw new HostedCheckoutUnavailableError();
+        }
+        if (this.record(refund.metadata)?.refundId === request.refundId) {
+          return this.readRefund(refund, request);
+        }
+        cursor = refund.id;
+      }
+      if (!page.has_more) return null;
+      if (cursor === undefined || seenCursors.has(cursor)) {
+        throw new HostedCheckoutUnavailableError();
+      }
+      seenCursors.add(cursor);
+      query.set('starting_after', cursor);
+    }
+  }
+
+  public async retrieveRefund(
+    request: HostedRefundRequest,
+    externalReference: string,
+  ): Promise<HostedRefundOutcome> {
+    const payload = await this.requestStripe(
+      `${stripeRefundsUrl}/${encodeURIComponent(externalReference)}`,
+    );
+    return this.readRefund(payload, request, externalReference);
   }
 
   /**
@@ -158,26 +261,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     init: RequestInit,
     expectedReference?: string,
   ): Promise<StripeCheckoutSession> {
-    let data: unknown;
-    try {
-      const headers = new Headers(init.headers);
-      headers.set('Authorization', `Bearer ${this.secretKey}`);
-      headers.set('Stripe-Version', stripeApiVersion);
-      // A credencial deve permanecer no endpoint da Stripe, mesmo se a resposta indicar um redirecionamento.
-      const response = await fetch(endpoint, {
-        ...init,
-        headers,
-        redirect: 'error',
-        signal: AbortSignal.timeout(stripeRequestTimeoutMs),
-      });
-      if (!response.ok) throw new HostedCheckoutUnavailableError();
-      data = await response.json();
-    } catch {
-      // A falha de comunicação pode ocorrer depois da criação remota. A tentativa local segue recuperável.
-      throw new HostedCheckoutUnavailableError();
-    }
-
-    const session = this.record(data);
+    const session = this.record(await this.requestStripe(endpoint, init));
     if (
       !session ||
       session.object !== StripeCheckoutObject.Session ||
@@ -205,6 +289,67 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
       paymentIntent: session.payment_intent,
       url: session.url,
     };
+  }
+
+  /** Mantém credenciais no endpoint original e transforma falhas de transporte em resultado recuperável. */
+  private async requestStripe(endpoint: string, init: RequestInit = {}): Promise<unknown> {
+    try {
+      const headers = new Headers(init.headers);
+      headers.set('Authorization', `Bearer ${this.secretKey}`);
+      headers.set('Stripe-Version', stripeApiVersion);
+      const response = await fetch(endpoint, {
+        ...init,
+        headers,
+        redirect: 'error',
+        signal: AbortSignal.timeout(stripeRequestTimeoutMs),
+      });
+      if (!response.ok) throw new HostedCheckoutUnavailableError();
+      return await response.json();
+    } catch {
+      throw new HostedCheckoutUnavailableError();
+    }
+  }
+
+  /** O estorno só pode avançar se pertencer à mesma cobrança, intenção, moeda e valor integral. */
+  private readRefund(
+    payload: unknown,
+    request: HostedRefundRequest,
+    expectedReference?: string,
+  ): HostedRefundOutcome {
+    const refund = this.record(payload);
+    if (
+      !refund ||
+      refund.object !== StripeCheckoutObject.Refund ||
+      refund.livemode === true ||
+      !this.hasOpaqueId(refund.id) ||
+      (expectedReference !== undefined && refund.id !== expectedReference) ||
+      refund.payment_intent !== request.externalPaymentReference ||
+      this.record(refund.metadata)?.refundId !== request.refundId ||
+      refund.amount !== request.amountCents ||
+      refund.currency !== request.currency.toLowerCase()
+    )
+      throw new HostedCheckoutUnavailableError();
+
+    switch (refund.status) {
+      case StripeRefundStatus.Succeeded:
+        return { externalReference: refund.id, status: RefundStatus.Completed };
+      case StripeRefundStatus.Pending:
+      case StripeRefundStatus.RequiresAction:
+        return { externalReference: refund.id, status: RefundStatus.Pending };
+      case StripeRefundStatus.Failed:
+      case StripeRefundStatus.Canceled:
+        return { externalReference: refund.id, status: RefundStatus.Failed };
+      default:
+        throw new HostedCheckoutUnavailableError();
+    }
+  }
+
+  private checkoutSessionUrl(externalReference: string): string {
+    return `${stripeCheckoutSessionsUrl}/${encodeURIComponent(externalReference)}`;
+  }
+
+  private hasOpaqueId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0;
   }
 
   private matchesPaymentIntent(

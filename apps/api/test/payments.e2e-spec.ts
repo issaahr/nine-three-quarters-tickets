@@ -15,6 +15,7 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { EventsService } from '../src/modules/events/events.service';
 import { HostedCheckoutUnavailableError } from '../src/modules/payments/errors/hostedCheckoutUnavailable.error';
 import { PaymentInProgressError } from '../src/modules/payments/errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from '../src/modules/payments/errors/reservationAlreadyPaid.error';
@@ -44,6 +45,7 @@ import {
 } from '../src/modules/payments/stripe/stripeCheckout.enums';
 import { StripeCheckoutWebhook } from '../src/modules/payments/stripe/stripeCheckoutWebhook';
 import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
+import { HostedRefundReconciliationService } from '../src/modules/refunds/hostedRefundReconciliation.service';
 import { Refund } from '../src/modules/refunds/refund.entity';
 import { RefundStatus } from '../src/modules/refunds/refundStatus.enum';
 import { ReservationItem } from '../src/modules/reservations/reservationItem.entity';
@@ -90,13 +92,19 @@ describe('Payments', () => {
   let paymentGateway: ControlledPaymentGateway;
   const hostedGateway: jest.Mocked<HostedPaymentGateway> = {
     provider: PaymentProvider.Stripe,
-    creationRetryWindowMs: 86_400_000,
+    creationRetryWindowMs: 82_800_000,
+    refundIdempotencyRetentionMs: 86_400_000,
     createCheckout: jest.fn(),
     retrieveCheckout: jest.fn(),
     retrievePaymentOutcome: jest.fn(),
+    expireCheckout: jest.fn(),
+    createRefund: jest.fn(),
+    findRefund: jest.fn(),
+    retrieveRefund: jest.fn(),
   };
   let paymentsService: PaymentsService;
   let reconciliation: HostedPaymentReconciliationService;
+  let refundReconciliation: HostedRefundReconciliationService;
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
@@ -118,6 +126,7 @@ describe('Payments', () => {
     dataSource = app.get(DataSource);
     paymentsService = app.get(PaymentsService);
     reconciliation = app.get(HostedPaymentReconciliationService);
+    refundReconciliation = app.get(HostedRefundReconciliationService);
     eventsRepository = dataSource.getRepository(Event);
     eventSeatsRepository = dataSource.getRepository(EventSeat);
     paymentsRepository = dataSource.getRepository(Payment);
@@ -150,6 +159,10 @@ describe('Payments', () => {
     hostedGateway.createCheckout.mockReset();
     hostedGateway.retrieveCheckout.mockReset();
     hostedGateway.retrievePaymentOutcome.mockReset();
+    hostedGateway.expireCheckout.mockReset();
+    hostedGateway.createRefund.mockReset();
+    hostedGateway.findRefund.mockReset();
+    hostedGateway.retrieveRefund.mockReset();
     jest.mocked(seatRealtimeGateway.emitSold).mockClear();
     jest.mocked(seatRealtimeGateway.emitReleased).mockClear();
   });
@@ -515,7 +528,7 @@ describe('Payments', () => {
     hostedGateway.retrievePaymentOutcome.mockImplementation(async (attempt) =>
       attempt.paymentId === paymentId
         ? { status: HostedPaymentOutcomeStatus.Paid, externalPaymentReference }
-        : { status: HostedPaymentOutcomeStatus.Pending },
+        : { status: HostedPaymentOutcomeStatus.Pending, canExpire: false },
     );
   }
 
@@ -561,6 +574,212 @@ describe('Payments', () => {
       status: PaymentStatus.Pending,
       externalReference,
     });
+  });
+
+  it('retoma o mesmo estorno após timeout e consulta a confirmação sem repetir o POST após a retenção', async () => {
+    const reservation = await createActiveReservation(new Date('2020-01-01T00:10:00.000Z'));
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    const refundReference = `pyr_${randomUUID()}`;
+    reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+    const refund = await refundsRepository.findOneByOrFail({ paymentId: payment.id });
+
+    hostedGateway.createRefund.mockRejectedValueOnce(new HostedCheckoutUnavailableError());
+    await refundReconciliation.reconcilePendingBatch();
+    const attempted = await refundsRepository.findOneByOrFail({ id: refund.id });
+    expect(attempted).toMatchObject({
+      status: RefundStatus.Pending,
+      externalReference: null,
+      externalStartedAt: expect.any(Date),
+      completedAt: null,
+    });
+    expect(hostedGateway.createRefund).toHaveBeenCalledWith(
+      {
+        refundId: refund.id,
+        externalPaymentReference,
+        amountCents: payment.amountCents,
+        currency: PaymentCurrency.Brl,
+      },
+      attempted.externalStartedAt,
+    );
+
+    const restarted = new HostedRefundReconciliationService(dataSource, hostedGateway);
+    await refundsRepository.update(refund.id, {
+      externalStartedAt: new Date('2020-01-01T00:00:00.000Z'),
+    });
+    hostedGateway.findRefund.mockResolvedValueOnce({
+      externalReference: refundReference,
+      status: RefundStatus.Pending,
+    });
+    await restarted.reconcilePendingBatch();
+    await expect(refundsRepository.findOneByOrFail({ id: refund.id })).resolves.toMatchObject({
+      status: RefundStatus.Pending,
+      externalReference: refundReference,
+      completedAt: null,
+    });
+
+    hostedGateway.retrieveRefund.mockResolvedValueOnce({
+      externalReference: refundReference,
+      status: RefundStatus.Completed,
+    });
+    await restarted.reconcilePendingBatch();
+    await expect(refundsRepository.findBy({ paymentId: payment.id })).resolves.toEqual([
+      expect.objectContaining({
+        id: refund.id,
+        status: RefundStatus.Completed,
+        completedAt: expect.any(Date),
+        failedAt: null,
+      }),
+    ]);
+    expect(hostedGateway.createRefund).toHaveBeenCalledTimes(1);
+    await expect(
+      app.get(EventsService).findOrganizerEventById(organizer.id, reservation.eventId),
+    ).resolves.toMatchObject({
+      soldTickets: 0,
+      revenueCents: 0,
+    });
+  });
+
+  it('recupera o POST com a mesma chave no retry e renova após retenção com ausência comprovada', async () => {
+    const reservation = await createActiveReservation(new Date('2020-01-01T00:10:00.000Z'));
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+    const refund = await refundsRepository.findOneByOrFail({ paymentId: payment.id });
+    const request = {
+      refundId: refund.id,
+      externalPaymentReference,
+      amountCents: payment.amountCents,
+      currency: PaymentCurrency.Brl,
+    };
+    const refundReference = `pyr_${randomUUID()}`;
+    hostedGateway.createRefund.mockRejectedValue(new HostedCheckoutUnavailableError());
+    hostedGateway.findRefund.mockResolvedValue(null);
+
+    await refundReconciliation.reconcilePendingBatch();
+    const first = await refundsRepository.findOneByOrFail({ id: refund.id });
+    const restarted = new HostedRefundReconciliationService(dataSource, hostedGateway);
+    await restarted.reconcilePendingBatch();
+    expect(hostedGateway.createRefund).toHaveBeenNthCalledWith(1, request, first.externalStartedAt);
+    expect(hostedGateway.createRefund).toHaveBeenNthCalledWith(2, request, first.externalStartedAt);
+
+    const expired = new Date('2020-01-01T00:00:00.000Z');
+    await refundsRepository.update(refund.id, { externalStartedAt: expired });
+    hostedGateway.createRefund.mockResolvedValueOnce({
+      externalReference: refundReference,
+      status: RefundStatus.Completed,
+    });
+    await restarted.reconcilePendingBatch();
+    const recovered = await refundsRepository.findOneByOrFail({ id: refund.id });
+    expect(recovered).toMatchObject({
+      status: RefundStatus.Completed,
+      externalReference: refundReference,
+      completedAt: expect.any(Date),
+    });
+    expect(recovered.externalStartedAt!.getTime()).toBeGreaterThan(expired.getTime());
+    expect(hostedGateway.createRefund).toHaveBeenNthCalledWith(
+      3,
+      request,
+      recovered.externalStartedAt,
+    );
+    expect(hostedGateway.findRefund).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserva a sessão aberta de uma reserva elegível', async () => {
+    const reservation = await createActiveReservation();
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    hostedGateway.retrievePaymentOutcome.mockResolvedValue({
+      status: HostedPaymentOutcomeStatus.Pending,
+      canExpire: true,
+    });
+
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+
+    expect(hostedGateway.expireCheckout).not.toHaveBeenCalled();
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      status: PaymentStatus.Pending,
+      externalReference,
+    });
+  });
+
+  it.each(['hold expirado', 'reserva cancelada', 'evento cancelado'])(
+    'encerra a sessão aberta quando %s sem inventar cobrança ou estorno',
+    async (reason) => {
+      const reservation =
+        reason === 'hold expirado'
+          ? await createActiveReservation(new Date('2020-01-01T00:10:00.000Z'))
+          : await createActiveReservation();
+      if (reason === 'reserva cancelada') {
+        await reservationsRepository.update(reservation.id, { cancelledAt: new Date() });
+      } else if (reason === 'evento cancelado') {
+        await eventsRepository.update(reservation.eventId, {
+          status: EventStatus.Cancelled,
+          cancelledByUserId: organizer.id,
+        });
+      }
+      const externalReference = `cs_test_${randomUUID()}`;
+      const payment = await createPendingHostedPayment(reservation, externalReference);
+      hostedGateway.retrievePaymentOutcome.mockResolvedValue({
+        status: HostedPaymentOutcomeStatus.Pending,
+        canExpire: true,
+      });
+      hostedGateway.expireCheckout.mockResolvedValueOnce({
+        status: HostedPaymentOutcomeStatus.Closed,
+      });
+
+      await sendHostedNotification(payment.id, externalReference).expect(204);
+
+      expect(hostedGateway.expireCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentId: payment.id }),
+        externalReference,
+      );
+      await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+        status: PaymentStatus.Failed,
+        externalPaymentReference: null,
+      });
+      await expect(refundsRepository.countBy({ paymentId: payment.id })).resolves.toBe(0);
+    },
+  );
+
+  it('registra a corrida de cobrança durante a expiração e mantém uma intenção de estorno', async () => {
+    const reservation = await createActiveReservation(new Date('2020-01-01T00:10:00.000Z'));
+    const externalReference = `cs_test_${randomUUID()}`;
+    const payment = await createPendingHostedPayment(reservation, externalReference);
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    hostedGateway.retrievePaymentOutcome.mockResolvedValue({
+      status: HostedPaymentOutcomeStatus.Paid,
+      externalPaymentReference,
+    });
+    hostedGateway.retrievePaymentOutcome.mockResolvedValueOnce({
+      status: HostedPaymentOutcomeStatus.Pending,
+      canExpire: true,
+    });
+    hostedGateway.expireCheckout.mockResolvedValueOnce({
+      status: HostedPaymentOutcomeStatus.Paid,
+      externalPaymentReference,
+    });
+
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+    await sendHostedNotification(payment.id, externalReference).expect(204);
+
+    expect(hostedGateway.expireCheckout).toHaveBeenCalledTimes(1);
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+    await expect(ticketsRepository.countBy({ reservationItemId: item.id })).resolves.toBe(0);
+    await expect(refundsRepository.findBy({ paymentId: payment.id })).resolves.toEqual([
+      expect.objectContaining({
+        status: RefundStatus.Pending,
+        amountCents: payment.amountCents,
+        completedAt: null,
+      }),
+    ]);
   });
 
   it('confirma capacidade GA sem callback e mantém exclusiva a capacidade vendida', async () => {
@@ -735,6 +954,21 @@ describe('Payments', () => {
       await expect(
         eventSeatsRepository.findOneByOrFail({ id: item.eventSeatId! }),
       ).resolves.toMatchObject({ soldAt: null });
+      const events = app.get(EventsService);
+      await expect(
+        events.findOrganizerEventById(organizer.id, reservation.eventId),
+      ).resolves.toMatchObject({ revenueCents: payment.amountCents });
+      hostedGateway.createRefund.mockImplementation(
+        async ({ externalPaymentReference: charge }) => {
+          if (charge !== externalPaymentReference) throw new HostedCheckoutUnavailableError();
+          return { status: RefundStatus.Completed, externalReference: `re_${randomUUID()}` };
+        },
+      );
+      const refundWorker = new HostedRefundReconciliationService(dataSource, hostedGateway);
+      await refundWorker.reconcilePendingBatch();
+      await expect(
+        events.findOrganizerEventById(organizer.id, reservation.eventId),
+      ).resolves.toMatchObject({ revenueCents: 0 });
     },
   );
 

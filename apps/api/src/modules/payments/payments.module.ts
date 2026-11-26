@@ -9,6 +9,7 @@ import { TicketsModule } from '../tickets/tickets.module';
 import { Event } from '../events/event.entity';
 import { EventSeat } from '../events/eventSeat.entity';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { HostedRefundReconciliationService } from '../refunds/hostedRefundReconciliation.service';
 import { FakePaymentGateway } from './fakePaymentGateway';
 import { FakePaymentsModeGuard } from './guards/fakePaymentsMode.guard';
 import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
@@ -46,6 +47,7 @@ import { StripeCheckoutWebhookController } from './stripe/stripeCheckoutWebhook.
     FakePaymentsModeGuard,
     HostedCheckoutService,
     HostedPaymentReconciliationService,
+    HostedRefundReconciliationService,
     TrustedPaymentOriginGuard,
     { provide: paymentGatewayToken, useExisting: FakePaymentGateway },
     {

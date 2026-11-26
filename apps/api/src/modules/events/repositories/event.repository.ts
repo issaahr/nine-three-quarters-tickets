@@ -482,6 +482,8 @@ export class EventRepository {
             .innerJoin(Payment, 'payment', '"payment"."id" = "refund"."paymentId"')
             .innerJoin(Reservation, 'reservation', '"reservation"."id" = "payment"."reservationId"')
             .where('"reservation"."eventId" = "event"."id"')
+            // Cobranças tardias sem reserva confirmada nunca compuseram a receita bruta.
+            .andWhere('"reservation"."confirmedAt" IS NOT NULL')
             .andWhere('"refund"."status" = :completedRefundStatus'),
         'eventRefundedCents',
       )

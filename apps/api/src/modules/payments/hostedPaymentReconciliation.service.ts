@@ -8,8 +8,13 @@ import {
 import { DataSource, MoreThan, Not, IsNull } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { getDatabaseClockTimestamp } from '../../database/databaseClock';
+import { EventStatus } from '../events/eventStatus.enum';
+import { HostedRefundReconciliationService } from '../refunds/hostedRefundReconciliation.service';
+import { Reservation } from '../reservations/reservation.entity';
 import { HostedCheckoutUnavailableError } from './errors/hostedCheckoutUnavailable.error';
 import { HostedPaymentGateway } from './hostedPaymentGateway.interfaces';
+import { HostedPaymentOutcomeStatus } from './hostedPaymentOutcomeStatus.enum';
 import { Payment } from './payment.entity';
 import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentProvider } from './paymentProvider.enum';
@@ -30,6 +35,7 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
   public constructor(
     private readonly dataSource: DataSource,
     private readonly finalization: PaymentFinalizationService,
+    private readonly refunds: HostedRefundReconciliationService,
     @Inject(hostedPaymentGatewayToken) private readonly gateway: HostedPaymentGateway | null,
   ) {}
 
@@ -39,6 +45,9 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
       void this.reconcilePendingBatch().catch(() =>
         this.logger.warn('Falha ao buscar pagamentos hospedados pendentes'),
       );
+      void this.refunds
+        .reconcilePendingBatch()
+        .catch(() => this.logger.warn('Falha ao buscar estornos hospedados pendentes'));
     }, hostedReconciliationIntervalMs);
     this.timer.unref();
   }
@@ -111,11 +120,41 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
       method: payment.method,
     };
     const outcome = await gateway.retrievePaymentOutcome(request, externalReference);
-    await this.finalization.finalizeHostedPayment({
+    const current = await this.finalization.finalizeHostedPayment({
       request,
       provider: gateway.provider,
       externalReference,
       outcome,
     });
+    if (
+      current.status === PaymentStatus.Pending &&
+      outcome.status === HostedPaymentOutcomeStatus.Pending &&
+      outcome.canExpire &&
+      (await this.checkoutExpired(current.reservationId))
+    ) {
+      // O vínculo já está durável mesmo se a expiração sofrer timeout ou chegar após uma cobrança.
+      const afterExpiration = await gateway.expireCheckout(request, externalReference);
+      await this.finalization.finalizeHostedPayment({
+        request,
+        provider: gateway.provider,
+        externalReference,
+        outcome: afterExpiration,
+      });
+    }
+  }
+
+  /** Usa os prazos persistidos para decidir se uma sessão aberta deve ser encerrada. */
+  private async checkoutExpired(reservationId: string): Promise<boolean> {
+    const reservation = await this.dataSource.getRepository(Reservation).findOneOrFail({
+      where: { id: reservationId },
+      relations: { event: true },
+    });
+    const now = await getDatabaseClockTimestamp(this.dataSource.manager);
+    return (
+      reservation.cancelledAt !== null ||
+      reservation.expiresAt <= now ||
+      reservation.event.status !== EventStatus.Published ||
+      reservation.event.startsAt <= now
+    );
   }
 }
