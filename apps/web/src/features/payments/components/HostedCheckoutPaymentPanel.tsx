@@ -27,7 +27,14 @@ export function HostedCheckoutPaymentPanel({
   const checkout = useHostedCheckout({ reservationId, eventId });
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>();
   const [hasNavigationError, setHasNavigationError] = useState(false);
-  const { payment, paymentQuery, isSubmitting, submissionError, uncertainMethod } = checkout;
+  const {
+    payment,
+    paymentQuery,
+    isSubmitting,
+    submissionError,
+    uncertainMethod,
+    unsupportedAmountMethod,
+  } = checkout;
   const isPending = payment?.status === PaymentStatus.Pending;
   const isApproved = payment?.status === PaymentStatus.Approved;
   const isFailed =
@@ -87,7 +94,10 @@ export function HostedCheckoutPaymentPanel({
     message = 'Confirmando seus ingressos...';
   } else if (isWaitingForConfirmation) {
     message = 'Aguardando confirmação do pagamento.';
-  } else if (hasNavigationError || submissionError) {
+  } else if (unsupportedAmountMethod && unsupportedAmountMethod === method) {
+    message = 'O total da reserva está fora dos limites para este método de pagamento.';
+    messageRole = 'alert';
+  } else if (hasNavigationError || (submissionError && !unsupportedAmountMethod)) {
     message = 'Não foi possível abrir o checkout. Tente novamente.';
     messageRole = 'alert';
   } else if (canContinue) {

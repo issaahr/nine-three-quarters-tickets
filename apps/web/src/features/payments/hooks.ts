@@ -11,6 +11,7 @@ import {
   fetchCheckoutConfiguration,
   fetchHostedCheckout,
   fetchSimulatedPixPayment,
+  isCheckoutAmountUnsupported,
   resumeHostedCheckout,
   settleSimulatedPixPayment,
 } from './api';
@@ -100,7 +101,11 @@ export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOpti
         });
       }
     },
-    onError: async () => {
+    onError: async (error) => {
+      if (isCheckoutAmountUnsupported(error)) {
+        submission.current = null;
+        return;
+      }
       // O POST pode ter persistido a tentativa antes de falhar. Releia antes de habilitar outra ação.
       await Promise.all([
         paymentQuery.refetch(),
@@ -158,8 +163,13 @@ export function useHostedCheckout({ reservationId, eventId }: UseCardPaymentOpti
     paymentQuery,
     isSubmitting: operation.isPending,
     submissionError: operation.error,
+    unsupportedAmountMethod:
+      isCheckoutAmountUnsupported(operation.error) && typeof operation.variables !== 'string'
+        ? operation.variables?.method
+        : undefined,
     uncertainMethod:
       operation.isError &&
+      !isCheckoutAmountUnsupported(operation.error) &&
       typeof operation.variables !== 'string' &&
       operation.variables?.previousPaymentId === paymentId
         ? operation.variables?.method

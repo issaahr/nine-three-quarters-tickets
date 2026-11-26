@@ -12,7 +12,8 @@ export class HostedCheckoutResponseDto extends PaymentResponseDto {
   public checkoutUrl!: string | null;
 
   @ApiProperty({
-    description: 'A tentativa local aceita retomada explícita para concluir a criação da sessão.',
+    description:
+      'A tentativa permite solicitar retomada para localizar a sessão ou repetir sua criação quando elegível.',
   })
   public canResume!: boolean;
 

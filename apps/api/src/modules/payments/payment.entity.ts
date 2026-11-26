@@ -19,7 +19,14 @@ import { PaymentStatus } from './paymentStatus.enum';
 @Index('paymentsPendingHostedReconciliationIndex', ['provider', 'id'], {
   where: `"status" = '${PaymentStatus.Pending}' AND "externalReference" IS NOT NULL`,
 })
+@Index('paymentsPendingUnlinkedReconciliationIndex', ['provider', 'id'], {
+  where: `"status" = '${PaymentStatus.Pending}' AND "externalReference" IS NULL`,
+})
 @Check('paymentsAmountCentsNonNegative', '"amountCents" >= 0')
+@Check(
+  'paymentsCheckoutReturnUrlMatchesProvider',
+  `"checkoutReturnUrl" IS NULL OR ("provider" <> '${PaymentProvider.Fake}' AND btrim("checkoutReturnUrl") <> '')`,
+)
 @Check(
   'paymentsExternalPaymentReferenceMatchesOutcome',
   `"externalPaymentReference" IS NULL OR ("provider" <> '${PaymentProvider.Fake}' AND "externalReference" IS NOT NULL AND btrim("externalPaymentReference") <> '' AND "status" IN ('${PaymentStatus.Approved}', '${PaymentStatus.Failed}'))`,
@@ -63,6 +70,10 @@ export class Payment extends BaseEntity {
 
   @Column({ type: 'text', nullable: true })
   public externalReference!: string | null;
+
+  // O endereço usado na primeira criação precisa permanecer igual durante um retry idempotente.
+  @Column({ type: 'text', nullable: true })
+  public checkoutReturnUrl!: string | null;
 
   // Evidência de cobrança confirmada pelo provedor, mesmo quando a compra local falha.
   @Column({ type: 'text', nullable: true })

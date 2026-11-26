@@ -27,6 +27,8 @@ As rotas abaixo exigem que o cabeçalho `Origin` corresponda exatamente a uma da
 - `POST /reservations/:reservationId/cancel`
 - `POST /organizer/me/events/:eventId/cancel`
 
+A [ADR 0007](0007-stripe-checkout-hospedado-no-sandbox.md) complementa esta política para as mutações de checkout hospedado e descreve a autenticação do webhook da Stripe.
+
 ## Consequências
 
 - Scripts executados no frontend não conseguem ler o token diretamente.

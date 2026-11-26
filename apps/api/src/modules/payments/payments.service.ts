@@ -15,7 +15,11 @@ import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
-import { paymentGatewayToken, simulatedPixCompletionDelayMs } from './payments.constants';
+import {
+  hostedCheckoutMaxStoredAmountCents,
+  paymentGatewayToken,
+  simulatedPixCompletionDelayMs,
+} from './payments.constants';
 import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
 import {
   DatabaseTimestampRow,
@@ -25,6 +29,8 @@ import {
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
+import { UnsupportedCheckoutAmountError } from './errors/unsupportedCheckoutAmount.error';
+import { HostedPaymentInitiationOptions } from './hostedPaymentGateway.interfaces';
 import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { PaymentRepository } from './repositories/payment.repository';
 
@@ -125,7 +131,7 @@ export class PaymentsService {
    * Grava ou recupera a tentativa cuja identidade será usada na chamada ao provedor.
    *
    * @param idempotencyKey - Chave compartilhada entre os métodos da reserva para recuperar a mesma tentativa.
-   * @param provider - Provedor selecionado para cobranças de valor positivo.
+   * @param hosted - Provedor e URL de retorno a preservar antes de iniciar cobrança de valor positivo.
    * @returns Tentativa com valor calculado a partir dos itens persistidos da reserva.
    */
   public async startHostedPayment(
@@ -133,16 +139,9 @@ export class PaymentsService {
     reservationId: string,
     idempotencyKey: string,
     method: PaymentMethod,
-    provider: PaymentProvider,
-  ): Promise<Payment> {
-    const { payment } = await this.startPayment(
-      customerId,
-      reservationId,
-      idempotencyKey,
-      method,
-      provider,
-    );
-    return payment;
+    hosted: HostedPaymentInitiationOptions,
+  ): Promise<PaymentInitiation> {
+    return this.startPayment(customerId, reservationId, idempotencyKey, method, hosted);
   }
 
   /**
@@ -235,7 +234,7 @@ export class PaymentsService {
     reservationId: string,
     idempotencyKey: string,
     method: PaymentMethod,
-    provider: PaymentProvider = PaymentProvider.Fake,
+    hosted?: HostedPaymentInitiationOptions,
   ): Promise<PaymentInitiation> {
     return this.dataSource.transaction(async (manager) => {
       const reservationsRepository = manager.getRepository(Reservation);
@@ -298,7 +297,7 @@ export class PaymentsService {
       }
 
       // Evita iniciar uma cobrança externa para uma ocorrência que já saiu de venda.
-      if (provider !== PaymentProvider.Fake) {
+      if (hosted) {
         const event = await manager
           .getRepository(Event)
           .findOneByOrFail({ id: reservation.eventId });
@@ -309,7 +308,14 @@ export class PaymentsService {
 
       const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
       const amountCents = items.reduce((total, item) => total + item.unitPriceCents, 0);
-      const resolvedProvider = amountCents === 0 ? PaymentProvider.Fake : provider;
+      const currency = PaymentCurrency.Brl;
+      const paidCheckout = amountCents > 0 ? hosted : undefined;
+      if (paidCheckout) {
+        if (amountCents > hostedCheckoutMaxStoredAmountCents)
+          throw new UnsupportedCheckoutAmountError();
+        paidCheckout.gateway.assertCheckoutAmount(amountCents, currency, method);
+      }
+      const resolvedProvider = paidCheckout?.gateway.provider ?? PaymentProvider.Fake;
       const paymentsRepository = manager.getRepository(Payment);
 
       const payment = await paymentsRepository.save(
@@ -320,16 +326,14 @@ export class PaymentsService {
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
-          currency: PaymentCurrency.Brl,
+          currency,
           externalReference: null,
+          checkoutReturnUrl: paidCheckout?.returnUrl ?? null,
           approvedAt: null,
           failedAt: null,
           simulationCompletionAt:
             resolvedProvider === PaymentProvider.Fake && method === PaymentMethod.Pix
-              ? new Date(
-                  now.getTime() +
-                    (provider === PaymentProvider.Fake ? simulatedPixCompletionDelayMs : 0),
-                )
+              ? new Date(now.getTime() + (hosted ? 0 : simulatedPixCompletionDelayMs))
               : null,
         }),
       );

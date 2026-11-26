@@ -382,6 +382,39 @@ describe('checkout hospedado', () => {
     ]);
   });
 
+  it('libera outro método após a API rejeitar definitivamente o total do Pix', async () => {
+    const attempts: Array<{ method: PaymentMethod; key: string | null }> = [];
+    server.use(
+      http.get(hostedPath, () => HttpResponse.json({ code: 'PAYMENT_NOT_FOUND' }, { status: 404 })),
+      http.post(hostedPath, async ({ request }) => {
+        const { method } = (await request.json()) as { method: PaymentMethod };
+        attempts.push({ method, key: request.headers.get('idempotency-key') });
+        return method === PaymentMethod.Pix
+          ? HttpResponse.json({ code: 'PAYMENT_AMOUNT_UNSUPPORTED' }, { status: 422 })
+          : HttpResponse.json({ ...pendingPayment, method, checkoutUrl });
+      }),
+    );
+
+    renderCheckout();
+    const action = await screen.findByRole('button', { name: 'Ir para o pagamento' });
+    await waitFor(() => expect(action).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Pix' }));
+    await userEvent.click(action);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'O total da reserva está fora dos limites para este método de pagamento.',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Cartão de crédito' }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await userEvent.click(action);
+
+    await waitFor(() => expect(navigateToHostedCheckout).toHaveBeenCalledWith(checkoutUrl));
+    expect(attempts).toEqual([
+      { method: PaymentMethod.Pix, key: expect.any(String) },
+      { method: PaymentMethod.Card, key: expect.any(String) },
+    ]);
+    expect(attempts[0].key).not.toBe(attempts[1].key);
+  });
+
   it('permite escolher outro método após falha terminal reconhecida pela API', async () => {
     const start = vi.fn();
     server.use(

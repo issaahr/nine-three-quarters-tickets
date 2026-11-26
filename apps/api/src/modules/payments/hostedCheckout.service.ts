@@ -6,7 +6,11 @@ import { getDatabaseClockTimestamp } from '../../database/databaseClock';
 import { EventStatus } from '../events/eventStatus.enum';
 import { HostedCheckoutUnavailableError } from './errors/hostedCheckoutUnavailable.error';
 import { PaymentNotFoundError } from './errors/paymentNotFound.error';
-import { HostedPaymentGateway } from './hostedPaymentGateway.interfaces';
+import {
+  HostedPaymentGateway,
+  HostedPaymentRedirect,
+  HostedPaymentRequest,
+} from './hostedPaymentGateway.interfaces';
 import { Payment } from './payment.entity';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentStatus } from './paymentStatus.enum';
@@ -37,14 +41,14 @@ export class HostedCheckoutService {
     method: PaymentMethod,
   ): Promise<HostedCheckout> {
     const gateway = this.getGateway();
-    const payment = await this.paymentsService.startHostedPayment(
+    const { payment, created } = await this.paymentsService.startHostedPayment(
       customerId,
       reservationId,
       idempotencyKey,
       method,
-      gateway.provider,
+      { gateway, returnUrl: this.returnUrl(reservationId) },
     );
-    return this.checkout(gateway, customerId, reservationId, payment.id, true);
+    return this.checkout(gateway, customerId, reservationId, payment.id, true, created);
   }
 
   /**
@@ -72,7 +76,8 @@ export class HostedCheckoutService {
   /**
    * Obtém o link fora da transação e revalida a reserva antes de devolvê-lo.
    *
-   * @param allowCreation - Autoriza criação idempotente ou confirmação de compra gratuita em mutações.
+   * @param allowCreation - Autoriza a recuperação e a criação idempotente em mutações.
+   * @param isNew - Indica que nenhuma requisição anterior pôde iniciar a sessão.
    */
   private async checkout(
     gateway: HostedPaymentGateway,
@@ -80,6 +85,7 @@ export class HostedCheckoutService {
     reservationId: string,
     paymentId: string | undefined,
     allowCreation: boolean,
+    isNew = false,
   ): Promise<HostedCheckout> {
     const payment = await this.findAttempt(gateway, customerId, reservationId, paymentId);
     const now = await getDatabaseClockTimestamp(this.dataSource.manager);
@@ -99,15 +105,16 @@ export class HostedCheckoutService {
       method: payment.method,
     };
     if (!payment.externalReference) {
-      // Após a janela idempotente, repetir uma criação sem vínculo pode abrir outra sessão.
-      const canResume = now.getTime() - payment.createdAt.getTime() < gateway.creationRetryWindowMs;
-      if (!allowCreation) return { payment, checkoutUrl: null, canResume };
-      if (!canResume) throw new HostedCheckoutUnavailableError();
+      if (!allowCreation) return { payment, checkoutUrl: null, canResume: true };
     }
 
     const redirect = payment.externalReference
       ? await gateway.retrieveCheckout(request, payment.externalReference)
-      : await gateway.createCheckout(request, this.returnUrl(reservationId));
+      : await this.recoverOrCreate(gateway, request, payment, isNew);
+    if (!redirect) {
+      const current = await this.findAttempt(gateway, customerId, reservationId, payment.id);
+      return { payment: current, checkoutUrl: null, canResume: false };
+    }
     // Preserva a referência para conciliação mesmo se o prazo da reserva venceu durante a chamada.
     if (!payment.externalReference) {
       await this.paymentRepository.attachExternalReference(
@@ -127,6 +134,51 @@ export class HostedCheckoutService {
       checkoutUrl: this.canCheckout(current, checkedAt) ? redirect.checkoutUrl : null,
       canResume: false,
     };
+  }
+
+  /**
+   * Investiga a criação anterior antes de repetir a chave. Uma ausência na lista não autoriza
+   * outro POST se os parâmetros originais são desconhecidos ou a retenção não está garantida.
+   */
+  private async recoverOrCreate(
+    gateway: HostedPaymentGateway,
+    request: HostedPaymentRequest,
+    payment: Payment,
+    isNew: boolean,
+  ): Promise<HostedPaymentRedirect | null> {
+    const { checkoutReturnUrl, createdAt } = payment;
+    if (!isNew) {
+      const existing = await gateway.findCheckout(request, createdAt);
+      if (existing) return existing;
+    }
+    // A busca remota pode terminar depois do vencimento ou do cancelamento da reserva.
+    const current = isNew
+      ? payment
+      : await this.findAttempt(
+          gateway,
+          payment.reservation.customerId,
+          payment.reservationId,
+          payment.id,
+        );
+    const now = await getDatabaseClockTimestamp(this.dataSource.manager);
+    if (!this.canCheckout(current, now)) return null;
+    if (current.externalReference)
+      return gateway.retrieveCheckout(request, current.externalReference);
+    if (
+      !checkoutReturnUrl ||
+      now.getTime() - createdAt.getTime() >= gateway.creationRetryWindowMs
+    ) {
+      throw new HostedCheckoutUnavailableError();
+    }
+    try {
+      return await gateway.createCheckout(request, checkoutReturnUrl);
+    } catch (error) {
+      if (!(error instanceof HostedCheckoutUnavailableError)) throw error;
+      // Mesmo um 500 devolvido pela Stripe pode ter criado uma sessão com a identidade local.
+      const recovered = await gateway.findCheckout(request, createdAt);
+      if (recovered) return recovered;
+      throw error;
+    }
   }
 
   /**

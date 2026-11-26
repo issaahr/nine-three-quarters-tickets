@@ -13,7 +13,7 @@ import { EventStatus } from '../events/eventStatus.enum';
 import { HostedRefundReconciliationService } from '../refunds/hostedRefundReconciliation.service';
 import { Reservation } from '../reservations/reservation.entity';
 import { HostedCheckoutUnavailableError } from './errors/hostedCheckoutUnavailable.error';
-import { HostedPaymentGateway } from './hostedPaymentGateway.interfaces';
+import { HostedPaymentGateway, HostedPaymentRequest } from './hostedPaymentGateway.interfaces';
 import { HostedPaymentOutcomeStatus } from './hostedPaymentOutcomeStatus.enum';
 import { Payment } from './payment.entity';
 import { PaymentFinalizationService } from './paymentFinalization.service';
@@ -25,12 +25,17 @@ import {
   hostedReconciliationIntervalMs,
 } from './payments.constants';
 
+interface ReconciliationBatchProgress {
+  afterPaymentId?: string;
+  running: boolean;
+}
+
 @Injectable()
 export class HostedPaymentReconciliationService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(HostedPaymentReconciliationService.name);
   private timer?: ReturnType<typeof setInterval>;
-  private afterPaymentId?: string;
-  private batchRunning = false;
+  private readonly linked: ReconciliationBatchProgress = { running: false };
+  private readonly unlinked: ReconciliationBatchProgress = { running: false };
 
   public constructor(
     private readonly dataSource: DataSource,
@@ -74,33 +79,48 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
    */
   public async reconcilePendingBatch(): Promise<void> {
     const gateway = this.gateway;
-    if (!gateway || this.batchRunning) return;
-    this.batchRunning = true;
+    if (!gateway) return;
+    await Promise.all([
+      this.reconcileBatch(gateway, this.linked),
+      this.reconcileBatch(gateway, this.unlinked),
+    ]);
+  }
+
+  /** Uma busca de sessão órfã lenta não impede a conciliação das tentativas já vinculadas. */
+  private async reconcileBatch(
+    gateway: HostedPaymentGateway,
+    progress: ReconciliationBatchProgress,
+  ): Promise<void> {
+    if (progress.running) return;
+    progress.running = true;
     try {
       const payments = await this.dataSource.getRepository(Payment).find({
         where: {
           provider: gateway.provider,
           status: PaymentStatus.Pending,
-          externalReference: Not(IsNull()),
-          ...(this.afterPaymentId ? { id: MoreThan(this.afterPaymentId) } : {}),
+          externalReference: progress === this.linked ? Not(IsNull()) : IsNull(),
+          ...(progress.afterPaymentId ? { id: MoreThan(progress.afterPaymentId) } : {}),
         },
         order: { id: 'ASC' },
         take: hostedReconciliationBatchSize,
       });
-      this.afterPaymentId =
+      progress.afterPaymentId =
         payments.length === hostedReconciliationBatchSize ? payments.at(-1)?.id : undefined;
       await Promise.all(
         payments.map(async (payment) => {
           try {
-            if (payment.externalReference)
-              await this.reconcile(gateway, payment, payment.externalReference);
+            const reference =
+              payment.externalReference ??
+              (await gateway.findCheckout(this.request(payment), payment.createdAt))
+                ?.externalReference;
+            if (reference) await this.reconcile(gateway, payment, reference);
           } catch {
             this.logger.warn(`Falha ao conciliar pagamento hospedado ${payment.id}`);
           }
         }),
       );
     } finally {
-      this.batchRunning = false;
+      progress.running = false;
     }
   }
 
@@ -113,12 +133,7 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
     if (payment.externalReference && payment.externalReference !== externalReference) {
       throw new HostedCheckoutUnavailableError();
     }
-    const request = {
-      paymentId: payment.id,
-      amountCents: payment.amountCents,
-      currency: payment.currency,
-      method: payment.method,
-    };
+    const request = this.request(payment);
     const outcome = await gateway.retrievePaymentOutcome(request, externalReference);
     const current = await this.finalization.finalizeHostedPayment({
       request,
@@ -141,6 +156,15 @@ export class HostedPaymentReconciliationService implements OnApplicationBootstra
         outcome: afterExpiration,
       });
     }
+  }
+
+  private request(payment: Payment): HostedPaymentRequest {
+    return {
+      paymentId: payment.id,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+      method: payment.method,
+    };
   }
 
   /** Usa os prazos persistidos para decidir se uma sessão aberta deve ser encerrada. */

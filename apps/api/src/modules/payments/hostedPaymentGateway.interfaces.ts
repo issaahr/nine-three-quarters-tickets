@@ -4,6 +4,12 @@ import { PaymentCurrency } from './paymentCurrency.enum';
 import { PaymentMethod } from './paymentMethod.enum';
 import { PaymentProvider } from './paymentProvider.enum';
 
+/** Parâmetros locais necessários para persistir e validar uma criação de Checkout hospedado. */
+export interface HostedPaymentInitiationOptions {
+  gateway: HostedPaymentGateway;
+  returnUrl: string;
+}
+
 export interface HostedPaymentRequest {
   paymentId: string;
   amountCents: number;
@@ -40,7 +46,19 @@ export interface HostedPaymentGateway {
   readonly creationRetryWindowMs: number;
   /** Intervalo durante o qual uma nova geração de estorno ainda poderia competir com a anterior. */
   readonly refundIdempotencyRetentionMs: number;
+  /** Valida um total positivo antes de gravar a tentativa, sem chamar o provedor. */
+  assertCheckoutAmount(amountCents: number, currency: PaymentCurrency, method: PaymentMethod): void;
   createCheckout(request: HostedPaymentRequest, returnUrl: string): Promise<HostedPaymentRedirect>;
+  /**
+   * Descobre uma sessão com a identidade da tentativa quando a primeira resposta se perdeu.
+   *
+   * @param createdAt - Instante persistido antes de a sessão poder existir.
+   * @returns Sessão validada ou null quando a busca ainda não encontrou correspondência.
+   */
+  findCheckout(
+    request: HostedPaymentRequest,
+    createdAt: Date,
+  ): Promise<HostedPaymentRedirect | null>;
   retrieveCheckout(
     request: HostedPaymentRequest,
     externalReference: string,

@@ -62,6 +62,15 @@ export async function resumeHostedCheckout(
   return response.data;
 }
 
+/** A rejeição do total ocorre antes de criar uma tentativa e permite escolher outro método. */
+export function isCheckoutAmountUnsupported(error: unknown): boolean {
+  return (
+    axios.isAxiosError<{ code?: string }>(error) &&
+    error.response?.status === 422 &&
+    error.response.data?.code === 'PAYMENT_AMOUNT_UNSUPPORTED'
+  );
+}
+
 export async function createCardPayment(
   reservationId: string,
   idempotencyKey: string,

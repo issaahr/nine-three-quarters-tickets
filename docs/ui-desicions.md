@@ -90,7 +90,7 @@ O corte funciona como assinatura recorrente e suficientemente discreta para ser 
 
 - **Exceção funcional — tela de portaria:** fundo escuro por justificativa operacional (uso em entrada de evento, potencialmente à noite, e redução de reflexo), não por preferência de usuário.
 
-- **Pagamento:** estados de aprovação e recusa mantêm a identidade visual geral e utilizam cores funcionais apenas como reforço. A copy deve refletir somente métodos efetivamente disponíveis; enquanto apenas cartão estiver implementado, uma recusa orienta o usuário a revisar os dados ou tentar novamente, sem sugerir um método ainda inexistente.
+- **Pagamento:** o resumo, o total e o contador permanecem na página da reserva. A API informa os métodos disponíveis. O modo fake mostra o formulário de cartão ou o Pix simulado. O modo Stripe abre a página hospedada e, no retorno, apresenta o estado atual da tentativa informado pela API. Uma sessão retomável oferece **Retomar pagamento**. Uma sessão que aguarda confirmação oferece consulta de situação. Estados de erro e sucesso usam texto além das cores funcionais.
 
 - **Ações destrutivas:** cancelamentos nunca dependem somente da estilização do botão. A interface sempre apresenta uma confirmação intermediária explicando a consequência da ação.
 
@@ -195,11 +195,12 @@ Os mockups também não precisam representar todas as opções, mensagens, estad
    - quantidade;
    - resumo da compra.
 
-4. **Checkout simulado**
+4. **Checkout**
    - resumo da Reservation;
    - total;
-   - pagamento confirmado;
-   - pagamento recusado.
+   - cartão e Pix no modo configurado;
+   - preparo, retomada e espera de confirmação no sandbox;
+   - pagamento confirmado, recusado ou indisponível.
 
 5. **Meus ingressos**
    - agrupamento visual por compra;

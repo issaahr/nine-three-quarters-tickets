@@ -10,6 +10,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiServiceUnavailableResponse,
+  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
@@ -154,6 +155,11 @@ export function ApiCreateHostedCheckout() {
     ApiForbiddenResponse({ description: 'Papel ou origem sem acesso.' }),
     apiHostedCheckoutNotFound,
     ApiConflictResponse({ description: 'Reserva inativa ou com outra tentativa ativa.' }),
+    ApiUnprocessableEntityResponse({
+      type: ApplicationErrorResponseDto,
+      description:
+        'O total positivo da reserva não é aceito pelo método escolhido (PAYMENT_AMOUNT_UNSUPPORTED).',
+    }),
     apiHostedCheckoutUnavailable,
   );
 }

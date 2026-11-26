@@ -1,5 +1,6 @@
 import { RefundStatus } from '../../refunds/refundStatus.enum';
 import { HostedCheckoutUnavailableError } from '../errors/hostedCheckoutUnavailable.error';
+import { UnsupportedCheckoutAmountError } from '../errors/unsupportedCheckoutAmount.error';
 import { HostedPaymentOutcomeStatus } from '../hostedPaymentOutcomeStatus.enum';
 import { PaymentCurrency } from '../paymentCurrency.enum';
 import { PaymentMethod } from '../paymentMethod.enum';
@@ -49,6 +50,119 @@ describe('StripeHostedPaymentGateway', () => {
       'line_items[0][price_data][unit_amount]': '500',
       success_url: returnUrl,
     });
+  });
+
+  it('redescobre a sessão exata em outra página e confirma seus dados com GET', async () => {
+    const createdAt = new Date('2026-11-26T12:00:00.777Z');
+    const unrelated = { ...session, id: 'cs_test_unrelated', client_reference_id: 'another' };
+    const stripe = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ object: 'list', data: [unrelated], has_more: true }))
+      .mockResolvedValueOnce(Response.json({ object: 'list', data: [session], has_more: false }))
+      .mockResolvedValueOnce(Response.json(session));
+
+    await expect(gateway.findCheckout(payment, createdAt)).resolves.toEqual({
+      externalReference: session.id,
+      checkoutUrl: session.url,
+    });
+    const first = new URL(String(stripe.mock.calls[0][0]));
+    const next = new URL(String(stripe.mock.calls[1][0]));
+    expect(Number(first.searchParams.get('created[gte]'))).toBeLessThan(
+      Math.floor(createdAt.getTime() / 1000),
+    );
+    expect(next.searchParams.get('starting_after')).toBe(unrelated.id);
+    expect(new URL(String(stripe.mock.calls[2][0])).pathname).toMatch(
+      new RegExp(`/${session.id}$`),
+    );
+  });
+
+  it.each([
+    { livemode: true },
+    { amount_total: 499 },
+    { currency: 'usd' },
+    { payment_method_types: ['card'] },
+  ])('recusa descoberta para a mesma identidade com dados divergentes %o', async (mismatch) => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json({
+        object: 'list',
+        data: [{ ...session, ...mismatch }],
+        has_more: false,
+      }),
+    );
+    await expect(gateway.findCheckout(payment, new Date())).rejects.toBeInstanceOf(
+      HostedCheckoutUnavailableError,
+    );
+  });
+
+  it('recusa múltiplas sessões para a mesma tentativa antes de recuperar uma URL', async () => {
+    const stripe = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ object: 'list', data: [session], has_more: true }))
+      .mockResolvedValueOnce(
+        Response.json({
+          object: 'list',
+          data: [{ ...session, id: 'cs_test_duplicate' }],
+          has_more: false,
+        }),
+      );
+    await expect(gateway.findCheckout(payment, new Date())).rejects.toBeInstanceOf(
+      HostedCheckoutUnavailableError,
+    );
+    expect(stripe).toHaveBeenCalledTimes(2);
+  });
+
+  it('trata cursor repetido como busca inconclusiva', async () => {
+    const page = () =>
+      Response.json({
+        object: 'list',
+        data: [{ ...session, client_reference_id: 'another' }],
+        has_more: true,
+      });
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(page()).mockResolvedValueOnce(page());
+    await expect(gateway.findCheckout(payment, new Date())).rejects.toBeInstanceOf(
+      HostedCheckoutUnavailableError,
+    );
+  });
+
+  it('trata lista vazia como ausência de correspondência', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json({
+        object: 'list',
+        data: [],
+        has_more: false,
+      }),
+    );
+    await expect(gateway.findCheckout(payment, new Date())).resolves.toBeNull();
+  });
+
+  it('continua a busca após vinte páginas de sessões de outras tentativas', async () => {
+    const stripe = jest.spyOn(globalThis, 'fetch');
+    const unrelatedPageCount = 21;
+    for (let index = 0; index < unrelatedPageCount; index++) {
+      stripe.mockResolvedValueOnce(
+        Response.json({
+          object: 'list',
+          data: [{ ...session, id: `cs_test_other_${index}`, client_reference_id: 'another' }],
+          has_more: true,
+        }),
+      );
+    }
+    stripe
+      .mockResolvedValueOnce(Response.json({ object: 'list', data: [session], has_more: false }))
+      .mockResolvedValueOnce(Response.json(session));
+    await expect(gateway.findCheckout(payment, new Date())).resolves.toMatchObject({
+      externalReference: session.id,
+    });
+    expect(stripe).toHaveBeenCalledTimes(unrelatedPageCount + 2);
+  });
+
+  it('aplica o teto específico ao Pix e permite cartão acima de oito dígitos', () => {
+    expect(() =>
+      gateway.assertCheckoutAmount(100_000_000, PaymentCurrency.Brl, PaymentMethod.Pix),
+    ).toThrow(UnsupportedCheckoutAmountError);
+    expect(() =>
+      gateway.assertCheckoutAmount(100_000_000, PaymentCurrency.Brl, PaymentMethod.Card),
+    ).not.toThrow();
   });
 
   it.each([

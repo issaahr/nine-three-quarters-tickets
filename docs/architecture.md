@@ -50,9 +50,9 @@ apps/api/src/
     ├── auth/            # login, sessão, cadastro, JWT e autorização
     ├── catalog/         # port de catálogo e adapters da TMDb e Ticketmaster
     ├── events/          # ocorrência, publicação e inventário seated materializado
-    ├── payments/        # tentativa idempotente e gateway de cartão simulado
+    ├── payments/        # tentativa idempotente, checkout e conciliação
     ├── realtime/        # deltas de disponibilidade emitidos após commits
-    ├── refunds/         # histórico de devoluções de pagamentos aprovados
+    ├── refunds/         # intenções de estorno e conciliação externa
     ├── reservations/    # holds temporários, itens, retomada e cancelamento
     ├── tickets/         # ingressos emitidos para ReservationItems confirmados
     ├── users/           # entidade User e enum de papéis
@@ -98,6 +98,8 @@ Quando existem várias Reservations no cancelamento de um Event, elas são bloqu
 
 O cancelamento de uma compra confirmada marca Reservation e Tickets como cancelados, devolve o inventário e cria Refund integral somente quando houve valor pago. O Payment permanece `APPROVED` como registro histórico. O cancelamento pelo ORGANIZER executa essas transições para as Reservations do Event e marca o próprio Event como `CANCELLED` no mesmo commit. Atualizações em tempo real são emitidas apenas depois do commit e não participam da decisão transacional.
 
+No checkout hospedado, o webhook assinado e o reconciliador periódico consultam a Stripe pela fronteira `HostedPaymentGateway` e aplicam o resultado pelo mesmo serviço de finalização. A cobrança pode gerar compra confirmada ou uma intenção de estorno quando a reserva perdeu a validade. O worker de estorno consulta e executa a devolução após o commit, incluindo as intenções registradas pelos cancelamentos. A disponibilidade do inventário continua derivada dos timestamps persistidos.
+
 ## Frontend
 
 ### Estrutura atual
@@ -112,7 +114,7 @@ apps/web/src/
 │   ├── gate/            # seleção da ocorrência e validação operacional de ingressos
 │   ├── navigation/      # shells e navegação por papel
 │   ├── organizer/       # catálogo externo, criação, publicação e contratos do painel
-│   ├── payments/        # formulário de cartão e estado de pagamento do checkout
+│   ├── payments/        # fluxos fake e hospedado, retomada e estado do checkout
 │   ├── reservations/    # cliente HTTP, estado remoto, checkout e countdown derivado
 │   └── tickets/         # histórico de compras, ingressos e cancelamento elegível
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
@@ -156,7 +158,7 @@ No fluxo `GENERAL_ADMISSION`, `POST /reservations/general-admission` recebe uma 
 
 - TMDb e Ticketmaster implementam a port `CatalogProvider`; suas respostas são normalizadas antes de alcançar Events e nunca fornecem inventário ou dados locais de venda.
 - A Ticketmaster consulta Attractions como conteúdo de shows, sem importar ocorrências, horários ou disponibilidade externos.
-- O gateway de pagamento é uma fronteira substituível; a V1 utiliza `FakePaymentGateway`.
+- A configuração da API seleciona o modo fake ou o Stripe Checkout em sandbox. O cartão fake usa `FakePaymentGateway`. O adaptador `StripeHostedPaymentGateway` implementa a port hospedada e encapsula as referências e estados do provedor. [ADR 0007](adr/0007-stripe-checkout-hospedado-no-sandbox.md)
 - Socket.IO atualizará percepção de disponibilidade, sem autoridade transacional.
 - Módulos futuros devem seguir as entidades e invariantes de `application-scope.md`, sem introduzir abstrações genéricas de inventário.
 

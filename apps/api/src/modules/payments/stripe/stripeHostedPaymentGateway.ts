@@ -1,5 +1,6 @@
 import { RefundStatus } from '../../refunds/refundStatus.enum';
 import { HostedCheckoutUnavailableError } from '../errors/hostedCheckoutUnavailable.error';
+import { UnsupportedCheckoutAmountError } from '../errors/unsupportedCheckoutAmount.error';
 import {
   HostedPaymentGateway,
   HostedPaymentOutcome,
@@ -9,6 +10,7 @@ import {
   HostedRefundRequest,
 } from '../hostedPaymentGateway.interfaces';
 import { HostedPaymentOutcomeStatus } from '../hostedPaymentOutcomeStatus.enum';
+import { PaymentCurrency } from '../paymentCurrency.enum';
 import { PaymentMethod } from '../paymentMethod.enum';
 import { PaymentProvider } from '../paymentProvider.enum';
 import { stripePaymentIntentIdPrefix, stripeTestSessionIdPrefix } from './stripeCheckout.constants';
@@ -27,7 +29,9 @@ const stripeApiVersion = '2026-11-18.endive';
 const stripeApiUrl = 'https://api.stripe.com/v1';
 const stripeCheckoutSessionsUrl = `${stripeApiUrl}/checkout/sessions`;
 const stripeRefundsUrl = `${stripeApiUrl}/refunds`;
-const stripeRefundPageSize = 100;
+const stripeListPageSize = 100;
+const stripeCheckoutDiscoveryClockSkewSeconds = 300;
+const millisecondsPerSecond = 1_000;
 const stripeCheckoutOrigin = 'https://checkout.stripe.com';
 const stripeCheckoutUiMode = 'hosted_page';
 const stripeRequestTimeoutMs = 10_000;
@@ -38,6 +42,10 @@ const stripeCreationRetryWindowMs = 23 * 60 * 60 * 1000;
 const stripeCheckoutProductName = 'Ingressos 9¾ Tickets';
 const stripeCheckoutLineItemQuantity = 1;
 const stripeCheckoutAdaptivePricingEnabled = false;
+const stripeBrlMinimumAmountCents = 50;
+const stripeBrlMaximumPixAmountCents = 99_999_999;
+// Redes específicas podem impor limites adicionais ao cartão escolhido na Stripe.
+const stripeMaximumCardAmountCents = 999_999_999_999;
 
 export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   public readonly provider = PaymentProvider.Stripe;
@@ -45,6 +53,23 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   public readonly refundIdempotencyRetentionMs = stripeIdempotencyRetentionMs;
 
   public constructor(private readonly secretKey: string) {}
+
+  public assertCheckoutAmount(
+    amountCents: number,
+    currency: PaymentCurrency,
+    method: PaymentMethod,
+  ): void {
+    const maximum =
+      method === PaymentMethod.Pix ? stripeBrlMaximumPixAmountCents : stripeMaximumCardAmountCents;
+    if (
+      currency !== PaymentCurrency.Brl ||
+      !Number.isSafeInteger(amountCents) ||
+      amountCents < stripeBrlMinimumAmountCents ||
+      amountCents > maximum
+    ) {
+      throw new UnsupportedCheckoutAmountError();
+    }
+  }
 
   /**
    * Cria ou recupera uma sessão usando a identidade da tentativa local como chave idempotente.
@@ -104,6 +129,56 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
       externalReference,
     );
     return this.redirect(session);
+  }
+
+  /**
+   * Percorre a janela de criação e rejeita vínculos múltiplos ou malformados.
+   * A listagem sem correspondência não prova que uma falha anterior foi definitiva.
+   */
+  public async findCheckout(
+    request: HostedPaymentRequest,
+    createdAt: Date,
+  ): Promise<HostedPaymentRedirect | null> {
+    const query = new URLSearchParams({
+      'created[gte]': String(
+        Math.floor(createdAt.getTime() / millisecondsPerSecond) -
+          stripeCheckoutDiscoveryClockSkewSeconds,
+      ),
+      'created[lte]': String(
+        Math.ceil((createdAt.getTime() + this.creationRetryWindowMs) / millisecondsPerSecond) +
+          stripeCheckoutDiscoveryClockSkewSeconds,
+      ),
+      limit: String(stripeListPageSize),
+    });
+    const seenCursors = new Set<string>();
+    let match: StripeCheckoutSession | null = null;
+    while (true) {
+      const page = this.record(await this.requestStripe(`${stripeCheckoutSessionsUrl}?${query}`));
+      if (
+        !page ||
+        page.object !== StripeCheckoutObject.List ||
+        typeof page.has_more !== 'boolean' ||
+        !Array.isArray(page.data)
+      ) {
+        throw new HostedCheckoutUnavailableError();
+      }
+      for (const item of page.data as unknown[]) {
+        const candidate = this.record(item);
+        if (candidate?.client_reference_id !== request.paymentId) continue;
+        if (match) throw new HostedCheckoutUnavailableError();
+        match = this.readSession(candidate, request);
+      }
+      if (!page.has_more) {
+        if (!match) return null;
+        return this.retrieveCheckout(request, match.id);
+      }
+      const cursor = this.record(page.data.at(-1))?.id;
+      if (!this.hasOpaqueId(cursor) || seenCursors.has(cursor)) {
+        throw new HostedCheckoutUnavailableError();
+      }
+      seenCursors.add(cursor);
+      query.set('starting_after', cursor);
+    }
   }
 
   /**
@@ -198,7 +273,7 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
   public async findRefund(request: HostedRefundRequest): Promise<HostedRefundOutcome | null> {
     const query = new URLSearchParams({
       payment_intent: request.externalPaymentReference,
-      limit: String(stripeRefundPageSize),
+      limit: String(stripeListPageSize),
     });
     const seenCursors = new Set<string>();
     while (true) {
@@ -261,7 +336,15 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
     init: RequestInit,
     expectedReference?: string,
   ): Promise<StripeCheckoutSession> {
-    const session = this.record(await this.requestStripe(endpoint, init));
+    return this.readSession(await this.requestStripe(endpoint, init), request, expectedReference);
+  }
+
+  private readSession(
+    payload: unknown,
+    request: HostedPaymentRequest,
+    expectedReference?: string,
+  ): StripeCheckoutSession {
+    const session = this.record(payload);
     if (
       !session ||
       session.object !== StripeCheckoutObject.Session ||
@@ -271,7 +354,8 @@ export class StripeHostedPaymentGateway implements HostedPaymentGateway {
       session.amount_total !== request.amountCents ||
       session.currency !== request.currency.toLowerCase() ||
       !Array.isArray(session.payment_method_types) ||
-      !session.payment_method_types.includes(this.paymentMethod(request.method)) ||
+      session.payment_method_types.length !== 1 ||
+      session.payment_method_types[0] !== this.paymentMethod(request.method) ||
       typeof session.id !== 'string' ||
       !session.id.startsWith(stripeTestSessionIdPrefix) ||
       (expectedReference !== undefined && session.id !== expectedReference) ||

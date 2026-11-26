@@ -28,6 +28,7 @@ import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 import { PaymentCheckoutMode } from '../src/modules/payments/paymentCheckoutMode.enum';
 import { PaymentProvider } from '../src/modules/payments/paymentProvider.enum';
 import {
+  hostedCheckoutMaxStoredAmountCents,
   hostedPaymentGatewayToken,
   paymentGatewayToken,
   stripeCheckoutWebhookToken,
@@ -45,6 +46,7 @@ import {
   StripeCheckoutObject,
 } from '../src/modules/payments/stripe/stripeCheckout.enums';
 import { StripeCheckoutWebhook } from '../src/modules/payments/stripe/stripeCheckoutWebhook';
+import { StripeHostedPaymentGateway } from '../src/modules/payments/stripe/stripeHostedPaymentGateway';
 import { SeatRealtimeGateway } from '../src/modules/realtime/seatRealtime.gateway';
 import { HostedRefundReconciliationService } from '../src/modules/refunds/hostedRefundReconciliation.service';
 import { Refund } from '../src/modules/refunds/refund.entity';
@@ -91,11 +93,14 @@ describe('Payments', () => {
   let organizer: User;
   let venue: Venue;
   let paymentGateway: ControlledPaymentGateway;
+  const stripeAmountPolicy = new StripeHostedPaymentGateway('sk_test_amount_policy_fixture');
   const hostedGateway: jest.Mocked<HostedPaymentGateway> = {
     provider: PaymentProvider.Stripe,
     creationRetryWindowMs: 82_800_000,
     refundIdempotencyRetentionMs: 86_400_000,
+    assertCheckoutAmount: jest.fn(),
     createCheckout: jest.fn(),
+    findCheckout: jest.fn(),
     retrieveCheckout: jest.fn(),
     retrievePaymentOutcome: jest.fn(),
     expireCheckout: jest.fn(),
@@ -109,8 +114,7 @@ describe('Payments', () => {
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
 
-  beforeAll(async () => {
-    paymentGateway = new ControlledPaymentGateway();
+  async function createPaymentsTestApplication(): Promise<INestApplication> {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(paymentGatewayToken)
       .useValue(paymentGateway)
@@ -120,9 +124,15 @@ describe('Payments', () => {
       .useValue(new StripeCheckoutWebhook(webhookFixtureSecret))
       .compile();
 
-    app = testingModule.createNestApplication({ rawBody: true });
-    new Application().configure(app);
-    await app.init();
+    const testApp = testingModule.createNestApplication({ rawBody: true });
+    new Application().configure(testApp);
+    await testApp.init();
+    return testApp;
+  }
+
+  beforeAll(async () => {
+    paymentGateway = new ControlledPaymentGateway();
+    app = await createPaymentsTestApplication();
 
     dataSource = app.get(DataSource);
     paymentsService = app.get(PaymentsService);
@@ -158,6 +168,11 @@ describe('Payments', () => {
     paymentGateway.processCard.mockReset();
     paymentGateway.processCard.mockResolvedValue({ status: CardPaymentGatewayStatus.Approved });
     hostedGateway.createCheckout.mockReset();
+    hostedGateway.assertCheckoutAmount.mockReset();
+    hostedGateway.assertCheckoutAmount.mockImplementation(
+      stripeAmountPolicy.assertCheckoutAmount.bind(stripeAmountPolicy),
+    );
+    hostedGateway.findCheckout.mockReset().mockResolvedValue(null);
     hostedGateway.retrieveCheckout.mockReset();
     hostedGateway.retrievePaymentOutcome.mockReset();
     hostedGateway.expireCheckout.mockReset();
@@ -344,8 +359,9 @@ describe('Payments', () => {
     reservationId: string,
     cookie: string,
     idempotencyKey = randomUUID(),
+    instance = app,
   ) {
-    return request(app.getHttpServer())
+    return request(instance.getHttpServer())
       .post(`/reservations/${reservationId}/payments/hosted`)
       .set('Cookie', cookie)
       .set('Origin', checkoutOrigin)
@@ -363,6 +379,98 @@ describe('Payments', () => {
       mode: PaymentCheckoutMode.Hosted,
       methods: [PaymentMethod.Card, PaymentMethod.Pix],
     });
+  });
+
+  it('bloqueia os endpoints fake quando a API está em modo Stripe', async () => {
+    const cookie = await authenticate();
+    const reservation = await createActiveReservation();
+    const root = `/reservations/${reservation.id}/payments`;
+    const deployment = jest.replaceProperty(applicationConfig, 'payments', {
+      provider: PaymentProvider.Stripe,
+      cardPendingTimeoutSeconds: applicationConfig.payments.cardPendingTimeoutSeconds,
+      secretKey: 'sk_test_guard_fixture',
+      webhookSecret: webhookFixtureSecret,
+    });
+    try {
+      const server = app.getHttpServer();
+      const key = randomUUID();
+      await request(server)
+        .post(`${root}/card`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .expect(404);
+      await request(server)
+        .post(`${root}/pix`)
+        .set('Cookie', cookie)
+        .set('Idempotency-Key', key)
+        .expect(404);
+      await request(server).get(`${root}/pix`).set('Cookie', cookie).expect(404);
+      await request(server)
+        .post(`${root}/pix/${randomUUID()}/settle`)
+        .set('Cookie', cookie)
+        .set('Origin', checkoutOrigin)
+        .expect(404);
+      await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(0);
+    } finally {
+      deployment.restore();
+    }
+  });
+
+  it.each([undefined, 'null', 'https://untrusted.example'])(
+    'rejeita origem %s ao iniciar ou retomar o checkout',
+    async (origin) => {
+      const reservation = await createActiveReservation();
+      const payment = await createPendingHostedPayment(reservation, null);
+      const cookie = await authenticate();
+      const route = `/reservations/${reservation.id}/payments/hosted`;
+      const tests = [
+        () =>
+          request(app.getHttpServer())
+            .post(route)
+            .set('Idempotency-Key', randomUUID())
+            .send({ method: PaymentMethod.Pix }),
+        () => request(app.getHttpServer()).post(`${route}/${payment.id}/resume`),
+      ];
+      for (const makeTest of tests) {
+        const test = makeTest().set('Cookie', cookie);
+        if (origin) test.set('Origin', origin);
+        const response = await test.expect(403);
+        expect(response.body.code).toBe('PAYMENT_ORIGIN_NOT_ALLOWED');
+      }
+      expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+      expect(hostedGateway.findCheckout).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [PaymentMethod.Card, [49], false],
+    [PaymentMethod.Card, [50], true],
+    [PaymentMethod.Pix, [49], false],
+    [PaymentMethod.Pix, [99_999_999], true],
+    [PaymentMethod.Pix, [100_000_000], false],
+    [PaymentMethod.Card, [100_000_000], true],
+    [PaymentMethod.Card, [hostedCheckoutMaxStoredAmountCents], true],
+    [PaymentMethod.Card, [hostedCheckoutMaxStoredAmountCents, 1], false],
+  ])('valida o total %s %j antes de criar a tentativa (%s)', async (method, prices, accepted) => {
+    const reservation = await createActiveReservation(undefined, prices.length);
+    const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
+    await Promise.all(
+      items.map((item, index) =>
+        reservationItemsRepository.update(item.id, { unitPriceCents: prices[index] }),
+      ),
+    );
+    hostedGateway.createCheckout.mockResolvedValueOnce({
+      externalReference: `cs_test_${randomUUID()}`,
+      checkoutUrl: 'https://checkout.stripe.com/test',
+    });
+    const response = await startHostedRequest(reservation.id, await authenticate())
+      .send({ method })
+      .expect(accepted ? 201 : 422);
+    await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(
+      accepted ? 1 : 0,
+    );
+    expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    if (!accepted) expect(response.body.code).toBe('PAYMENT_AMOUNT_UNSUPPORTED');
   });
 
   it('retoma o mesmo checkout após timeout, por consulta e retry sem a chave do cliente', async () => {
@@ -438,30 +546,155 @@ describe('Payments', () => {
     await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(1);
   });
 
-  it('confirma reserva gratuita localmente sem pedir checkout ao provedor', async () => {
+  it('redescobre sessão após 500 persistente e reinício da aplicação sem webhook', async () => {
     const reservation = await createActiveReservation();
     const cookie = await authenticate();
-    await reservationItemsRepository.update(
-      { reservationId: reservation.id },
-      { unitPriceCents: 0 },
-    );
+    const key = randomUUID();
+    const externalReference = `cs_test_${randomUUID()}`;
+    const externalPaymentReference = `pi_${randomUUID()}`;
+    const originalReturnUrl = new URL(`/customer/reservations/${reservation.id}`, checkoutOrigin)
+      .href;
+    hostedGateway.createCheckout.mockRejectedValue(new HostedCheckoutUnavailableError());
 
-    const response = await startHostedRequest(reservation.id, cookie)
-      .send({ method: PaymentMethod.Pix })
-      .expect(201);
+    const creator = await createPaymentsTestApplication();
+    try {
+      await startHostedRequest(reservation.id, cookie, key, creator)
+        .send({ method: PaymentMethod.Card })
+        .expect(503);
+      const changed = jest.replaceProperty(applicationConfig, 'corsOrigins', [
+        'https://new-web.example',
+        checkoutOrigin,
+      ]);
+      try {
+        await startHostedRequest(reservation.id, cookie, key, creator)
+          .send({ method: PaymentMethod.Card })
+          .expect(503);
+      } finally {
+        changed.restore();
+      }
+    } finally {
+      await creator.close();
+    }
 
-    expect(response.body).toMatchObject({
-      amountCents: 0,
-      status: PaymentStatus.Approved,
-      checkoutUrl: null,
-      canResume: false,
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    expect(payment).toMatchObject({
+      status: PaymentStatus.Pending,
+      externalReference: null,
+      checkoutReturnUrl: originalReturnUrl,
     });
-    await expect(
-      reservationsRepository.findOneByOrFail({ id: reservation.id }),
-    ).resolves.toMatchObject({ confirmedAt: expect.any(Date) });
-    expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
-    expect(paymentGateway.processCard).not.toHaveBeenCalled();
+    expect(hostedGateway.createCheckout.mock.calls).toEqual([
+      [expect.objectContaining({ paymentId: payment.id }), originalReturnUrl],
+      [expect.objectContaining({ paymentId: payment.id }), originalReturnUrl],
+    ]);
+
+    hostedGateway.findCheckout.mockImplementation(async ({ paymentId }) =>
+      paymentId === payment.id ? { externalReference, checkoutUrl: null } : null,
+    );
+    reportHostedPaymentAsPaid(payment.id, externalPaymentReference);
+    const restarted = await createPaymentsTestApplication();
+    try {
+      // Dispara o mesmo ciclo do worker sem aguardar o intervalo de produção.
+      await restarted.get(HostedPaymentReconciliationService).reconcilePendingBatch();
+    } finally {
+      await restarted.close();
+    }
+
+    await expect(paymentsRepository.findBy({ reservationId: reservation.id })).resolves.toEqual([
+      expect.objectContaining({
+        id: payment.id,
+        status: PaymentStatus.Approved,
+        externalReference,
+        externalPaymentReference,
+      }),
+    ]);
+    const item = await reservationItemsRepository.findOneByOrFail({
+      reservationId: reservation.id,
+    });
+    await expect(ticketsRepository.countBy({ reservationItemId: item.id })).resolves.toBe(1);
+    expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(2);
   });
+
+  it('só busca a sessão de uma tentativa legada sem a URL original', async () => {
+    const reservation = await createActiveReservation();
+    const payment = await createPendingHostedPayment(reservation, null);
+    const cookie = await authenticate();
+    const endpoint = `/reservations/${reservation.id}/payments/hosted/${payment.id}/resume`;
+
+    await request(app.getHttpServer())
+      .post(endpoint)
+      .set('Cookie', cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(503);
+    expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+
+    const externalReference = `cs_test_${randomUUID()}`;
+    const checkoutUrl = 'https://checkout.stripe.com/test';
+    hostedGateway.findCheckout.mockResolvedValueOnce({ externalReference, checkoutUrl });
+    const response = await request(app.getHttpServer())
+      .post(endpoint)
+      .set('Cookie', cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(200);
+    expect(response.body).toMatchObject({ id: payment.id, checkoutUrl });
+    await expect(paymentsRepository.findOneByOrFail({ id: payment.id })).resolves.toMatchObject({
+      externalReference,
+    });
+    expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+  });
+
+  it('não repete o POST se o hold vencer enquanto procura a sessão sem vínculo', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    hostedGateway.createCheckout.mockRejectedValueOnce(new HostedCheckoutUnavailableError());
+    await startHostedRequest(reservation.id, cookie)
+      .send({ method: PaymentMethod.Card })
+      .expect(503);
+    const payment = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    hostedGateway.findCheckout.mockImplementationOnce(async () => {
+      await reservationsRepository.update(reservation.id, {
+        createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        expiresAt: new Date('2020-01-01T00:10:00.000Z'),
+      });
+      return null;
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(`/reservations/${reservation.id}/payments/hosted/${payment.id}/resume`)
+      .set('Cookie', cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(200);
+    expect(response.body).toMatchObject({ id: payment.id, checkoutUrl: null, canResume: false });
+    expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([PaymentMethod.Card, PaymentMethod.Pix])(
+    'confirma reserva gratuita localmente com %s',
+    async (method) => {
+      const reservation = await createActiveReservation();
+      const cookie = await authenticate();
+      await reservationItemsRepository.update(
+        { reservationId: reservation.id },
+        { unitPriceCents: 0 },
+      );
+
+      const response = await startHostedRequest(reservation.id, cookie)
+        .send({ method })
+        .expect(201);
+
+      expect(response.body).toMatchObject({
+        amountCents: 0,
+        status: PaymentStatus.Approved,
+        checkoutUrl: null,
+        canResume: false,
+      });
+      await expect(
+        reservationsRepository.findOneByOrFail({ id: reservation.id }),
+      ).resolves.toMatchObject({ confirmedAt: expect.any(Date) });
+      expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+      expect(hostedGateway.assertCheckoutAmount).not.toHaveBeenCalled();
+      expect(paymentGateway.processCard).not.toHaveBeenCalled();
+    },
+  );
 
   it('salva a referência sem devolver o link se a reserva expirar durante a criação', async () => {
     const reservation = await createActiveReservation();
@@ -803,7 +1036,7 @@ describe('Payments', () => {
     ]);
   });
 
-  it('confirma capacidade GA sem callback e mantém exclusiva a capacidade vendida', async () => {
+  it('concilia confirmação GA concorrente com webhooks e mantém exclusiva a capacidade vendida', async () => {
     const gaVenue = await dataSource
       .getRepository(Venue)
       .findOneByOrFail({ admissionMode: AdmissionMode.GeneralAdmission });
@@ -829,15 +1062,24 @@ describe('Payments', () => {
       .send({ eventId: event.id, quantity: 2 })
       .expect(201);
     const reservation = await reservationsRepository.findOneByOrFail({ id: hold.body.id });
+    const externalReference = `cs_test_${randomUUID()}`;
     const payment = await createPendingHostedPayment(
       reservation,
-      `cs_test_${randomUUID()}`,
+      externalReference,
       PaymentMethod.Pix,
     );
     reportHostedPaymentAsPaid(payment.id, `pi_${randomUUID()}`);
 
-    await reconciliation.reconcilePendingBatch();
-    await reconciliation.reconcilePendingBatch();
+    await Promise.all([
+      reconciliation.reconcilePendingBatch(),
+      sendHostedNotification(payment.id, externalReference).expect(204),
+      sendHostedNotification(payment.id, externalReference).expect(204),
+      request(app.getHttpServer())
+        .post('/reservations/general-admission')
+        .set('Cookie', otherCookie)
+        .send({ eventId: event.id, quantity: 1 })
+        .expect(409),
+    ]);
 
     const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
     await expect(
