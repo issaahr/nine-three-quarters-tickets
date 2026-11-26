@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { Event } from '../events/event.entity';
+import { EventStatus } from '../events/eventStatus.enum';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
@@ -120,6 +122,49 @@ export class PaymentsService {
   }
 
   /**
+   * Grava ou recupera a tentativa cuja identidade será usada na chamada ao provedor.
+   *
+   * @param idempotencyKey - Chave compartilhada entre os métodos da reserva para recuperar a mesma tentativa.
+   * @param provider - Provedor selecionado para cobranças de valor positivo.
+   * @returns Tentativa com valor calculado a partir dos itens persistidos da reserva.
+   */
+  public async startHostedPayment(
+    customerId: string,
+    reservationId: string,
+    idempotencyKey: string,
+    method: PaymentMethod,
+    provider: PaymentProvider,
+  ): Promise<Payment> {
+    const { payment } = await this.startPayment(
+      customerId,
+      reservationId,
+      idempotencyKey,
+      method,
+      provider,
+    );
+    return payment;
+  }
+
+  /**
+   * Confirma uma compra gratuita pela mesma finalização transacional usada no fluxo local.
+   *
+   * @param customerId - Titular da reserva, revalidado na liquidação local de PIX.
+   * @param payment - Tentativa persistida com provedor fake e valor zero.
+   */
+  public confirmFreeHostedPayment(customerId: string, payment: Payment): Promise<Payment> {
+    if (payment.provider !== PaymentProvider.Fake || payment.amountCents !== 0) {
+      throw new PaymentNotFoundError();
+    }
+    return payment.method === PaymentMethod.Pix
+      ? this.paymentFinalization.settleSimulatedPixPayment(
+          customerId,
+          payment.reservationId,
+          payment.id,
+        )
+      : this.paymentFinalization.finalizePayment(payment.id, PaymentStatus.Approved);
+  }
+
+  /**
    * Recupera o PIX ativo do dono da Reservation ou, na ausência dele, o resultado mais recente.
    *
    * @param customerId - Identidade do CUSTOMER autenticado.
@@ -182,6 +227,7 @@ export class PaymentsService {
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
    * @param method - Método usado quando a chave ainda não possui um Payment.
+   * @param provider - Provedor solicitado para uma tentativa de valor positivo.
    * @returns Payment e indicação de criação, que permite ao cartão chamar o gateway uma única vez.
    */
   private async startPayment(
@@ -189,6 +235,7 @@ export class PaymentsService {
     reservationId: string,
     idempotencyKey: string,
     method: PaymentMethod,
+    provider: PaymentProvider = PaymentProvider.Fake,
   ): Promise<PaymentInitiation> {
     return this.dataSource.transaction(async (manager) => {
       const reservationsRepository = manager.getRepository(Reservation);
@@ -250,15 +297,26 @@ export class PaymentsService {
         throw new ReservationExpiredError();
       }
 
+      // Evita iniciar uma cobrança externa para uma ocorrência que já saiu de venda.
+      if (provider !== PaymentProvider.Fake) {
+        const event = await manager
+          .getRepository(Event)
+          .findOneByOrFail({ id: reservation.eventId });
+        if (event.status !== EventStatus.Published || event.startsAt <= now) {
+          throw new ReservationNotActiveError();
+        }
+      }
+
       const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
       const amountCents = items.reduce((total, item) => total + item.unitPriceCents, 0);
+      const resolvedProvider = amountCents === 0 ? PaymentProvider.Fake : provider;
       const paymentsRepository = manager.getRepository(Payment);
 
       const payment = await paymentsRepository.save(
         paymentsRepository.create({
           reservationId: reservation.id,
           method,
-          provider: PaymentProvider.Fake,
+          provider: resolvedProvider,
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
@@ -267,8 +325,11 @@ export class PaymentsService {
           approvedAt: null,
           failedAt: null,
           simulationCompletionAt:
-            method === PaymentMethod.Pix
-              ? new Date(now.getTime() + simulatedPixCompletionDelayMs)
+            resolvedProvider === PaymentProvider.Fake && method === PaymentMethod.Pix
+              ? new Date(
+                  now.getTime() +
+                    (provider === PaymentProvider.Fake ? simulatedPixCompletionDelayMs : 0),
+                )
               : null,
         }),
       );

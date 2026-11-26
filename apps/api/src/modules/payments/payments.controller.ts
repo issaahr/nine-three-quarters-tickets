@@ -21,6 +21,7 @@ import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto'
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
 import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
 import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
+import { FakePaymentsModeGuard } from './guards/fakePaymentsMode.guard';
 import {
   ApiCreateCardPayment,
   ApiCreateSimulatedPixPayment,
@@ -31,6 +32,7 @@ import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments')
 @Controller('reservations/:reservationId/payments')
+@UseGuards(FakePaymentsModeGuard)
 export class PaymentsController {
   public constructor(private readonly paymentsService: PaymentsService) {}
 

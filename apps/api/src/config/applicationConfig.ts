@@ -1,4 +1,5 @@
 import { ConfigurationError } from '../errors/configuration.error';
+import { PaymentProvider } from '../modules/payments/paymentProvider.enum';
 import { getRequiredEnvironmentVariable } from './environment';
 import { NodeEnv } from './nodeEnv.enum';
 
@@ -135,6 +136,25 @@ function getPaymentCardPendingTimeoutSeconds(environmentVariables: NodeJS.Proces
   }
 
   return pendingTimeoutSeconds;
+}
+
+function getPaymentProviderConfig(environmentVariables: NodeJS.ProcessEnv) {
+  const provider = environmentVariables.PAYMENT_PROVIDER?.toUpperCase();
+  if (provider === undefined || provider === PaymentProvider.Fake) {
+    return { provider: PaymentProvider.Fake } as const;
+  }
+  if (provider !== PaymentProvider.Stripe) {
+    throw new ConfigurationError('Variável de ambiente PAYMENT_PROVIDER deve ser fake ou stripe');
+  }
+
+  const secretKey = getRequiredEnvironmentVariable(
+    'PAYMENT_STRIPE_SECRET_KEY',
+    environmentVariables,
+  );
+  if (!/^sk_test_[A-Za-z0-9_]+$/.test(secretKey)) {
+    throw new ConfigurationError('PAYMENT_STRIPE_SECRET_KEY deve ser uma chave de teste da Stripe');
+  }
+  return { provider: PaymentProvider.Stripe, secretKey } as const;
 }
 
 /**
@@ -323,6 +343,7 @@ export function loadApplicationConfig(environmentVariables: NodeJS.ProcessEnv) {
     },
     payments: {
       cardPendingTimeoutSeconds: getPaymentCardPendingTimeoutSeconds(environmentVariables),
+      ...getPaymentProviderConfig(environmentVariables),
     },
     catalog: {
       tmdb: {

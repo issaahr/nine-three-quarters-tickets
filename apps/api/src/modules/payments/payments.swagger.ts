@@ -8,11 +8,13 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiServiceUnavailableResponse,
 } from '@nestjs/swagger';
 
 import { ApplicationErrorResponseDto } from '../../errors/applicationErrorResponse.dto';
 import { ValidationErrorResponseDto } from '../../errors/validationErrorResponse.dto';
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
+import { HostedCheckoutResponseDto } from './dto/hostedCheckoutResponse.dto';
 import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
 
 const apiPaymentIdempotencyKey = ApiHeader({
@@ -97,5 +99,55 @@ export function ApiSettleSimulatedPixPayment() {
       type: ApplicationErrorResponseDto,
       description: 'Tentativa de PIX ausente ou fora das Reservations do CUSTOMER.',
     }),
+  );
+}
+
+const apiHostedCheckoutUnavailable = ApiServiceUnavailableResponse({
+  type: ApplicationErrorResponseDto,
+  description: 'O provedor não pôde confirmar o estado. Retome a mesma tentativa.',
+});
+
+const apiHostedCheckoutNotFound = ApiNotFoundResponse({
+  type: ApplicationErrorResponseDto,
+  description: 'Checkout indisponível ou Reservation ou tentativa não encontrada para o CUSTOMER.',
+});
+
+const apiHostedCheckoutOrigin = ApiHeader({
+  name: 'Origin',
+  required: true,
+  description: 'Origem do checkout presente na configuração de origens permitidas.',
+});
+
+export function ApiCreateHostedCheckout() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Inicia ou repete uma tentativa idempotente de checkout hospedado' }),
+    apiPaymentIdempotencyKey,
+    apiHostedCheckoutOrigin,
+    ApiCreatedResponse({ type: HostedCheckoutResponseDto }),
+    ApiBadRequestResponse({ type: ValidationErrorResponseDto }),
+    ApiForbiddenResponse({ description: 'Papel ou origem sem acesso.' }),
+    apiHostedCheckoutNotFound,
+    ApiConflictResponse({ description: 'Reserva inativa ou com outra tentativa ativa.' }),
+    apiHostedCheckoutUnavailable,
+  );
+}
+
+export function ApiGetHostedCheckout() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Consulta a tentativa persistida de checkout hospedado' }),
+    ApiOkResponse({ type: HostedCheckoutResponseDto }),
+    apiHostedCheckoutNotFound,
+    apiHostedCheckoutUnavailable,
+  );
+}
+
+export function ApiResumeHostedCheckout() {
+  return applyDecorators(
+    ApiOperation({ summary: 'Retoma a mesma tentativa de checkout hospedado após uma falha' }),
+    apiHostedCheckoutOrigin,
+    ApiOkResponse({ type: HostedCheckoutResponseDto }),
+    ApiForbiddenResponse({ description: 'Papel ou origem sem acesso.' }),
+    apiHostedCheckoutNotFound,
+    apiHostedCheckoutUnavailable,
   );
 }

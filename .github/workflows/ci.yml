@@ -73,6 +73,7 @@ jobs:
       TICKET_HMAC_SECRET: ci-test-ticket-secret-with-at-least-32-bytes
       RESERVATION_HOLD_DURATION_SECONDS: "600"
       PAYMENT_CARD_PENDING_TIMEOUT_SECONDS: "600"
+      PAYMENT_PROVIDER: fake
       CORS_ORIGINS: http://localhost:5173
       PUBLIC_SIGNUP_ENABLED: "false"
       TRUST_PROXY_HOPS: "0"

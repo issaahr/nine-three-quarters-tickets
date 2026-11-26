@@ -16,6 +16,11 @@ export interface SimulatedPixPaymentInitiation {
   qrCodePayload: string | null;
 }
 
+export interface HostedCheckout {
+  payment: Payment;
+  checkoutUrl: string | null;
+}
+
 /** Projeção mínima retornada pelo PostgreSQL para cada EventSeat vendido. */
 export interface SoldEventSeatRow {
   id: string;

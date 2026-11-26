@@ -15,13 +15,18 @@ import { Event } from '../src/modules/events/event.entity';
 import { EventCategory } from '../src/modules/events/eventCategory.enum';
 import { EventSeat } from '../src/modules/events/eventSeat.entity';
 import { EventStatus } from '../src/modules/events/eventStatus.enum';
+import { HostedCheckoutUnavailableError } from '../src/modules/payments/errors/hostedCheckoutUnavailable.error';
 import { PaymentInProgressError } from '../src/modules/payments/errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from '../src/modules/payments/errors/reservationAlreadyPaid.error';
+import { HostedPaymentGateway } from '../src/modules/payments/hostedPaymentGateway.interfaces';
 import { Payment } from '../src/modules/payments/payment.entity';
 import { PaymentCurrency } from '../src/modules/payments/paymentCurrency.enum';
 import { PaymentMethod } from '../src/modules/payments/paymentMethod.enum';
 import { PaymentProvider } from '../src/modules/payments/paymentProvider.enum';
-import { paymentGatewayToken } from '../src/modules/payments/payments.constants';
+import {
+  hostedPaymentGatewayToken,
+  paymentGatewayToken,
+} from '../src/modules/payments/payments.constants';
 import { PaymentsService } from '../src/modules/payments/payments.service';
 import {
   CardPaymentGatewayRequest,
@@ -72,6 +77,12 @@ describe('Payments', () => {
   let organizer: User;
   let venue: Venue;
   let paymentGateway: ControlledPaymentGateway;
+  const hostedGateway: jest.Mocked<HostedPaymentGateway> = {
+    provider: PaymentProvider.Stripe,
+    creationRetryWindowMs: 86_400_000,
+    createCheckout: jest.fn(),
+    retrieveCheckout: jest.fn(),
+  };
   let paymentsService: PaymentsService;
   let seatRealtimeGateway: SeatRealtimeGateway;
   const createdEventIds: string[] = [];
@@ -81,6 +92,8 @@ describe('Payments', () => {
     const testingModule = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(paymentGatewayToken)
       .useValue(paymentGateway)
+      .overrideProvider(hostedPaymentGatewayToken)
+      .useValue(hostedGateway)
       .compile();
 
     app = testingModule.createNestApplication();
@@ -118,6 +131,8 @@ describe('Payments', () => {
   beforeEach(() => {
     paymentGateway.processCard.mockReset();
     paymentGateway.processCard.mockResolvedValue({ status: CardPaymentGatewayStatus.Approved });
+    hostedGateway.createCheckout.mockReset();
+    hostedGateway.retrieveCheckout.mockReset();
     jest.mocked(seatRealtimeGateway.emitSold).mockClear();
     jest.mocked(seatRealtimeGateway.emitReleased).mockClear();
   });
@@ -293,6 +308,140 @@ describe('Payments', () => {
       .post(`/reservations/${reservationId}/payments/pix/${paymentId}/settle`)
       .set('Cookie', cookie);
   }
+
+  function startHostedRequest(
+    reservationId: string,
+    cookie: string,
+    idempotencyKey = randomUUID(),
+  ) {
+    return request(app.getHttpServer())
+      .post(`/reservations/${reservationId}/payments/hosted`)
+      .set('Cookie', cookie)
+      .set('Origin', checkoutOrigin)
+      .set('Idempotency-Key', idempotencyKey);
+  }
+
+  it('retoma o mesmo checkout após timeout, por consulta e retry sem a chave do cliente', async () => {
+    const reservation = await createActiveReservation(undefined, 2);
+    const cookie = await authenticate();
+    const otherCookie = await authenticate(customerTwo);
+    const key = randomUUID();
+    const endpoint = `/reservations/${reservation.id}/payments/hosted`;
+    const redirect = {
+      externalReference: 'cs_test_recovered',
+      checkoutUrl: 'https://checkout.stripe.com/test',
+    };
+    hostedGateway.createCheckout.mockImplementationOnce(async (payment) => {
+      await expect(
+        paymentsRepository.findOneByOrFail({ id: payment.paymentId }),
+      ).resolves.toMatchObject({
+        status: PaymentStatus.Pending,
+        provider: PaymentProvider.Stripe,
+        amountCents: 5180,
+        externalReference: null,
+      });
+      throw new HostedCheckoutUnavailableError();
+    });
+
+    await startHostedRequest(reservation.id, cookie, key)
+      .send({ method: PaymentMethod.Pix, amountCents: 1 })
+      .expect(400);
+    await startHostedRequest(reservation.id, cookie, key)
+      .send({ method: PaymentMethod.Pix })
+      .expect(503);
+    const persisted = await paymentsRepository.findOneByOrFail({ reservationId: reservation.id });
+    await request(app.getHttpServer()).get(endpoint).set('Cookie', otherCookie).expect(404);
+    const pending = await request(app.getHttpServer())
+      .get(endpoint)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(pending.body).toMatchObject({
+      id: persisted.id,
+      status: PaymentStatus.Pending,
+      checkoutUrl: null,
+    });
+    expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(1);
+    await startHostedRequest(reservation.id, cookie)
+      .send({ method: PaymentMethod.Card })
+      .expect(409);
+
+    hostedGateway.createCheckout.mockResolvedValueOnce(redirect);
+    const resumed = await request(app.getHttpServer())
+      .post(`${endpoint}/${persisted.id}/resume`)
+      .set('Cookie', cookie)
+      .set('Origin', checkoutOrigin)
+      .expect(200);
+    expect(resumed.body).toMatchObject({
+      id: persisted.id,
+      method: PaymentMethod.Pix,
+      currency: PaymentCurrency.Brl,
+      checkoutUrl: redirect.checkoutUrl,
+    });
+    expect(resumed.body).not.toHaveProperty('externalReference');
+    expect(hostedGateway.createCheckout.mock.calls[1]).toEqual(
+      hostedGateway.createCheckout.mock.calls[0],
+    );
+
+    hostedGateway.retrieveCheckout.mockResolvedValue(redirect);
+    await startHostedRequest(reservation.id, cookie, key)
+      .send({ method: PaymentMethod.Card })
+      .expect(201);
+    await request(app.getHttpServer()).get(endpoint).set('Cookie', cookie).expect(200);
+    expect(hostedGateway.retrieveCheckout).toHaveBeenCalledTimes(2);
+    expect(hostedGateway.createCheckout).toHaveBeenCalledTimes(2);
+    await expect(paymentsRepository.countBy({ reservationId: reservation.id })).resolves.toBe(1);
+  });
+
+  it('confirma reserva gratuita localmente sem pedir checkout ao provedor', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    await reservationItemsRepository.update(
+      { reservationId: reservation.id },
+      { unitPriceCents: 0 },
+    );
+
+    const response = await startHostedRequest(reservation.id, cookie)
+      .send({ method: PaymentMethod.Pix })
+      .expect(201);
+
+    expect(response.body).toMatchObject({
+      amountCents: 0,
+      status: PaymentStatus.Approved,
+      checkoutUrl: null,
+    });
+    await expect(
+      reservationsRepository.findOneByOrFail({ id: reservation.id }),
+    ).resolves.toMatchObject({ confirmedAt: expect.any(Date) });
+    expect(hostedGateway.createCheckout).not.toHaveBeenCalled();
+    expect(paymentGateway.processCard).not.toHaveBeenCalled();
+  });
+
+  it('salva a referência sem devolver o link se a reserva expirar durante a criação', async () => {
+    const reservation = await createActiveReservation();
+    const cookie = await authenticate();
+    hostedGateway.createCheckout.mockImplementationOnce(async () => {
+      await reservationsRepository.update(reservation.id, {
+        createdAt: new Date('2000-01-01T00:00:00Z'),
+        expiresAt: new Date('2000-01-01T00:10:00Z'),
+      });
+      return {
+        externalReference: 'cs_test_after_hold',
+        checkoutUrl: 'https://checkout.stripe.com/test',
+      };
+    });
+
+    const response = await startHostedRequest(reservation.id, cookie)
+      .send({ method: PaymentMethod.Card })
+      .expect(201);
+
+    expect(response.body).toMatchObject({ status: PaymentStatus.Pending, checkoutUrl: null });
+    await expect(
+      paymentsRepository.findOneByOrFail({ id: response.body.id }),
+    ).resolves.toMatchObject({
+      provider: PaymentProvider.Stripe,
+      externalReference: 'cs_test_after_hold',
+    });
+  });
 
   async function waitForBlockedTransaction(pid: number): Promise<void> {
     for (let attempt = 0; attempt < lockPollAttempts; attempt++) {

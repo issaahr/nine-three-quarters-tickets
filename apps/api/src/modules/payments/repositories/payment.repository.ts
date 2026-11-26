@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager, In, UpdateResult } from 'typeorm';
+import { Brackets, EntityManager, In, IsNull, UpdateResult } from 'typeorm';
 
 import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
@@ -10,6 +10,68 @@ import { PaymentStatus } from '../paymentStatus.enum';
 
 @Injectable()
 export class PaymentRepository {
+  /**
+   * Limita a consulta às tentativas do titular da reserva, incluindo compras gratuitas locais.
+   * Carrega a reserva e a ocorrência para verificar se o link ainda pode ser oferecido.
+   *
+   * @param paymentId - Quando omitido, prioriza a tentativa ativa e depois o resultado mais recente.
+   */
+  public findHostedForCheckout(
+    manager: EntityManager,
+    customerId: string,
+    reservationId: string,
+    provider: PaymentProvider,
+    paymentId?: string,
+  ): Promise<Payment | null> {
+    const query = manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .innerJoinAndSelect('payment.reservation', 'reservation')
+      .innerJoinAndSelect('reservation.event', 'event')
+      .where('payment.reservationId = :reservationId AND reservation.customerId = :customerId', {
+        reservationId,
+        customerId,
+      })
+      .andWhere(
+        new Brackets((providers) => {
+          providers
+            .where('payment.provider = :provider', { provider })
+            .orWhere('payment.provider = :fake AND payment.amountCents = 0', {
+              fake: PaymentProvider.Fake,
+            });
+        }),
+      );
+    if (paymentId) {
+      return query.andWhere('payment.id = :paymentId', { paymentId }).getOne();
+    }
+    return query
+      .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
+      .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
+      .addOrderBy('payment.createdAt', 'DESC')
+      .addOrderBy('payment.id', 'DESC')
+      .limit(1)
+      .getOne();
+  }
+
+  /**
+   * Grava a referência externa apenas se nenhuma chamada concorrente já tiver feito o vínculo.
+   *
+   * @param payment - Tentativa local gravada antes da chamada ao provedor.
+   * @returns Resultado da atualização condicional. O chamador relê o vínculo vencedor antes de expor a URL.
+   */
+  public attachExternalReference(
+    manager: EntityManager,
+    payment: Payment,
+    externalReference: string,
+  ): Promise<UpdateResult> {
+    return manager
+      .getRepository(Payment)
+      .update(
+        { id: payment.id, provider: payment.provider, externalReference: IsNull() },
+        { externalReference },
+      );
+  }
+
   /**
    * Recupera o PIX do checkout com verificação de propriedade na mesma consulta.
    * Prioriza a tentativa ativa e, quando ela não existe, retorna o resultado terminal mais recente.

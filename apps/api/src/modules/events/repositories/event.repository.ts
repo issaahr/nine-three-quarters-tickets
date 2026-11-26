@@ -10,6 +10,7 @@ import { Reservation } from '../../reservations/reservation.entity';
 import { ReservationItem } from '../../reservations/reservationItem.entity';
 import { EventSeat } from '../eventSeat.entity';
 import { Payment } from '../../payments/payment.entity';
+import { PaymentProvider } from '../../payments/paymentProvider.enum';
 import { PaymentStatus } from '../../payments/paymentStatus.enum';
 import { Refund } from '../../refunds/refund.entity';
 import { RefundStatus } from '../../refunds/refundStatus.enum';
@@ -95,6 +96,7 @@ export class EventRepository {
         throw new EventCannotBeCancelledError();
       }
 
+      // A confirmação de pagamentos usa a mesma ordem de locks: Event → Reservation → Payment.
       const reservations = await reservationsRepository.find({
         where: { eventId },
         lock: { mode: 'pessimistic_write' },
@@ -124,7 +126,11 @@ export class EventRepository {
           reservation.cancelledAt = now;
           await reservationsRepository.save(reservation);
           releasedEventSeatIds.push(...(await this.releaseHeldSeats(manager, reservation.id)));
-          if (payment?.status === PaymentStatus.Pending) {
+          // Uma tentativa externa pode ter sido cobrada e precisa permanecer pendente para conciliação.
+          if (
+            payment?.status === PaymentStatus.Pending &&
+            payment.provider === PaymentProvider.Fake
+          ) {
             await paymentsRepository.update(payment.id, {
               status: PaymentStatus.Failed,
               failedAt: now,

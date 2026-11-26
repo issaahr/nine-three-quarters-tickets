@@ -1,4 +1,5 @@
 import { ConfigurationError } from '../errors/configuration.error';
+import { PaymentProvider } from '../modules/payments/paymentProvider.enum';
 import { loadApplicationConfig } from './applicationConfig';
 
 describe('loadApplicationConfig', () => {
@@ -27,6 +28,22 @@ describe('loadApplicationConfig', () => {
     TICKETMASTER_LOCALE: 'pt-BR',
     TICKETMASTER_REQUEST_TIMEOUT_MS: '5000',
   };
+
+  it('mantém fake como modo de demonstração e exige chave de teste ao optar pela Stripe', () => {
+    expect(loadApplicationConfig(validEnvironment).payments.provider).toBe(PaymentProvider.Fake);
+    const stripeEnvironment = { ...validEnvironment, PAYMENT_PROVIDER: 'stripe' };
+    expect(() => loadApplicationConfig(stripeEnvironment)).toThrow('PAYMENT_STRIPE_SECRET_KEY');
+    expect(() =>
+      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_live_invalid' }),
+    ).toThrow('chave de teste');
+    expect(
+      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example' })
+        .payments.provider,
+    ).toBe(PaymentProvider.Stripe);
+    expect(() =>
+      loadApplicationConfig({ ...validEnvironment, PAYMENT_PROVIDER: 'unknown' }),
+    ).toThrow('PAYMENT_PROVIDER');
+  });
 
   it('normaliza valores e configura o cookie para ambiente local', () => {
     const config = loadApplicationConfig(validEnvironment);

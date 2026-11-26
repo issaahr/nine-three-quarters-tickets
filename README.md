@@ -305,6 +305,12 @@ DEMO_USERS_PASSWORD=...
 
 As configurações de rate limiting definem as janelas e limites utilizados pela API para proteção contra abuso.
 
+### Stripe Checkout em sandbox
+
+Configure `PAYMENT_PROVIDER=fake` para a demonstração. Quando a variável é omitida, a API mantém esse modo. Para testar os endpoints de checkout hospedado, configure `PAYMENT_PROVIDER=stripe` e forneça `PAYMENT_STRIPE_SECRET_KEY` com uma chave `sk_test_...` no ambiente do backend. A primeira origem de `CORS_ORIGINS` recebe o retorno à página da reserva.
+
+Os endpoints hospedados ficam em `/reservations/:reservationId/payments/hosted`. O `POST` inicia uma tentativa com `Idempotency-Key` e um método (`CARD` ou `PIX`). O `GET` recupera a tentativa e o `POST /:paymentId/resume` retoma sua criação caso a resposta anterior tenha se perdido. O frontend poderá consultar o `GET` quando o cliente voltar do Checkout. A confirmação de pagamentos externos será feita pela conciliação no backend. [Validação do sandbox](docs/stripe-sandbox-validation.md)
+
 ### Integrações externas
 
 As credenciais de TMDb e Ticketmaster são utilizadas exclusivamente pelo backend e **não devem utilizar o prefixo `VITE_`**.
