@@ -129,6 +129,7 @@ Consulte o [ADR 0007](adr/0007-stripe-checkout-hospedado-no-sandbox.md).
 - Login não distingue email inexistente de senha incorreta e mantém custo de bcrypt nos dois casos.
 - Papéis presentes no JWT são validados e a autorização efetiva ocorre em guards da API.
 - CORS e atributos do cookie são derivados de configuração. A política deve ser revisada para a topologia real de produção.
+- Login e logout exigem origem confiável antes de emitir ou remover o cookie. A validação precede a autenticação e a quota de login; origem rejeitada retorna `403` sem `Set-Cookie`.
 
 Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 

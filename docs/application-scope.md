@@ -320,6 +320,8 @@ Possível configuração para cookie cross-site:
 
 CORS não deve ser tratado como proteção completa contra CSRF.
 
+`POST /auth/login` e `POST /auth/logout` exigem `Origin` correspondente a uma origem de `CORS_ORIGINS`. Origem ausente, `null` ou não autorizada retorna `403` sem emitir ou limpar o cookie. Essa validação ocorre antes da autenticação e da quota de login. A proteção mantém o cookie de produção `SameSite=None; Secure`, permitindo Web e API em domínios separados. Consulte a [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
+
 A configuração final de autenticação deve passar por uma revisão de segurança no momento do deploy, quando os domínios reais forem conhecidos.
 
 A documentação não deve afirmar que CSRF está resolvido antes dessa revisão.

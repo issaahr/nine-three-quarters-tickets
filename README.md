@@ -600,6 +600,10 @@ Em produção, web e API estão hospedadas em sites diferentes, portanto o cooki
 
 O frontend deve enviar requisições com credenciais e a origem utilizada precisa estar configurada em `CORS_ORIGINS`.
 
+Login e logout verificam `Origin` no backend. Origem ausente, `null` ou não permitida retorna `403` sem emitir ou limpar o cookie. O navegador envia esse cabeçalho automaticamente; no Postman ou em scripts, informe `Origin` com um dos valores exatos de `CORS_ORIGINS`. No login, a origem é verificada antes das credenciais e da quota.
+
+Para autenticar pelo Swagger hospedado na API, inclua também a origem da API em `CORS_ORIGINS`. Mantenha a origem do Web na primeira posição, pois ela define o retorno de novas sessões do checkout hospedado.
+
 Quando `PUBLIC_SIGNUP_ENABLED=true`, o endpoint público de cadastro cria exclusivamente usuários `CUSTOMER` e não inicia sessão automaticamente.
 
 A documentação completa das invariantes de autenticação está em [Escopo técnico e invariantes](docs/application-scope.md).

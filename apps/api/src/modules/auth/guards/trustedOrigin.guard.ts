@@ -7,10 +7,10 @@ import { AuthenticatedRequest } from '../auth.types';
 @Injectable()
 export class TrustedOriginGuard implements CanActivate {
   /**
-   * Exige uma origem explicitamente permitida para mutações autenticadas por cookie.
+   * Exige uma origem permitida para operações de sessão e mutações autenticadas por cookie.
    * A verificação ocorre no servidor porque CORS sozinho não bloqueia o envio de formulários.
    *
-   * @param context - Contexto HTTP da requisição que solicita a mutação.
+   * @param context - Contexto HTTP da operação que altera a sessão ou um recurso autenticado.
    * @returns true se Origin corresponde exatamente a uma das origens configuradas.
    */
   public canActivate(context: ExecutionContext): boolean {

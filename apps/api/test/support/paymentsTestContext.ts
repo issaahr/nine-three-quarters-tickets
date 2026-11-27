@@ -237,10 +237,13 @@ export class PaymentsTestContext {
   }
 
   public async authenticate(user: User = this.customer): Promise<string> {
-    const response = await request(this.app.getHttpServer()).post('/auth/login').send({
-      email: user.email,
-      password: process.env.DEMO_USERS_PASSWORD,
-    });
+    const response = await request(this.app.getHttpServer())
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send({
+        email: user.email,
+        password: process.env.DEMO_USERS_PASSWORD,
+      });
     const setCookie = response.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
 

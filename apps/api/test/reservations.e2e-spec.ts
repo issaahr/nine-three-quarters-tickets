@@ -93,10 +93,13 @@ describe('Reservations seated', () => {
 
   /** Autentica uma conta de demonstração pelo mesmo fluxo HTTP disponível ao cliente. */
   async function authenticate(email: string): Promise<string> {
-    const response = await request(app.getHttpServer()).post('/auth/login').send({
-      email,
-      password: process.env.DEMO_USERS_PASSWORD,
-    });
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send({
+        email,
+        password: process.env.DEMO_USERS_PASSWORD,
+      });
     const setCookie = response.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
 

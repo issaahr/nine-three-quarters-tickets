@@ -112,10 +112,13 @@ describe('compra GENERAL_ADMISSION', () => {
 
   /** Autentica um usuário pelo endpoint público e devolve seu cookie de sessão. */
   async function authenticate(user: User): Promise<string> {
-    const response = await request(app.getHttpServer()).post('/auth/login').send({
-      email: user.email,
-      password: process.env.DEMO_USERS_PASSWORD,
-    });
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send({
+        email: user.email,
+        password: process.env.DEMO_USERS_PASSWORD,
+      });
     const setCookie = response.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
 
