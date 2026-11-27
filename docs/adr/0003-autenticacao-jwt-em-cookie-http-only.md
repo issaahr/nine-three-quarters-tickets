@@ -21,16 +21,24 @@ Papéis controlam operações sensíveis e não podem depender de estado ou rote
 
 ### Proteção contra CSRF
 
-As rotas abaixo exigem que o cabeçalho `Origin` corresponda exatamente a uma das origens em `CORS_ORIGINS`. Após autenticar e verificar o papel do usuário, a API retorna `403` quando a origem está ausente, tem o valor `null` ou está fora da lista. A verificação de propriedade continua obrigatória antes da mutação.
+Login e logout exigem que o cabeçalho `Origin` corresponda exatamente a uma das origens em `CORS_ORIGINS`, antes de emitir ou remover o cookie. A origem ausente, `null` ou não autorizada retorna `403` sem `Set-Cookie`. No login, essa verificação também precede a autenticação e o consumo da quota. Logout continua idempotente para origem confiável, mesmo sem sessão válida.
+
+- `POST /auth/login`
+- `POST /auth/logout`
+
+As mutações abaixo também exigem essa verificação de origem. Autenticação, papel e propriedade continuam obrigatórios para autorizar a operação.
 
 - `POST /reservations/:reservationId/payments/pix/:paymentId/settle`
 - `POST /reservations/:reservationId/cancel`
 - `POST /organizer/me/events/:eventId/cancel`
+
+A [ADR 0007](0007-stripe-checkout-hospedado-no-sandbox.md) complementa esta política para as mutações de checkout hospedado e descreve a autenticação do webhook da Stripe.
 
 ## Consequências
 
 - Scripts executados no frontend não conseguem ler o token diretamente.
 - Logout não revoga um JWT já emitido no servidor; a validade termina pela expiração configurada.
 - Ao expirar a sessão, o usuário autentica novamente.
+- Clientes HTTP que não sejam navegadores precisam enviar uma origem confiável nas operações de sessão. O cabeçalho não substitui a validação das credenciais.
 - CORS, `SameSite`, `Secure` e proteção contra CSRF precisam permanecer coerentes com a topologia real do deploy.
 - Mudanças de papel só são refletidas em tokens emitidos posteriormente.

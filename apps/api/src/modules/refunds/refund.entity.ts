@@ -5,14 +5,19 @@ import { Payment } from '../payments/payment.entity';
 import { RefundStatus } from './refundStatus.enum';
 
 /**
- * Devolução integral posterior a um pagamento aprovado, preservando seu histórico.
+ * Intenção de devolver integralmente uma cobrança, preservando seu histórico.
  */
 @Entity('refunds')
+@Index('refundsExternalReferenceUnique', ['externalReference'], { unique: true })
 @Index('refundsActivePaymentUnique', ['paymentId'], {
   unique: true,
   where: `"status" IN ('${RefundStatus.Pending}', '${RefundStatus.Completed}')`,
 })
 @Check('refundsAmountCentsPositive', '"amountCents" > 0')
+@Check(
+  'refundsExternalReferenceConsistent',
+  '"externalReference" IS NULL OR ("externalStartedAt" IS NOT NULL AND btrim("externalReference") <> \'\')',
+)
 @Check(
   'refundsLifecycleConsistent',
   `("status" = '${RefundStatus.Completed}' AND "completedAt" IS NOT NULL AND "failedAt" IS NULL) OR
@@ -34,6 +39,12 @@ export class Refund extends BaseEntity {
 
   @Column({ type: 'timestamptz', nullable: true })
   public failedAt!: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  public externalStartedAt!: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  public externalReference!: string | null;
 
   // Relations
   @ManyToOne(() => Payment, { onDelete: 'RESTRICT' })

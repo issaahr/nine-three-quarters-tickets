@@ -170,6 +170,7 @@ describe('autenticação', () => {
   ])('autentica o usuário seedado %s e envia o JWT somente no cookie', async (email, role) => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .send({
         email,
         password: process.env.DEMO_USERS_PASSWORD,
@@ -215,6 +216,7 @@ describe('autenticação', () => {
   it('normaliza o email antes de consultar as credenciais', async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .send({
         email: '  CUSTOMER.ONE.DEMO@NTQ.LOCAL  ',
         password: process.env.DEMO_USERS_PASSWORD,
@@ -226,10 +228,13 @@ describe('autenticação', () => {
 
   it('restaura a identidade da sessão sem expor o token ou o email', async () => {
     const agent = request.agent(app.getHttpServer());
-    const loginResponse = await agent.post('/auth/login').send({
-      email: 'customer.one.demo@ntq.local',
-      password: process.env.DEMO_USERS_PASSWORD,
-    });
+    const loginResponse = await agent
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send({
+        email: 'customer.one.demo@ntq.local',
+        password: process.env.DEMO_USERS_PASSWORD,
+      });
 
     const response = await agent.get('/auth/session').expect(200);
 
@@ -247,13 +252,17 @@ describe('autenticação', () => {
 
     await agent
       .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .send({
         email: 'customer.one.demo@ntq.local',
         password: process.env.DEMO_USERS_PASSWORD,
       })
       .expect(200);
 
-    const logoutResponse = await agent.post('/auth/logout').expect(204);
+    const logoutResponse = await agent
+      .post('/auth/logout')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .expect(204);
     const setCookie = logoutResponse.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
 
@@ -275,7 +284,10 @@ describe('autenticação', () => {
   });
 
   it('mantém logout idempotente sem sessão válida', async () => {
-    await request(app.getHttpServer()).post('/auth/logout').expect(204);
+    await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .expect(204);
   });
 
   it.each([
@@ -284,6 +296,7 @@ describe('autenticação', () => {
   ])('retorna o mesmo erro para credenciais inválidas', async (email, password) => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .send({ email, password })
       .expect(401);
 
@@ -299,7 +312,11 @@ describe('autenticação', () => {
     [{ email: 'invalid-email', password: 'password' }, ['Email inválido']],
     [{ email: 'customer.one.demo@ntq.local', password: '' }, ['Senha inválida']],
   ])('descreve os campos inválidos do payload', async (body, expectedMessages) => {
-    const response = await request(app.getHttpServer()).post('/auth/login').send(body).expect(400);
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send(body)
+      .expect(400);
 
     expect(response.body).toMatchObject({
       statusCode: 400,
@@ -311,6 +328,7 @@ describe('autenticação', () => {
   it('rejeita campos que não pertencem ao contrato de login', async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
       .send({
         email: 'customer.one.demo@ntq.local',
         password: 'password',

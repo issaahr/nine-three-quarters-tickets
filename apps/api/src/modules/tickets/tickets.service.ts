@@ -35,7 +35,6 @@ export class TicketsService {
    * @param manager - Manager vinculado à transação que confirma a Reservation.
    * @param reservationItemIds - ReservationItems que devem receber um Ticket.
    * @param issuedAt - Instante autoritativo do PostgreSQL usado como issuedAt.
-   * @returns Conclui quando todos os Tickets foram emitidos ou já existiam.
    */
   public async issueForReservationItems(
     manager: EntityManager,

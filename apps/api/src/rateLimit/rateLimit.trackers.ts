@@ -24,6 +24,10 @@ export const trackCatalogRequest: ThrottlerGetTrackerFunction = (request) => {
   return typedRequest.user ? `user:${typedRequest.user.id}` : buildIpTracker(request);
 };
 
+/** O checkout é autenticado antes do limite. A chave permanece a mesma entre rotas e proxies. */
+export const trackHostedCheckoutRequest: ThrottlerGetTrackerFunction = (request) =>
+  `user:${asRateLimitRequest(request).user?.id ?? 'unknown'}`;
+
 /** Impede que operador ou origem isoladamente contornem o limite do código manual. */
 export const trackManualCheckInRequest: ThrottlerGetTrackerFunction = (request) => {
   const typedRequest = asRateLimitRequest(request);
@@ -31,7 +35,14 @@ export const trackManualCheckInRequest: ThrottlerGetTrackerFunction = (request) 
   return `${operator}:${buildIpTracker(request)}`;
 };
 
-/** Mantém um único bucket por política em vez de multiplicá-lo por endpoint. */
+/**
+ * Mantém um único bucket por política em vez de multiplicá-lo por endpoint.
+ *
+ * @param _context - Contexto HTTP exigido pelo rate limiter, sem participação na chave compartilhada.
+ * @param tracker - Identificador do cliente obtido pelo rastreador da política.
+ * @param policy - Política que delimita o contador compartilhado entre endpoints.
+ * @returns Chave formada pela política e pelo rastreador, compartilhada pelos endpoints dessa política.
+ */
 export function generateRateLimitKey(
   _context: ExecutionContext,
   tracker: string,

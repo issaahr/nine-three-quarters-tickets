@@ -10,6 +10,16 @@ export enum PaymentStatus {
   Failed = 'FAILED',
 }
 
+export enum PaymentCheckoutMode {
+  Simulated = 'SIMULATED',
+  Hosted = 'HOSTED',
+}
+
+export interface PaymentCheckoutConfiguration {
+  mode: PaymentCheckoutMode;
+  methods: PaymentMethod[];
+}
+
 export interface CardPaymentRequest {
   cardNumber: string;
   cardholderName: string;
@@ -30,4 +40,9 @@ export interface Payment {
 export interface SimulatedPixPayment extends Payment {
   simulationCompletionAt: string | null;
   qrCodePayload: string | null;
+}
+
+export interface HostedCheckoutPayment extends Payment {
+  checkoutUrl: string | null;
+  canResume: boolean;
 }

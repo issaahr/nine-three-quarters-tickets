@@ -14,13 +14,17 @@ Consulte o [ADR 0002](adr/0002-dependencias-independentes-no-monorepo.md).
 
 ## Configuração
 
-- O `.env` no root é a fonte local de configuração para as duas aplicações e para o Compose.
+- A configuração local fica em `env/`, com `postgres.env` para o banco, `api.env` para a API e `web.env` para valores públicos do Web. O Compose injeta apenas o arquivo do respectivo serviço com `env_file`.
+- A API carrega apenas `env/api.env` na execução nativa, inclusive no CLI de migrations. O Vite lê apenas `env/web.env` e incorpora as duas opções públicas esperadas.
+- Variáveis do processo têm precedência sobre os arquivos locais. CI e deploy podem configurar os processos sem esses arquivos.
 - Variáveis obrigatórias não possuem fallback silencioso.
 - A API valida conjuntamente sua configuração HTTP antes de iniciar.
 - A configuração de banco permanece separada porque também é consumida pelo CLI de migrations.
+- O carregador de banco exige `NODE_ENV` válido também no CLI, sem depender da validação HTTP. Somente desenvolvimento e teste permitem TLS desabilitado.
+- `DATABASE_TLS_MODE` é obrigatório para a API e para o CLI. O PostgreSQL local e o da CI usam `disable`. O deploy usa `verify-full` com as CAs padrão do Node ou a cadeia PEM opcional de `DATABASE_TLS_CA`. `require-unverified` mantém TLS sem verificar a identidade do servidor quando a compatibilidade com uma instalação anterior exigir escolha explícita. Parâmetros TLS no DSN são rejeitados para que a URL não sobrescreva a política.
 - Somente variáveis públicas são incorporadas ao bundle do Vite.
-- `PUBLIC_SIGNUP_ENABLED` é exposta explicitamente ao frontend e validada também pela API.
-- Alterar a flag exige reiniciar a API e reconstruir ou reiniciar o frontend.
+- `PUBLIC_SIGNUP_ENABLED` é exposta explicitamente ao frontend e validada também pela API. Configure o mesmo valor nos dois processos.
+- Alterar a flag exige reiniciar a API e reiniciar o frontend em desenvolvimento ou reconstruí-lo em produção.
 
 ## Banco de dados
 
@@ -92,6 +96,18 @@ Nos cancelamentos de Reservation e de Event, para `SEATED` e `GENERAL_ADMISSION`
 
 Consulte o [ADR 0006](adr/0006-prazo-autoritativo-no-cancelamento-transacional.md).
 
+## Pagamentos de teste
+
+- Cartão e Pix fake continuam disponíveis na demonstração. `PAYMENT_PROVIDER=stripe` ativa o Checkout hospedado em sandbox com credenciais de teste exclusivas da API.
+- O método e o provedor são campos distintos. A API calcula valor e moeda e persiste a tentativa antes do I/O. Os limites do método incidem sobre o total positivo. Compras gratuitas são confirmadas localmente.
+- O retorno do Web consulta a tentativa persistida. O webhook autenticado e a reconciliação consultam a Stripe e convergem no mesmo fluxo transacional de confirmação. O PostgreSQL determina prazos, inventário e Tickets.
+- A confirmação de qualquer pagamento revalida o prazo pelo relógio do PostgreSQL depois das escritas. O vencimento antes da decisão provoca rollback da compra, inclusive para o fluxo fake e compras gratuitas.
+- As três rotas hospedadas compartilham uma quota local baseada no CUSTOMER autenticado, independentemente de IP e reserva. A quota não se aplica à entrega de webhooks.
+- A falha ambígua de criação pode ser recuperada buscando a sessão pelo ID da tentativa. Se um novo envio for seguro dentro da janela idempotente, usa a chave original e a URL de retorno persistida.
+- O estorno integral em sandbox nasce pendente e só é concluído após resposta externa confirmada. O I/O ocorre fora das transações de compra e cancelamento.
+
+Consulte o [ADR 0007](adr/0007-stripe-checkout-hospedado-no-sandbox.md).
+
 ## Descoberta pública de Events
 
 - `GET /events` é público e consulta exclusivamente snapshots persistidos localmente.
@@ -113,6 +129,7 @@ Consulte o [ADR 0006](adr/0006-prazo-autoritativo-no-cancelamento-transacional.m
 - Login não distingue email inexistente de senha incorreta e mantém custo de bcrypt nos dois casos.
 - Papéis presentes no JWT são validados e a autorização efetiva ocorre em guards da API.
 - CORS e atributos do cookie são derivados de configuração. A política deve ser revisada para a topologia real de produção.
+- Login e logout exigem origem confiável antes de emitir ou remover o cookie. A validação precede a autenticação e a quota de login; origem rejeitada retorna `403` sem `Set-Cookie`.
 
 Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 
@@ -163,4 +180,5 @@ Consulte o [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 - A CI utiliza valores concretos e determinísticos exclusivos para teste, definidos no próprio workflow. Nenhuma credencial real ou configuração de deploy é utilizada pelos jobs.
 - Valores destinados exclusivamente ao ambiente de teste não são tratados como GitHub Actions Secrets.
 - A CI não publica imagens e não executa `npm audit` como bloqueio de merge.
+- O workflow legado de CD no Heroku foi removido. O deploy em Vercel e Render é configurado separadamente nesses serviços.
 - Hooks locais não são obrigatórios; a CI é a autoridade dos checks exigidos para integração.

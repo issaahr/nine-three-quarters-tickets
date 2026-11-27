@@ -3,7 +3,8 @@ import { resolve } from 'node:path';
 
 import { ConfigurationError } from '../errors/configuration.error';
 
-config({ path: resolve(__dirname, '../../../../.env'), quiet: true });
+// A estrutura relativa à raiz é a mesma em src/config e dist/config.
+config({ path: resolve(__dirname, '../../../../env/api.env'), quiet: true });
 
 export function getRequiredEnvironmentVariable(
   name: string,

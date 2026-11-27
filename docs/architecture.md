@@ -18,7 +18,7 @@ Browser
   ▼
 React/Vite ──HTTP + cookie HttpOnly──▶ NestJS ──TypeORM──▶ PostgreSQL
                                          │
-                                         └──▶ provedores externos, quando implementados
+                                         └──▶ TMDb / Ticketmaster / Stripe sandbox
 ```
 
 PostgreSQL é a autoridade dos invariantes transacionais. Estado do frontend, timers do navegador e atualizações em tempo real nunca substituem uma decisão persistida pelo backend.
@@ -50,9 +50,9 @@ apps/api/src/
     ├── auth/            # login, sessão, cadastro, JWT e autorização
     ├── catalog/         # port de catálogo e adapters da TMDb e Ticketmaster
     ├── events/          # ocorrência, publicação e inventário seated materializado
-    ├── payments/        # tentativa idempotente e gateway de cartão simulado
+    ├── payments/        # tentativa idempotente, checkout e conciliação
     ├── realtime/        # deltas de disponibilidade emitidos após commits
-    ├── refunds/         # histórico de devoluções de pagamentos aprovados
+    ├── refunds/         # intenções de estorno e conciliação externa
     ├── reservations/    # holds temporários, itens, retomada e cancelamento
     ├── tickets/         # ingressos emitidos para ReservationItems confirmados
     ├── users/           # entidade User e enum de papéis
@@ -98,6 +98,137 @@ Quando existem várias Reservations no cancelamento de um Event, elas são bloqu
 
 O cancelamento de uma compra confirmada marca Reservation e Tickets como cancelados, devolve o inventário e cria Refund integral somente quando houve valor pago. O Payment permanece `APPROVED` como registro histórico. O cancelamento pelo ORGANIZER executa essas transições para as Reservations do Event e marca o próprio Event como `CANCELLED` no mesmo commit. Atualizações em tempo real são emitidas apenas depois do commit e não participam da decisão transacional.
 
+### Pagamentos
+
+A API seleciona o modo fake ou o checkout hospedado por configuração e informa o modo e os métodos ao Web por `GET /payments/configuration`. A escolha do provedor e suas credenciais ficam no backend. Os motivos da adoção do Stripe Checkout em sandbox estão na [ADR 0007](adr/0007-stripe-checkout-hospedado-no-sandbox.md); estados, limites e invariantes permanecem no [escopo técnico](application-scope.md#22-payment).
+
+#### Visão geral
+
+O Web apresenta a compra e abre o checkout hospedado. A Stripe processa a cobrança de teste. A API consulta o resultado externo e decide se a compra pode ser confirmada, usando o PostgreSQL como autoridade do estado local e das invariantes transacionais.
+
+```mermaid
+flowchart TB
+  Web["Web: apresenta e redireciona"]
+  API["API: coordena e valida a compra"]
+  DB[("PostgreSQL: estado e invariantes")]
+  Stripe["Stripe: checkout e cobrança de teste"]
+  Web -->|Solicita e consulta pagamento| API
+  Web -->|Abre checkout hospedado| Stripe
+  API -->|Cria e consulta operações| Stripe
+  Stripe -->|Envia webhook assinado| API
+  API -->|Persiste e decide em transação| DB
+```
+
+#### Responsabilidades no código
+
+Cada participante dos diagramas representa uma aplicação ou serviço externo. A tabela detalha as responsabilidades internas da API. `HostedPaymentGateway` é o contrato utilizado pelos serviços; o adapter Stripe implementa esse contrato e executa o I/O externo.
+
+| Componente                                                  | Responsabilidade                                                                                                       |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `PaymentCheckoutConfigurationController`                    | Informa o modo e os métodos habilitados, sem expor credenciais.                                                        |
+| `HostedCheckoutController` / `HostedCheckoutService`        | Protegem o acesso HTTP e coordenam criação, consulta e retomada da sessão hospedada.                                   |
+| `PaymentsService`                                           | Persiste ou recupera a tentativa idempotente, calcula o total pelos itens e encaminha os fluxos fake e gratuitos.      |
+| `PaymentRepository`                                         | Encapsula consultas com propriedade, vínculo externo condicional e operações de inventário.                            |
+| `HostedPaymentGateway` / `StripeHostedPaymentGateway`       | Definem a fronteira externa e traduzem sessões, cobranças, expiração e estornos para contratos locais.                 |
+| `StripeCheckoutWebhookController` / `StripeCheckoutWebhook` | Recebem o corpo bruto, verificam a assinatura e extraem a identidade da sessão a consultar.                            |
+| `HostedPaymentReconciliationService`                        | Consulta o provedor por webhook ou varredura periódica, encaminha a finalização e solicita expiração quando aplicável. |
+| `PaymentFinalizationService`                                | Revalida a observação sob locks e confirma a compra ou registra falha e intenção de estorno.                           |
+| `HostedRefundReconciliationService`                         | Executa e acompanha as intenções de estorno persistidas, recuperando respostas perdidas.                               |
+| `TicketsService` / `SeatRealtimeGateway`                    | Emitem Tickets na transação de confirmação e publicam deltas de assentos depois do commit, respectivamente.            |
+
+O `PaymentsModule` conecta os adapters e registra os serviços de conciliação. No modo fake, `PaymentsController` chama `PaymentsService`: cartão passa pelo `FakePaymentGateway`, enquanto Pix usa a simulação local. Ambos convergem em `PaymentFinalizationService`.
+
+#### Fluxos principais
+
+As sequências mostram o caminho principal de uma compra paga no sandbox. Retomadas, falhas e compras gratuitas estão na tabela de exceções abaixo.
+
+**1. Abrir o checkout**
+
+```mermaid
+sequenceDiagram
+  participant Web
+  participant API
+  participant DB as PostgreSQL
+  participant Stripe
+  Web->>API: Iniciar pagamento
+  API->>DB: Validar reserva e persistir tentativa
+  DB-->>API: Tentativa confirmada em commit
+  API->>Stripe: Criar sessão idempotente
+  Stripe-->>API: Referência e URL
+  API->>DB: Vincular sessão e revalidar elegibilidade
+  DB-->>API: Estado atual da tentativa e da reserva
+  API-->>Web: URL disponível
+  Web->>Stripe: Abrir checkout hospedado
+```
+
+A criação é coordenada por `HostedCheckoutService`, com persistência da tentativa por `PaymentsService`. A chamada à Stripe ocorre depois do commit local.
+
+**2. Confirmar a compra**
+
+```mermaid
+sequenceDiagram
+  participant Stripe
+  participant API
+  participant DB as PostgreSQL
+  Stripe->>API: Webhook assinado
+  Note over API: Verificar assinatura sobre o corpo bruto
+  API->>Stripe: Consultar sessão e cobrança
+  Stripe-->>API: Cobrança confirmada e dados validados
+  API->>DB: Revalidar e confirmar compra em transação
+  DB-->>API: Commit com inventário e Tickets
+  API-->>Stripe: ACK do webhook
+```
+
+O webhook encaminha a operação a `HostedPaymentReconciliationService`, que consulta o provedor e chama `PaymentFinalizationService`. A varredura periódica também executa essa conciliação. O Web consulta o estado pela API independentemente da entrega do webhook ou do ACK.
+
+**3. Executar o estorno**
+
+```mermaid
+sequenceDiagram
+  participant API
+  participant DB as PostgreSQL
+  participant Stripe
+  API->>DB: Registrar Refund PENDING na transação local
+  DB-->>API: Commit da intenção
+  Note over API: Processar em ciclo posterior da conciliação
+  API->>DB: Persistir geração idempotente de envio
+  API->>Stripe: Solicitar estorno integral
+  Stripe-->>API: Referência e estado do estorno
+  API->>DB: Vincular referência e aplicar estado sob lock
+  Note over API: Consultar novamente enquanto permanecer pendente
+```
+
+A intenção nasce no cancelamento elegível ou na finalização de uma cobrança sem compra válida. `HostedRefundReconciliationService` executa e acompanha a devolução. O estado local só chega a `COMPLETED` depois da confirmação externa.
+
+#### Recuperação e exceções
+
+| Situação                                              | Tratamento                                                                                                                                                                                  | Responsável                       |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| Reload ou retorno da Stripe                           | Consultar a tentativa persistida; o GET apresenta o estado sem criar sessão ou confirmar compra.                                                                                            | Checkout                          |
+| Retomada com sessão vinculada                         | Consultar e validar a mesma sessão antes de devolver uma URL atualizada.                                                                                                                    | Checkout e adapter                |
+| Timeout de criação sem referência local               | Buscar a sessão pela identidade da tentativa. Repetir a criação somente dentro da janela segura, com a chave e os parâmetros originais. Uma tentativa inconclusiva bloqueia outra cobrança. | Checkout e adapter                |
+| Tentativa legada sem URL de retorno original          | Permitir descoberta da sessão, preservando a restrição à recriação sem os parâmetros históricos.                                                                                            | Checkout                          |
+| Webhook perdido, repetido ou fora de ordem            | Consultar o estado atual no provedor e aplicar a observação pela mesma finalização transacional. A varredura periódica recupera callbacks perdidos.                                         | Conciliação de pagamentos         |
+| Assinatura inválida ou divergência nos dados externos | Rejeitar a assinatura ou a observação divergente, impedindo a confirmação.                                                                                                                  | Validação de entrada e resultado  |
+| Reserva inelegível com sessão ainda aberta            | Solicitar expiração fora da transação e consultar novamente o resultado, inclusive se houver cobrança concorrente.                                                                          | Conciliação de pagamentos         |
+| Cobrança aprovada sem reserva ou inventário válidos   | Registrar a falha local e a intenção de estorno integral, preservando a evidência da cobrança e sem emitir Tickets.                                                                         | Finalização da compra             |
+| Prazo vence durante as escritas de confirmação        | Reverter a compra; registrar falha e eventual estorno em outra transação.                                                                                                                   | Finalização da compra             |
+| Resposta de estorno perdida                           | Consultar a referência conhecida ou buscar a intenção externa; um novo envio obedece à geração persistida e à janela idempotente.                                                           | Conciliação de estornos           |
+| Compra gratuita ou modo fake                          | Usar a finalização local. Compras gratuitas dispensam sessão externa e Refund.                                                                                                              | Fluxo local                       |
+| Cancelamento elegível de compra paga                  | Liberar inventário, cancelar Tickets e registrar a intenção de estorno na transação local. O modo fake conclui o Refund no próprio cancelamento.                                            | Cancelamento de reserva ou evento |
+| API reiniciada ou Render Free hibernando              | Retomar a conciliação do estado persistido quando a API voltar. Os prazos locais continuam determinados pelo banco.                                                                         | Serviços de conciliação           |
+
+#### Garantias transacionais
+
+- O PostgreSQL fornece o relógio para decisões de validade. Timers da API e do navegador apenas agendam processamento ou apresentação.
+- A confirmação e os cancelamentos seguem a ordem de locks `Event → Reservation → Payment`. A confirmação revalida prazo e inventário e verifica novamente o prazo após as escritas.
+- Reserva, inventário e Tickets são confirmados na mesma transação. Constraints e revalidação sob lock protegem contra concorrência e repetição.
+- Chamadas à Stripe acontecem fora das transações de compra, cancelamento e aplicação do resultado do estorno.
+- A tentativa persiste antes da criação externa; a intenção de estorno persiste antes de seu envio. Chaves idempotentes e referências permitem recuperar operações sem depender da aba aberta.
+- Deltas realtime são emitidos após o commit. O retorno do checkout e o polling apresentam o estado informado pela API.
+
+Os procedimentos e as evidências de teste estão no [guia de validação do sandbox](stripe-sandbox-validation.md).
+
 ## Frontend
 
 ### Estrutura atual
@@ -112,7 +243,7 @@ apps/web/src/
 │   ├── gate/            # seleção da ocorrência e validação operacional de ingressos
 │   ├── navigation/      # shells e navegação por papel
 │   ├── organizer/       # catálogo externo, criação, publicação e contratos do painel
-│   ├── payments/        # formulário de cartão e estado de pagamento do checkout
+│   ├── payments/        # fluxos fake e hospedado, retomada e estado do checkout
 │   ├── reservations/    # cliente HTTP, estado remoto, checkout e countdown derivado
 │   └── tickets/         # histórico de compras, ingressos e cancelamento elegível
 ├── lib/                 # infraestrutura HTTP e utilitários pequenos
@@ -152,12 +283,11 @@ O fluxo SEATED mantém a seleção inicial em estado local. Somente uma criaçã
 
 No fluxo `GENERAL_ADMISSION`, `POST /reservations/general-admission` recebe uma quantidade e bloqueia a linha do Event antes de contar holds válidos e compras confirmadas. A Reservation e seus itens sem `EventSeat` são persistidos integralmente no mesmo commit; a leitura pública do detalhe calcula a disponibilidade agregada usando os mesmos estados persistidos.
 
-## Fronteiras externas e futuras
+## Fronteiras externas
 
 - TMDb e Ticketmaster implementam a port `CatalogProvider`; suas respostas são normalizadas antes de alcançar Events e nunca fornecem inventário ou dados locais de venda.
 - A Ticketmaster consulta Attractions como conteúdo de shows, sem importar ocorrências, horários ou disponibilidade externos.
-- O gateway de pagamento é uma fronteira substituível; a V1 utiliza `FakePaymentGateway`.
-- Socket.IO atualizará percepção de disponibilidade, sem autoridade transacional.
-- Módulos futuros devem seguir as entidades e invariantes de `application-scope.md`, sem introduzir abstrações genéricas de inventário.
+- A fronteira de pagamentos e o papel dos adapters estão descritos em [Pagamentos](#pagamentos).
+- Socket.IO atualiza a percepção de disponibilidade após commits, sem autoridade transacional.
 
-Essas fronteiras registram direção arquitetural, não autorizam implementação antes da respectiva issue.
+Evoluções dessas fronteiras seguem as entidades e invariantes de `application-scope.md`.

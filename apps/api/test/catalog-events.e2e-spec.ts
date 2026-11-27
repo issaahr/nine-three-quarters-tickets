@@ -4,6 +4,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+import { applicationConfig } from '../src/config/applicationConfig';
 import { Application } from '../src/application';
 import {
   movieCatalogProviderToken,
@@ -110,10 +111,13 @@ describe('catálogo e criação de Event', () => {
   });
 
   async function authenticate(email: string): Promise<string> {
-    const response = await request(app.getHttpServer()).post('/auth/login').send({
-      email,
-      password: process.env.DEMO_USERS_PASSWORD,
-    });
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('Origin', applicationConfig.corsOrigins[0])
+      .send({
+        email,
+        password: process.env.DEMO_USERS_PASSWORD,
+      });
     const setCookie = response.headers['set-cookie'];
     const cookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
 

@@ -1,14 +1,84 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager, In, UpdateResult } from 'typeorm';
+import { Brackets, EntityManager, In, IsNull, UpdateResult } from 'typeorm';
 
 import { EventSeat } from '../../events/eventSeat.entity';
 import { Payment } from '../payment.entity';
 import { PaymentMethod } from '../paymentMethod.enum';
+import { PaymentProvider } from '../paymentProvider.enum';
 import { SoldEventSeatRow } from '../payments.interfaces';
 import { PaymentStatus } from '../paymentStatus.enum';
 
 @Injectable()
 export class PaymentRepository {
+  /**
+   * Limita a consulta às tentativas do titular da reserva, incluindo compras gratuitas locais.
+   * Carrega a reserva e a ocorrência para verificar se o link ainda pode ser oferecido.
+   *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @param provider - Provedor da tentativa; a consulta também admite compras gratuitas locais.
+   * @param paymentId - Quando omitido, prioriza a tentativa ativa e depois o resultado mais recente.
+   * @returns Tentativa do titular com reserva e evento, ou null quando nenhuma tentativa corresponde aos critérios.
+   */
+  public findHostedForCheckout(
+    manager: EntityManager,
+    customerId: string,
+    reservationId: string,
+    provider: PaymentProvider,
+    paymentId?: string,
+  ): Promise<Payment | null> {
+    const query = manager
+      .getRepository(Payment)
+      .createQueryBuilder('payment')
+      .innerJoinAndSelect('payment.reservation', 'reservation')
+      .innerJoinAndSelect('reservation.event', 'event')
+      .where('payment.reservationId = :reservationId AND reservation.customerId = :customerId', {
+        reservationId,
+        customerId,
+      })
+      .andWhere(
+        new Brackets((providers) => {
+          providers
+            .where('payment.provider = :provider', { provider })
+            .orWhere('payment.provider = :fake AND payment.amountCents = 0', {
+              fake: PaymentProvider.Fake,
+            });
+        }),
+      );
+    if (paymentId) {
+      return query.andWhere('payment.id = :paymentId', { paymentId }).getOne();
+    }
+    return query
+      .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
+      .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
+      .addOrderBy('payment.createdAt', 'DESC')
+      .addOrderBy('payment.id', 'DESC')
+      .limit(1)
+      .getOne();
+  }
+
+  /**
+   * Grava a referência externa apenas se nenhuma chamada concorrente já tiver feito o vínculo.
+   *
+   * @param manager - EntityManager da operação, vinculado à mesma transação quando ela estiver em curso.
+   * @param payment - Tentativa local gravada antes da chamada ao provedor.
+   * @param externalReference - Identificador da sessão no provedor, validado contra a tentativa local.
+   * @returns Resultado da atualização condicional. O chamador relê o vínculo vencedor antes de expor a URL.
+   */
+  public attachExternalReference(
+    manager: EntityManager,
+    payment: Payment,
+    externalReference: string,
+  ): Promise<UpdateResult> {
+    return manager
+      .getRepository(Payment)
+      .update(
+        { id: payment.id, provider: payment.provider, externalReference: IsNull() },
+        { externalReference },
+      );
+  }
+
   /**
    * Recupera o PIX do checkout com verificação de propriedade na mesma consulta.
    * Prioriza a tentativa ativa e, quando ela não existe, retorna o resultado terminal mais recente.
@@ -27,7 +97,7 @@ export class PaymentRepository {
       .getRepository(Payment)
       .createQueryBuilder('payment')
       .innerJoin('payment.reservation', 'reservation')
-      .where({ reservationId, method: PaymentMethod.Pix })
+      .where({ reservationId, method: PaymentMethod.Pix, provider: PaymentProvider.Fake })
       .andWhere('reservation.customerId = :customerId', { customerId })
       .orderBy('CASE WHEN payment.status IN (:...activeStatuses) THEN 0 ELSE 1 END', 'ASC')
       .setParameter('activeStatuses', [PaymentStatus.Pending, PaymentStatus.Approved])
@@ -74,7 +144,7 @@ export class PaymentRepository {
    * @param now - Instante autoritativo do PostgreSQL usado como failedAt.
    * @returns Resultado da atualização condicional executada dentro da transação.
    */
-  public expireOrphanedCardPayments(
+  public expireOrphanedFakeCardPayments(
     manager: EntityManager,
     reservationId: string,
     staleBefore: Date,
@@ -87,6 +157,7 @@ export class PaymentRepository {
       .set({ status: PaymentStatus.Failed, failedAt: now })
       .where('"reservationId" = :reservationId', { reservationId })
       .andWhere('"method" = :method', { method: PaymentMethod.Card })
+      .andWhere('"provider" = :provider', { provider: PaymentProvider.Fake })
       .andWhere('"status" = :status', { status: PaymentStatus.Pending })
       .andWhere('"createdAt" <= :staleBefore', { staleBefore })
       .execute();

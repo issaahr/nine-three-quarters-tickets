@@ -9,7 +9,7 @@ A aplicação permite que:
 - clientes descubram eventos publicados;
 - organizadores criem e gerenciem eventos a partir de conteúdo de catálogos externos;
 - clientes reservem assentos ou quantidade de ingressos;
-- pagamentos sejam simulados;
+- clientes paguem com cartão ou Pix em modo simulado ou no sandbox de pagamentos;
 - cada ingresso seja emitido individualmente com QR Code e código manual;
 - operadores de portaria validem ingressos no acesso ao evento.
 
@@ -545,13 +545,15 @@ Quando o tempo termina:
 
 A interface não precisa redirecionar automaticamente no instante zero.
 
+No sandbox, uma sessão hospedada ainda aberta é encerrada pela aplicação quando possível. Caso a Stripe confirme uma cobrança depois que a reserva perdeu a validade, a aplicação acompanha o estorno integral e não emite Tickets.
+
 ---
 
 ## 18. Pagamento
 
-O pagamento da V1 é simulado.
+O comprador pode usar cartão ou Pix. O ambiente de demonstração usa pagamentos fake. O Stripe Checkout hospedado é uma opção explícita de configuração do ambiente para testar esses métodos em BRL, sem movimentação financeira.
 
-### Cartão
+### Cartão simulado
 
 Cartão é o método base obrigatório.
 
@@ -586,13 +588,7 @@ A tentativa pode falhar tecnicamente sem ser confundida com recusa do cartão.
 
 O usuário pode realizar nova tentativa quando a anterior estiver em estado terminal.
 
-### PIX simulado (planejado, não implementado)
-
-PIX é uma evolução planejada, que foi despriorizada na V1 e implementada incrementalmente a partir de outras versões.
-
-Ele só deve aparecer na interface e no domínio executável depois que seu fluxo estiver efetivamente disponível.
-
-Quando implementado:
+### Pix simulado
 
 - o pagamento começa pendente;
 - um QR simulado é apresentado;
@@ -600,7 +596,12 @@ Quando implementado:
 - reload da página não perde o processamento;
 - a Reservation é revalidada antes da confirmação.
 
-Não existe integração financeira real.
+### Stripe Checkout no sandbox
+
+- O Web mostra os métodos habilitados pela API, mantém o resumo e o contador da reserva e encaminha o cliente para a Stripe. Os campos de cartão e o QR Pix ficam na página hospedada.
+- Ao voltar ou recarregar a página, o cliente acompanha o estado consultado na API e pode retomar a mesma tentativa pendente quando elegível.
+- Uma tentativa com resultado inconclusivo impede outra cobrança para a mesma reserva. O backend também concilia sessões confirmadas com a aba fechada.
+- O total vem dos itens da reserva. Os limites do método são aplicados ao total positivo. Compras gratuitas são confirmadas localmente e não geram cobranças ou estornos.
 
 ---
 
@@ -789,7 +790,7 @@ Não é possível cancelar apenas um dos Tickets da compra.
 Quando cancelada:
 
 - todos os Tickets da Reservation são cancelados;
-- é realizado refund integral simulado quando houve valor pago;
+- o estorno é integral quando houve valor pago, com conclusão local no modo fake e confirmação posterior da Stripe no sandbox;
 - o estoque retorna à disponibilidade quando aplicável.
 
 ---
@@ -803,7 +804,7 @@ Quando isso ocorre:
 - o Event deixa de aceitar novas reservas;
 - Reservations ainda ativas são canceladas;
 - Tickets emitidos deixam de ser válidos;
-- compras confirmadas recebem refund integral simulado;
+- compras confirmadas com valor pago geram uma intenção de estorno integral;
 - o inventário deixa de ser comercializado.
 
 Compras gratuitas não geram Refund, pois não existe valor a devolver.
@@ -816,14 +817,14 @@ Cancelamento de evento já iniciado, interrupção operacional e políticas espe
 
 ## 26. Refund
 
-Refund representa o estorno de uma compra já aprovada.
+Refund registra a devolução de uma cobrança. Isso inclui compra confirmada e cancelada e cobrança de sandbox sem compra válida.
 
 Na V1:
 
 - apenas refund integral;
 - nenhum refund parcial;
 - Payment aprovado continua representando historicamente um pagamento que de fato ocorreu;
-- Refund registra separadamente a devolução simulada.
+- o modo fake conclui o estorno localmente e o modo Stripe só o conclui depois de confirmar o sucesso com o provedor.
 
 Um Ticket cancelado continua existindo no histórico, mas não permite entrada.
 

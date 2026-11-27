@@ -10,6 +10,7 @@ import { formatEventPrice } from '../../events/eventPresentation';
 import type { useCardPayment } from '../hooks';
 import { CardPaymentFormValues, cardPaymentSchema } from '../schemas';
 import { PaymentStatus } from '../types';
+import { CheckoutActions } from './CheckoutActions';
 
 interface CardPaymentFormProps {
   totalPriceCents: number;
@@ -55,13 +56,18 @@ function getPaymentErrorMessage(error: unknown): string | null {
   return 'Não foi possível concluir o pagamento. Você pode tentar novamente.';
 }
 
-/** Formulário de cartão simulado, sem persistir dados sensíveis no estado remoto. */
+/**
+ * Formulário de cartão simulado, sem persistir dados sensíveis no estado remoto.
+ *
+ * @param props - Total em centavos, fluxo de cartão simulado, ação de cancelamento e indicador de bloqueio do formulário.
+ * @returns Formulário React com os estados da tentativa simulada e as ações de pagamento e cancelamento.
+ */
 export function CardPaymentForm({
   totalPriceCents,
   paymentFlow,
   cancelAction,
   disabled,
-}: CardPaymentFormProps) {
+}: CardPaymentFormProps): ReactNode {
   const { submit, payment, error, isPaying } = paymentFlow;
   const [isCvvVisible, setIsCvvVisible] = useState(false);
   const {
@@ -247,7 +253,7 @@ export function CardPaymentForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <CheckoutActions>
           {cancelAction}
           <Button
             type="submit"
@@ -256,7 +262,7 @@ export function CardPaymentForm({
           >
             {isPaying ? 'Processando pagamento...' : `Pagar ${formatEventPrice(totalPriceCents)}`}
           </Button>
-        </div>
+        </CheckoutActions>
         <p className="mb-0 text-center text-xs text-muted-foreground">
           Pagamento simulado — nenhum dado é cobrado ou armazenado.
         </p>

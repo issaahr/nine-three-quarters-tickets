@@ -1,4 +1,5 @@
 import { ConfigurationError } from '../errors/configuration.error';
+import { PaymentProvider } from '../modules/payments/paymentProvider.enum';
 import { loadApplicationConfig } from './applicationConfig';
 
 describe('loadApplicationConfig', () => {
@@ -19,6 +20,8 @@ describe('loadApplicationConfig', () => {
     RATE_LIMIT_CATALOG_MAX_REQUESTS: '30',
     RATE_LIMIT_CHECK_IN_WINDOW_SECONDS: '60',
     RATE_LIMIT_CHECK_IN_MAX_REQUESTS: '10',
+    RATE_LIMIT_HOSTED_CHECKOUT_WINDOW_SECONDS: '60',
+    RATE_LIMIT_HOSTED_CHECKOUT_MAX_REQUESTS: '30',
     TMDB_API_READ_ACCESS_TOKEN: 'test-tmdb-token',
     TMDB_LANGUAGE: 'pt-BR',
     TMDB_REQUEST_TIMEOUT_MS: '5000',
@@ -27,6 +30,35 @@ describe('loadApplicationConfig', () => {
     TICKETMASTER_LOCALE: 'pt-BR',
     TICKETMASTER_REQUEST_TIMEOUT_MS: '5000',
   };
+
+  it('mantém fake como modo de demonstração e exige chave de teste ao optar pela Stripe', () => {
+    expect(loadApplicationConfig(validEnvironment).payments.provider).toBe(PaymentProvider.Fake);
+    const stripeEnvironment = { ...validEnvironment, PAYMENT_PROVIDER: 'stripe' };
+    expect(() => loadApplicationConfig(stripeEnvironment)).toThrow('PAYMENT_STRIPE_SECRET_KEY');
+    expect(() =>
+      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_live_invalid' }),
+    ).toThrow('chave de teste');
+    expect(
+      loadApplicationConfig({
+        ...stripeEnvironment,
+        PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example',
+        PAYMENT_STRIPE_WEBHOOK_SECRET: 'whsec_example',
+      }).payments.provider,
+    ).toBe(PaymentProvider.Stripe);
+    expect(() =>
+      loadApplicationConfig({ ...stripeEnvironment, PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example' }),
+    ).toThrow('PAYMENT_STRIPE_WEBHOOK_SECRET');
+    expect(() =>
+      loadApplicationConfig({
+        ...stripeEnvironment,
+        PAYMENT_STRIPE_SECRET_KEY: 'sk_test_example',
+        PAYMENT_STRIPE_WEBHOOK_SECRET: 'invalid',
+      }),
+    ).toThrow('PAYMENT_STRIPE_WEBHOOK_SECRET');
+    expect(() =>
+      loadApplicationConfig({ ...validEnvironment, PAYMENT_PROVIDER: 'unknown' }),
+    ).toThrow('PAYMENT_PROVIDER');
+  });
 
   it('normaliza valores e configura o cookie para ambiente local', () => {
     const config = loadApplicationConfig(validEnvironment);
@@ -43,6 +75,7 @@ describe('loadApplicationConfig', () => {
         auth: { windowSeconds: 60, maxRequests: 5 },
         catalog: { windowSeconds: 60, maxRequests: 30 },
         manualCheckIn: { windowSeconds: 60, maxRequests: 10 },
+        hostedCheckout: { windowSeconds: 60, maxRequests: 30 },
       },
       catalog: {
         tmdb: {

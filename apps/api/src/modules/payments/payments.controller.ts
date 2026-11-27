@@ -21,6 +21,7 @@ import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto'
 import { PaymentResponseDto } from './dto/paymentResponse.dto';
 import { SimulatedPixPaymentResponseDto } from './dto/simulatedPixPaymentResponse.dto';
 import { TrustedPaymentOriginGuard } from './guards/trustedPaymentOrigin.guard';
+import { FakePaymentsModeGuard } from './guards/fakePaymentsMode.guard';
 import {
   ApiCreateCardPayment,
   ApiCreateSimulatedPixPayment,
@@ -31,11 +32,18 @@ import { PaymentsService } from './payments.service';
 
 @ApiTags('Payments')
 @Controller('reservations/:reservationId/payments')
+@UseGuards(FakePaymentsModeGuard)
 export class PaymentsController {
   public constructor(private readonly paymentsService: PaymentsService) {}
 
   /**
    * Inicia uma tentativa idempotente de pagamento por cartão para uma Reservation do CUSTOMER.
+   *
+   * @param request - Requisição autenticada cujo usuário define a propriedade da reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @param idempotencyKey - Chave estável reutilizada nas repetições da mesma intenção de pagamento.
+   * @param data - Dados do cartão validados na borda HTTP para processamento simulado.
+   * @returns Resposta pública da tentativa após processamento simulado, sem expor a entidade de persistência.
    */
   @Post('card')
   @Roles(UserRole.Customer)

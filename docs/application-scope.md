@@ -7,7 +7,7 @@ Este documento define o escopo técnico da V1 do 9¾ Tickets.
 O foco é construir uma aplicação full-stack de ticketing que:
 
 - preserve corretamente inventário sob concorrência;
-- mantenha pagamentos simulados idempotentes;
+- mantenha pagamentos fake e em sandbox idempotentes;
 - emita ingressos individualmente;
 - valide check-in de forma atômica;
 - suporte eventos com assentos e entrada geral;
@@ -105,8 +105,8 @@ interface CatalogProvider {
   search(...): Promise<CatalogItem[]>;
 }
 
-interface PaymentGateway {
-  process(...): Promise<PaymentResult>;
+interface HostedPaymentGateway {
+  retrievePaymentOutcome(...): Promise<HostedPaymentOutcome>;
 }
 ```
 
@@ -114,7 +114,7 @@ São bons candidatos:
 
 - TMDb;
 - Ticketmaster;
-- gateway de pagamento simulado.
+- gateways de pagamento fake e hospedado.
 
 Não serão criadas interfaces automaticamente para:
 
@@ -319,6 +319,8 @@ Possível configuração para cookie cross-site:
 ### CSRF
 
 CORS não deve ser tratado como proteção completa contra CSRF.
+
+`POST /auth/login` e `POST /auth/logout` exigem `Origin` correspondente a uma origem de `CORS_ORIGINS`. Origem ausente, `null` ou não autorizada retorna `403` sem emitir ou limpar o cookie. Essa validação ocorre antes da autenticação e da quota de login. A proteção mantém o cookie de produção `SameSite=None; Secure`, permitindo Web e API em domínios separados. Consulte a [ADR 0003](adr/0003-autenticacao-jwt-em-cookie-http-only.md).
 
 A configuração final de autenticação deve passar por uma revisão de segurança no momento do deploy, quando os domínios reais forem conhecidos.
 
@@ -837,14 +839,20 @@ Campos conceituais:
 id
 reservationId
 method
+provider
 status
 idempotencyKey
+amountCents
+currency
 
 createdAt
 approvedAt?
 failedAt?
 
 simulationCompletionAt?
+checkoutReturnUrl?
+externalReference?
+externalPaymentReference?
 ```
 
 ### Estados
@@ -858,31 +866,18 @@ FAILED
 
 ### Métodos
 
-Inicialmente:
-
 ```text
 CARD
+PIX
 ```
 
-`PIX` deve ser introduzido somente quando a funcionalidade for implementada.
+`provider` distingue `FAKE` e `STRIPE`. O backend soma os snapshots dos itens em `amountCents` e usa a moeda `BRL`. A referência de Checkout e a referência da cobrança confirmada são únicas no respectivo provedor. Compras gratuitas no checkout hospedado usam a finalização local, com `provider=FAKE` e sem referência externa.
 
 ---
 
 ## 23. PaymentGateway
 
-O domínio utiliza um port:
-
-```ts
-interface PaymentGateway {
-  process(...): Promise<PaymentGatewayResult>;
-}
-```
-
-A V1 fornece:
-
-```text
-FakePaymentGateway
-```
+O modo fake usa o `FakePaymentGateway` para cartão e o modelo local de Pix. O modo Stripe usa a port `HostedPaymentGateway` para criar e consultar sessões, conciliar cobranças, encerrar sessões abertas e executar ou consultar estornos de teste. A tradução de tipos e estados da Stripe pertence ao adaptador.
 
 O comportamento do cartão é determinístico para facilitar demonstração e testes.
 
@@ -893,7 +888,7 @@ cartão A → APPROVED
 cartão B → DECLINED
 ```
 
-Não existe comunicação com adquirente real.
+O sandbox opera exclusivamente com chaves de teste e sem movimentação financeira. O total positivo precisa caber no `integer` do PostgreSQL e obedecer aos limites do método. No sandbox em BRL, o mínimo é 50 centavos, o máximo Pix é 99.999.999 centavos e o teto local de cartão é 2.147.483.647 centavos. A rede do cartão escolhido na Stripe pode impor limites adicionais. Esses limites não alteram o preço do Event nem se aplicam a compras gratuitas ou fake.
 
 ---
 
@@ -916,7 +911,8 @@ UNIQUE(reservationId, idempotencyKey)
 Se o cliente repetir a request com a mesma key:
 
 - retornar o Payment já persistido;
-- não chamar o gateway novamente.
+- no cartão fake, reutilizar o resultado existente;
+- no Stripe, consultar a sessão vinculada ou localizar a sessão pela identidade estável da tentativa. Um novo envio na janela idempotente usa a mesma chave e os mesmos parâmetros.
 
 ### Nova key
 
@@ -963,7 +959,7 @@ Uma nova idempotency key não pode ser usada para escapar dessa regra.
 
 ---
 
-## 26. Lifecycle do pagamento com cartão
+## 26. Lifecycle do pagamento com cartão simulado
 
 A chamada ao gateway não ocorre dentro de uma transaction longa.
 
@@ -1018,7 +1014,7 @@ commit
 
 Como não existe transaction aberta durante o gateway call, é possível ocorrer falha de processo após persistir `PENDING`.
 
-Para cartão, um PENDING não deve permanecer bloqueando a Reservation indefinidamente.
+Para cartão fake, um PENDING não deve permanecer bloqueando a Reservation indefinidamente.
 
 Após uma janela técnica superior ao tempo esperado da simulação, um Payment CARD ainda PENDING pode ser tratado como órfão.
 
@@ -1032,13 +1028,13 @@ antes de permitir nova tentativa.
 
 Isso deve ocorrer de forma controlada no backend.
 
-Não é necessário introduzir job queue apenas para esse caso na V1.
+No modo Stripe, antes da primeira chamada, a API persiste o `Payment`, o método, o total, a moeda e a URL de retorno. A chave externa deriva do ID local. Em retry explícito, o adaptador tenta localizar a sessão por `client_reference_id` em uma janela de criação paginada, relê e valida a sessão e só então permite vinculá-la. O worker também faz essa busca, inclusive quando o callback se perde ou a criação devolve um erro 500 repetido. Uma tentativa legada sem a URL original só pode ser descoberta. Até 23 horas, uma tentativa com os parâmetros conhecidos pode repetir o POST sob a mesma chave. Após essa janela, ou se a busca ficar inconclusiva, a criação fica bloqueada. Ausência na listagem não comprova falha terminal.
 
 ---
 
-## 28. PIX simulado (planejado, não implementado)
+## 28. Pix simulado
 
-O pagamento por PIX, atualmente no backlog despriorizado, reutiliza a entidade Payment.
+O Pix fake reutiliza a entidade Payment.
 
 ```text
 method = PIX
@@ -1047,7 +1043,7 @@ status = PENDING
 
 A diferença é que PENDING é esperado durante alguns segundos.
 
-A aplicação persiste um instante de conclusão simulada, por exemplo:
+A aplicação persiste o instante de conclusão simulada em:
 
 ```text
 simulationCompletionAt
@@ -1084,6 +1080,10 @@ WebSocket não é necessário para PIX.
 ## 29. Confirmação de Reservation
 
 Uma Reservation só é confirmada após pagamento APPROVED.
+
+Na confirmação fake, hospedada ou gratuita, a última leitura do relógio do PostgreSQL revalida o prazo após as escritas. Se o prazo acabar enquanto uma escrita aguarda um lock, a aplicação reverte a compra e registra a tentativa como falha. Uma cobrança externa confirmada nesse caso também gera a intenção de estorno integral.
+
+No checkout hospedado, a consulta autoritativa ao provedor valida ambiente de teste, identidade da tentativa, método, valor e moeda. O webhook autenticado e o worker usam a mesma finalização. Chamadas externas ocorrem fora da transação. A aplicação revalida o prazo pelo relógio do PostgreSQL e adquire locks de Event, Reservation e Payment nessa ordem antes de consolidar inventário e emitir Tickets. Se a cobrança ocorreu sem reserva válida, a tentativa local pode ficar `FAILED` com a referência da cobrança confirmada e uma intenção de estorno integral.
 
 Durante a transaction de finalização:
 
@@ -1458,7 +1458,7 @@ Payment 1:N Refund
 
 Mesmo que a V1 use apenas um refund integral, o modelo não altera retroativamente a história do Payment.
 
-Payment permanece:
+Quando uma compra confirmada é cancelada, Payment permanece:
 
 ```text
 APPROVED
@@ -1474,9 +1474,7 @@ COMPLETED
 FAILED
 ```
 
-A V1 pode concluir o refund imediatamente através de serviço simulado.
-
-Devem existir proteções para impedir refund duplicado da mesma operação.
+No modo fake, um estorno aplicável é concluído no mesmo commit do cancelamento. No sandbox, o cancelamento ou a finalização sem compra válida registra `Refund PENDING`. Uma restrição impede mais de um Refund pendente ou concluído por Payment. A execução e consulta externas ocorrem fora da transação de compra ou cancelamento. O worker usa uma geração de envio persistida e uma referência externa única. Quando a resposta se perde, busca a intenção pelo pagamento e pelo identificador local. Só grava `COMPLETED` após confirmação externa.
 
 ---
 
@@ -1489,7 +1487,7 @@ validar elegibilidade
 marcar Reservation cancelada
 cancelar Tickets
 retornar inventário
-criar/completar Refund
+registrar Refund integral para compra com valor pago
 commit
 ```
 
@@ -1527,7 +1525,7 @@ O fluxo deve:
 - cancelar Reservations confirmadas e seus Tickets emitidos;
 - gerar full refund para compras confirmadas quando houver valor pago.
 
-Para a escala da demonstração, esse processamento pode ocorrer de forma síncrona em batch.
+Para a escala da demonstração, as transições locais ocorrem em lote na mesma transação. O worker executa as intenções de estorno Stripe após o commit.
 
 ### Consideration de produção
 
@@ -1949,15 +1947,16 @@ A V1 não depende de scheduler para:
 
 Estados temporais são derivados de timestamps.
 
+No modo Stripe, a API executa conciliação periódica de pagamentos e estornos. Pagamentos vinculados e pagamentos sem referência são processados em lotes independentes. O worker consulta o provedor, tenta encerrar sessões abertas inelegíveis e acompanha estornos. Os timestamps do banco determinam a validade do hold mesmo com o worker parado.
+
 Jobs futuros podem ser úteis para:
 
 - cleanup;
 - notificações;
 - refund em massa;
-- reconciliação;
 - analytics.
 
-Nenhum deles é necessário para a correção central da V1.
+A S12 usa processamento local com estado durável no PostgreSQL, sem uma fila distribuída.
 
 ---
 
@@ -2009,7 +2008,7 @@ não cria Ticket
 ```text
 mesma idempotency key
 → mesmo Payment
-→ gateway não chamado novamente
+→ fake reutiliza o resultado; sandbox recupera a mesma sessão ou repete a chave original
 ```
 
 ### Pagamento concorrente
@@ -2017,6 +2016,8 @@ mesma idempotency key
 ```text
 no máximo um PENDING/APPROVED
 ```
+
+No sandbox, cobrir também confirmação concorrente em SEATED e GA, webhook inválido, duplicado ou fora de ordem, retomada após timeout/reinício, expiração e estorno de cobrança tardia. Testes automatizados usam PostgreSQL e respostas controladas do provedor. A validação de cartão e Pix no sandbox segue o [guia de reprodução](stripe-sandbox-validation.md).
 
 ### Ticket inválido
 
@@ -2209,11 +2210,7 @@ Não será construída infraestrutura antifraude avançada.
 
 ## 70. Dados financeiros
 
-Nenhum dado de cartão representa pagamento real.
-
-A aplicação não deve persistir CVV.
-
-Os campos do formulário servem exclusivamente para a simulação.
+O formulário fake usa dados fictícios para a simulação. A aplicação não persiste PAN ou CVV. No modo hospedado, cartão e Pix são fornecidos diretamente à Stripe e os endpoints fake ficam desabilitados. As credenciais de teste são exclusivas da API. As mutações de checkout hospedado exigem `CUSTOMER` e origem confiável. O webhook verifica assinatura sobre o corpo bruto e ambiente de teste, e seus dados iniciam uma consulta autoritativa ao provedor. A URL de retorno e o polling do Web apresentam o estado local.
 
 Logs não devem registrar valores sensíveis desnecessariamente.
 
@@ -2297,6 +2294,7 @@ Exemplos:
 - payment idempotency;
 - Payment PENDING antes do gateway;
 - Refund separado de Payment;
+- checkout hospedado e reconciliação no sandbox conforme [ADR 0007](adr/0007-stripe-checkout-hospedado-no-sandbox.md);
 - cancelamento síncrono em batch na V1.
 
 Não é necessário criar ADR para cada pequena escolha de implementação.
@@ -2343,7 +2341,7 @@ Não fazem parte da V1:
 - service worker de portaria offline;
 - scheduler crítico para holds;
 - queue crítica para pagamentos;
-- integração financeira real;
+- integração financeira com credenciais e cobranças de produção;
 - arquitetura multi-region;
 - horizontal scaling de Socket.IO;
 - editor avançado de Venue/layout;
@@ -2405,37 +2403,21 @@ rotation
 old-key verification window
 ```
 
-### PIX
+### Pagamentos
 
 V1:
 
 ```text
-settlement temporal simulado
+cartão e Pix fake
+cartão e Pix no Stripe Checkout de sandbox
+webhook assinado e reconciliação pela API
 ```
 
 Produção:
 
 ```text
-provider
-webhook
-reconciliation
-```
-
-### Payments
-
-V1:
-
-```text
-FakePaymentGateway
-```
-
-Produção:
-
-```text
-PCI-aware provider integration
-webhooks
-reconciliation
-fraud controls
+credenciais e cobranças de produção
+avaliação de PCI, antifraude, observabilidade e operação de incidentes
 ```
 
 ### Gate

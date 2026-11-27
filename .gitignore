@@ -6,6 +6,8 @@ coverage/
 .env
 .env.*
 !.env.example
+.stripe-api.env
+/env/*.env
 
 *.log
 *.tsbuildinfo

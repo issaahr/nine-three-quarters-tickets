@@ -8,6 +8,7 @@ import {
   generateRateLimitKey,
   trackAuthRequest,
   trackCatalogRequest,
+  trackHostedCheckoutRequest,
   trackManualCheckInRequest,
 } from './rateLimit.trackers';
 
@@ -34,6 +35,13 @@ import {
         ttl: seconds(applicationConfig.rateLimit.manualCheckIn.windowSeconds),
         limit: applicationConfig.rateLimit.manualCheckIn.maxRequests,
         getTracker: trackManualCheckInRequest,
+        generateKey: generateRateLimitKey,
+      },
+      {
+        name: RateLimitPolicy.HostedCheckout,
+        ttl: seconds(applicationConfig.rateLimit.hostedCheckout.windowSeconds),
+        limit: applicationConfig.rateLimit.hostedCheckout.maxRequests,
+        getTracker: trackHostedCheckoutRequest,
         generateKey: generateRateLimitKey,
       },
     ]),

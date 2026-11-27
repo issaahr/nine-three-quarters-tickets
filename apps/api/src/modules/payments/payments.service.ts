@@ -1,26 +1,33 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 import { applicationConfig } from '../../config/applicationConfig';
+import { getDatabaseClockTimestamp } from '../../database/databaseClock';
+import { Event } from '../events/event.entity';
+import { EventStatus } from '../events/eventStatus.enum';
 import { ReservationItem } from '../reservations/reservationItem.entity';
 import { Reservation } from '../reservations/reservation.entity';
 import { ReservationNotActiveError } from '../reservations/errors/reservationNotActive.error';
 import { ReservationNotFoundError } from '../reservations/errors/reservationNotFound.error';
 import { Payment } from './payment.entity';
+import { PaymentCurrency } from './paymentCurrency.enum';
 import { PaymentFinalizationService } from './paymentFinalization.service';
 import { PaymentMethod } from './paymentMethod.enum';
+import { PaymentProvider } from './paymentProvider.enum';
 import { PaymentStatus } from './paymentStatus.enum';
 import { CreateCardPaymentRequestDto } from './dto/createCardPaymentRequest.dto';
-import { paymentGatewayToken, simulatedPixCompletionDelayMs } from './payments.constants';
-import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
 import {
-  DatabaseTimestampRow,
-  PaymentInitiation,
-  SimulatedPixPaymentInitiation,
-} from './payments.interfaces';
+  hostedCheckoutMaxStoredAmountCents,
+  paymentGatewayToken,
+  simulatedPixCompletionDelayMs,
+} from './payments.constants';
+import { CardPaymentGatewayStatus, PaymentGateway } from './paymentGateway.interfaces';
+import { PaymentInitiation, SimulatedPixPaymentInitiation } from './payments.interfaces';
 import { PaymentInProgressError } from './errors/paymentInProgress.error';
 import { ReservationAlreadyPaidError } from './errors/reservationAlreadyPaid.error';
 import { ReservationExpiredError } from './errors/reservationExpired.error';
+import { UnsupportedCheckoutAmountError } from './errors/unsupportedCheckoutAmount.error';
+import { HostedPaymentInitiationOptions } from './hostedPaymentGateway.interfaces';
 import { PaymentNotFoundError } from './errors/paymentNotFound.error';
 import { PaymentRepository } from './repositories/payment.repository';
 
@@ -118,6 +125,46 @@ export class PaymentsService {
   }
 
   /**
+   * Grava ou recupera a tentativa cuja identidade será usada na chamada ao provedor.
+   *
+   * @param customerId - Identidade autenticada do cliente que deve possuir a reserva.
+   * @param reservationId - Identificador da reserva à qual a tentativa deve pertencer.
+   * @param idempotencyKey - Chave compartilhada entre os métodos da reserva para recuperar a mesma tentativa.
+   * @param method - Meio de pagamento solicitado para a tentativa local.
+   * @param hosted - Provedor e URL de retorno a preservar antes de iniciar cobrança de valor positivo.
+   * @returns Tentativa com total calculado pelos itens persistidos e indicação de criação nesta chamada.
+   */
+  public async startHostedPayment(
+    customerId: string,
+    reservationId: string,
+    idempotencyKey: string,
+    method: PaymentMethod,
+    hosted: HostedPaymentInitiationOptions,
+  ): Promise<PaymentInitiation> {
+    return this.startPayment(customerId, reservationId, idempotencyKey, method, hosted);
+  }
+
+  /**
+   * Confirma uma compra gratuita pela mesma finalização transacional usada no fluxo local.
+   *
+   * @param customerId - Titular da reserva, revalidado na liquidação local de PIX.
+   * @param payment - Tentativa persistida com provedor fake e valor zero.
+   * @returns Tentativa gratuita após finalização local, sujeita à revalidação do prazo e da disponibilidade.
+   */
+  public confirmFreeHostedPayment(customerId: string, payment: Payment): Promise<Payment> {
+    if (payment.provider !== PaymentProvider.Fake || payment.amountCents !== 0) {
+      throw new PaymentNotFoundError();
+    }
+    return payment.method === PaymentMethod.Pix
+      ? this.paymentFinalization.settleSimulatedPixPayment(
+          customerId,
+          payment.reservationId,
+          payment.id,
+        )
+      : this.paymentFinalization.finalizePayment(payment.id, PaymentStatus.Approved);
+  }
+
+  /**
    * Recupera o PIX ativo do dono da Reservation ou, na ausência dele, o resultado mais recente.
    *
    * @param customerId - Identidade do CUSTOMER autenticado.
@@ -165,7 +212,10 @@ export class PaymentsService {
   private toSimulatedPixPayment(payment: Payment): SimulatedPixPaymentInitiation {
     return {
       payment,
-      qrCodePayload: payment.method === PaymentMethod.Pix ? `ntq:pix:simulado:${payment.id}` : null,
+      qrCodePayload:
+        payment.provider === PaymentProvider.Fake && payment.method === PaymentMethod.Pix
+          ? `ntq:pix:simulado:${payment.id}`
+          : null,
     };
   }
 
@@ -177,13 +227,15 @@ export class PaymentsService {
    * @param reservationId - Reservation que será paga.
    * @param idempotencyKey - UUID estável durante retries técnicos da mesma tentativa.
    * @param method - Método usado quando a chave ainda não possui um Payment.
-   * @returns Payment e indicação de criação, que permite ao cartão chamar o gateway uma única vez.
+   * @param hosted - Dados do fluxo hospedado; quando ausentes, mantém o processamento local fake.
+   * @returns Tentativa e indicação de criação, distinguindo uma nova intenção de um retry idempotente.
    */
   private async startPayment(
     customerId: string,
     reservationId: string,
     idempotencyKey: string,
     method: PaymentMethod,
+    hosted?: HostedPaymentInitiationOptions,
   ): Promise<PaymentInitiation> {
     return this.dataSource.transaction(async (manager) => {
       const reservationsRepository = manager.getRepository(Reservation);
@@ -197,11 +249,11 @@ export class PaymentsService {
         throw new ReservationNotFoundError();
       }
 
-      const now = await this.getDatabaseTimestamp(manager);
+      const now = await getDatabaseClockTimestamp(manager);
       const staleBefore = new Date(
         now.getTime() - applicationConfig.payments.cardPendingTimeoutSeconds * 1000,
       );
-      const orphanedPayments = await this.paymentRepository.expireOrphanedCardPayments(
+      const orphanedPayments = await this.paymentRepository.expireOrphanedFakeCardPayments(
         manager,
         reservation.id,
         staleBefore,
@@ -245,41 +297,49 @@ export class PaymentsService {
         throw new ReservationExpiredError();
       }
 
+      // Evita iniciar uma cobrança externa para uma ocorrência que já saiu de venda.
+      if (hosted) {
+        const event = await manager
+          .getRepository(Event)
+          .findOneByOrFail({ id: reservation.eventId });
+        if (event.status !== EventStatus.Published || event.startsAt <= now) {
+          throw new ReservationNotActiveError();
+        }
+      }
+
       const items = await reservationItemsRepository.findBy({ reservationId: reservation.id });
       const amountCents = items.reduce((total, item) => total + item.unitPriceCents, 0);
+      const currency = PaymentCurrency.Brl;
+      const paidCheckout = amountCents > 0 ? hosted : undefined;
+      if (paidCheckout) {
+        if (amountCents > hostedCheckoutMaxStoredAmountCents)
+          throw new UnsupportedCheckoutAmountError();
+        paidCheckout.gateway.assertCheckoutAmount(amountCents, currency, method);
+      }
+      const resolvedProvider = paidCheckout?.gateway.provider ?? PaymentProvider.Fake;
       const paymentsRepository = manager.getRepository(Payment);
 
       const payment = await paymentsRepository.save(
         paymentsRepository.create({
           reservationId: reservation.id,
           method,
+          provider: resolvedProvider,
           status: PaymentStatus.Pending,
           idempotencyKey,
           amountCents,
+          currency,
+          externalReference: null,
+          checkoutReturnUrl: paidCheckout?.returnUrl ?? null,
           approvedAt: null,
           failedAt: null,
           simulationCompletionAt:
-            method === PaymentMethod.Pix
-              ? new Date(now.getTime() + simulatedPixCompletionDelayMs)
+            resolvedProvider === PaymentProvider.Fake && method === PaymentMethod.Pix
+              ? new Date(now.getTime() + (hosted ? 0 : simulatedPixCompletionDelayMs))
               : null,
         }),
       );
 
       return { payment, created: true };
     });
-  }
-
-  /**
-   * Lê o relógio do PostgreSQL após o lock, pois o prazo da Reservation pode vencer durante a espera.
-   *
-   * @param manager - Manager vinculado à transação que utilizará o timestamp.
-   * @returns Instante atual calculado pelo PostgreSQL.
-   */
-  private async getDatabaseTimestamp(manager: EntityManager): Promise<Date> {
-    const timestampRows = (await manager.query(
-      'SELECT clock_timestamp() AS "now"',
-    )) as DatabaseTimestampRow[];
-
-    return new Date(timestampRows[0].now);
   }
 }

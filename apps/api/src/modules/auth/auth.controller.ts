@@ -24,6 +24,7 @@ import { SignupRequestDto } from './dto/signupRequest.dto';
 import { SignupResponseDto } from './dto/signupResponse.dto';
 import { OptionalJwtAuthGuard } from './guards/optionalJwtAuth.guard';
 import { PublicSignupGuard } from './guards/publicSignup.guard';
+import { TrustedOriginGuard } from './guards/trustedOrigin.guard';
 import { RateLimit } from '../../rateLimit/rateLimit.decorator';
 import { RateLimitPolicy } from '../../rateLimit/rateLimitPolicy.enum';
 
@@ -42,6 +43,7 @@ export class AuthController {
 
   @Post('login')
   @RateLimit(RateLimitPolicy.Auth)
+  @UseGuards(TrustedOriginGuard)
   @HttpCode(HttpStatus.OK)
   @Header('Cache-Control', 'no-store')
   @ApiLogin()
@@ -81,6 +83,7 @@ export class AuthController {
   }
 
   @Post('logout')
+  @UseGuards(TrustedOriginGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
   @Header('Cache-Control', 'no-store')
   @ApiLogout()

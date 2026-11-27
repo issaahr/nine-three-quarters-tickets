@@ -8,6 +8,7 @@ import { AuthController } from '../modules/auth/auth.controller';
 import { JwtAuthGuard } from '../modules/auth/guards/jwtAuth.guard';
 import { PublicSignupGuard } from '../modules/auth/guards/publicSignup.guard';
 import { RolesGuard } from '../modules/auth/guards/roles.guard';
+import { TrustedOriginGuard } from '../modules/auth/guards/trustedOrigin.guard';
 import { CatalogController } from '../modules/catalog/catalog.controller';
 import { EventsController } from '../modules/events/events.controller';
 import { GateTicketsController } from '../modules/tickets/gateTickets.controller';
@@ -165,7 +166,7 @@ describe('rate limiting', () => {
     ];
 
     const guardOrderExpectations: Array<[CallableFunction, unknown[]]> = [
-      [AuthController.prototype.login, [ApplicationRateLimitGuard]],
+      [AuthController.prototype.login, [TrustedOriginGuard, ApplicationRateLimitGuard]],
       [AuthController.prototype.signup, [PublicSignupGuard, ApplicationRateLimitGuard]],
       [
         CatalogController.prototype.searchMovies,

@@ -13,7 +13,7 @@ export class Application {
   }
 
   public async start(): Promise<void> {
-    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
     this.configure(app);
 
     await app.listen(applicationConfig.port);

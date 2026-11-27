@@ -27,7 +27,7 @@ export function ApiTrustedOrigin() {
     }),
     ApiForbiddenResponse({
       type: ApplicationErrorResponseDto,
-      description: 'Papel sem acesso ou origem ausente ou não autorizada.',
+      description: 'Origem ausente ou não autorizada; papel sem acesso nas rotas protegidas.',
     }),
   );
 }
@@ -56,6 +56,7 @@ export function ApiSignup() {
 
 export function ApiLogin() {
   return applyDecorators(
+    ApiTrustedOrigin(),
     ApiOperation({ summary: 'Autentica um usuário com email e senha' }),
     ApiOkResponse({
       type: LoginResponseDto,
@@ -93,6 +94,7 @@ export function ApiGetSession() {
 
 export function ApiLogout() {
   return applyDecorators(
+    ApiTrustedOrigin(),
     ApiOperation({ summary: 'Encerra a sessão no navegador' }),
     ApiNoContentResponse({
       description: 'Cookie accessToken removido, mesmo que já estivesse ausente ou expirado.',
